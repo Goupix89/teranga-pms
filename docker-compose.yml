@@ -1,0 +1,87 @@
+version: "3.9"
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: hotel-pms-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hotel_pms
+      POSTGRES_USER: pms_user
+      POSTGRES_PASSWORD: pms_dev_password_2026
+    ports:
+      - "5433:5433"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pms_user -d hotel_pms"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis (cache, rate limiting, sessions)
+  redis:
+    image: redis:7-alpine
+    container_name: hotel-pms-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hotel-pms-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+    environment:
+      DATABASE_URL: "postgresql://pms_user:pms_dev_password_2026@postgres:5432/hotel_pms?sslmode=disable"
+      REDIS_URL: "redis://redis:6380"
+      JWT_ACCESS_SECRET: "dev_access_secret_change_in_production_abcdef123456"
+      JWT_REFRESH_SECRET: "dev_refresh_secret_change_in_production_ghijkl789012"
+      NODE_ENV: development
+      PORT: "4000"
+      ALLOWED_ORIGINS: "http://localhost:3001"
+      ENABLE_CRON: "true"
+      STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-sk_test_placeholder}"
+      STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-whsec_placeholder}"
+      STRIPE_SUCCESS_URL: "http://localhost:3001/auth/register/success"
+      STRIPE_CANCEL_URL: "http://localhost:3001/auth/register?cancelled=true"
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/prisma:/app/prisma
+
+  # Frontend (Next.js)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: hotel-pms-web
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3001:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: "http://localhost:4000"
+    volumes:
+      - ./frontend/src:/app/src
+
+volumes:
+  postgres_data:
+  redis_data:

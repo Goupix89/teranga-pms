@@ -1,0 +1,63 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
+export const config = {
+  port: parseInt(process.env.PORT || '4000', 10),
+  nodeEnv: process.env.NODE_ENV || 'development',
+  isDev: process.env.NODE_ENV !== 'production',
+  isProd: process.env.NODE_ENV === 'production',
+
+  database: {
+    url: process.env.DATABASE_URL!,
+  },
+
+  redis: {
+    url: process.env.REDIS_URL || 'redis://localhost:6379',
+  },
+
+  jwt: {
+    accessSecret: process.env.JWT_ACCESS_SECRET!,
+    refreshSecret: process.env.JWT_REFRESH_SECRET!,
+    accessExpiry: process.env.ACCESS_TOKEN_EXPIRY || '15m',
+    refreshExpiryDays: parseInt(process.env.REFRESH_TOKEN_EXPIRY_DAYS || '7', 10),
+  },
+
+  cors: {
+    originPattern: process.env.CORS_ORIGIN_PATTERN || 'http://localhost:*',
+    allowedOrigins: (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(','),
+  },
+
+  rateLimit: {
+    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10),
+    max: parseInt(process.env.RATE_LIMIT_MAX || '100', 10),
+    authMax: parseInt(process.env.AUTH_RATE_LIMIT_MAX || '5', 10),
+  },
+
+  bcrypt: {
+    saltRounds: parseInt(process.env.BCRYPT_SALT_ROUNDS || '12', 10),
+  },
+
+  archival: {
+    inactivityDays: parseInt(process.env.INACTIVITY_THRESHOLD_DAYS || '365', 10),
+  },
+
+  stock: {
+    varianceThresholdPercent: parseFloat(process.env.STOCK_VARIANCE_THRESHOLD_PERCENT || '10'),
+  },
+
+  stripe: {
+    secretKey: process.env.STRIPE_SECRET_KEY || '',
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+    successUrl: process.env.STRIPE_SUCCESS_URL || 'http://localhost:3001/auth/register/success',
+    cancelUrl: process.env.STRIPE_CANCEL_URL || 'http://localhost:3001/auth/register?cancelled=true',
+  },
+} as const;
+
+// Validate critical config at startup
+const required = ['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET', 'DATABASE_URL'];
+for (const key of required) {
+  if (!process.env[key]) {
+    console.error(`❌ Missing required environment variable: ${key}`);
+    if (config.isProd) process.exit(1);
+  }
+}

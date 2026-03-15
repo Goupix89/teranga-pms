@@ -1,0 +1,487 @@
+// =============================================================================
+// Hotel PMS — Prisma Schema
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+enum UserRole {
+  SUPERADMIN
+  ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+enum UserStatus {
+  ACTIVE
+  PENDING_APPROVAL
+  LOCKED
+  ARCHIVED
+}
+
+enum RoomType {
+  SINGLE
+  DOUBLE
+  SUITE
+  FAMILY
+  DELUXE
+}
+
+enum RoomStatus {
+  AVAILABLE
+  OCCUPIED
+  MAINTENANCE
+  OUT_OF_ORDER
+}
+
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  CHECKED_IN
+  CHECKED_OUT
+  CANCELLED
+  NO_SHOW
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  PARTIALLY_PAID
+  CANCELLED
+  OVERDUE
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  BANK_TRANSFER
+  MOBILE_MONEY
+  OTHER
+}
+
+enum StockMovementType {
+  PURCHASE
+  SALE
+  ADJUSTMENT
+  TRANSFER
+  WASTE
+  RETURN
+}
+
+enum BookingSource {
+  DIRECT
+  BOOKING_COM
+  EXPEDIA
+  AIRBNB
+  CHANNEL_MANAGER
+  PHONE
+  WALK_IN
+}
+
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  UNPAID
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+}
+
+// =============================================================================
+// CORE MODELS
+// =============================================================================
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  domain    String?  @unique
+  plan      String   @default("basic")
+  isActive  Boolean  @default(true) @map("is_active")
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users          User[]
+  establishments Establishment[]
+  rooms          Room[]
+  reservations   Reservation[]
+  invoices       Invoice[]
+  payments       Payment[]
+  articles       Article[]
+  categories     ArticleCategory[]
+  suppliers      Supplier[]
+  stockMovements StockMovement[]
+  refreshTokens  RefreshToken[]
+  apiKeys        ApiKey[]
+  subscription   Subscription?
+
+  @@map("tenants")
+}
+
+model ApiKey {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  name      String
+  keyHash   String   @unique @map("key_hash")
+  prefix    String   // First 8 chars for identification
+  isActive  Boolean  @default(true) @map("is_active")
+  expiresAt DateTime @map("expires_at")
+  lastUsedAt DateTime? @map("last_used_at")
+  allowedIps Json    @default("[]") @map("allowed_ips")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@map("api_keys")
+}
+
+model User {
+  id                  String     @id @default(uuid())
+  tenantId            String     @map("tenant_id")
+  email               String
+  passwordHash        String     @map("password_hash")
+  firstName           String     @map("first_name")
+  lastName            String     @map("last_name")
+  role                UserRole   @default(EMPLOYEE)
+  status              UserStatus @default(ACTIVE)
+  phone               String?
+  failedLoginAttempts Int        @default(0) @map("failed_login_attempts")
+  lastLoginAt         DateTime?  @map("last_login_at")
+  lastActiveAt        DateTime?  @map("last_active_at")
+  archivedAt          DateTime?  @map("archived_at")
+  createdAt           DateTime   @default(now()) @map("created_at")
+  updatedAt           DateTime   @updatedAt @map("updated_at")
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id])
+  establishments  Establishment[] @relation("UserEstablishments")
+  refreshTokens   RefreshToken[]
+  stockMovements  StockMovement[]
+  invoicesCreated Invoice[]       @relation("InvoiceCreator")
+  approvedMovements StockMovement[] @relation("MovementApprover")
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  tokenHash String   @unique @map("token_hash")
+  userId    String   @map("user_id")
+  tenantId  String   @map("tenant_id")
+  userAgent String?  @map("user_agent")
+  ipAddress String?  @map("ip_address")
+  revoked   Boolean  @default(false)
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model Establishment {
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  name       String
+  address    String
+  city       String
+  country    String
+  phone      String?
+  email      String?
+  starRating Int?     @map("star_rating") @db.SmallInt
+  isActive   Boolean  @default(true) @map("is_active")
+  timezone   String   @default("UTC")
+  currency   String   @default("XOF")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  users  User[] @relation("UserEstablishments")
+  rooms  Room[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("establishments")
+}
+
+model Room {
+  id              String     @id @default(uuid())
+  tenantId        String     @map("tenant_id")
+  establishmentId String     @map("establishment_id")
+  number          String
+  floor           Int?       @db.SmallInt
+  type            RoomType
+  status          RoomStatus @default(AVAILABLE)
+  pricePerNight   Decimal    @map("price_per_night") @db.Decimal(10, 2)
+  maxOccupancy    Int        @default(2) @map("max_occupancy")
+  amenities       Json       @default("[]")
+  description     String?
+  isActive        Boolean    @default(true) @map("is_active")
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id])
+  establishment Establishment @relation(fields: [establishmentId], references: [id])
+  reservations  Reservation[]
+
+  @@unique([tenantId, establishmentId, number])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("rooms")
+}
+
+model Reservation {
+  id             String            @id @default(uuid())
+  tenantId       String            @map("tenant_id")
+  roomId         String            @map("room_id")
+  guestName      String            @map("guest_name")
+  guestEmail     String?           @map("guest_email")
+  guestPhone     String?           @map("guest_phone")
+  checkIn        DateTime          @map("check_in") @db.Date
+  checkOut       DateTime          @map("check_out") @db.Date
+  numberOfGuests Int               @default(1) @map("number_of_guests")
+  status         ReservationStatus @default(PENDING)
+  source         BookingSource     @default(DIRECT)
+  externalRef    String?           @map("external_ref")
+  totalPrice     Decimal           @map("total_price") @db.Decimal(10, 2)
+  notes          String?
+  cancelledAt    DateTime?         @map("cancelled_at")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  room     Room      @relation(fields: [roomId], references: [id])
+  invoices Invoice[]
+
+  @@index([tenantId])
+  @@index([tenantId, roomId, checkIn, checkOut])
+  @@index([tenantId, status])
+  @@index([externalRef])
+  @@map("reservations")
+}
+
+model Invoice {
+  id            String        @id @default(uuid())
+  tenantId      String        @map("tenant_id")
+  reservationId String?       @map("reservation_id")
+  createdById   String        @map("created_by_id")
+  invoiceNumber String        @map("invoice_number")
+  status        InvoiceStatus @default(DRAFT)
+  subtotal      Decimal       @db.Decimal(10, 2)
+  taxRate       Decimal       @default(0) @map("tax_rate") @db.Decimal(5, 2)
+  taxAmount     Decimal       @default(0) @map("tax_amount") @db.Decimal(10, 2)
+  totalAmount   Decimal       @map("total_amount") @db.Decimal(10, 2)
+  currency      String        @default("XOF")
+  dueDate       DateTime?     @map("due_date") @db.Date
+  paidAt        DateTime?     @map("paid_at")
+  notes         String?
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id])
+  reservation Reservation? @relation(fields: [reservationId], references: [id])
+  createdBy   User         @relation("InvoiceCreator", fields: [createdById], references: [id])
+  items       InvoiceItem[]
+  payments    Payment[]
+
+  @@unique([tenantId, invoiceNumber])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String  @id @default(uuid())
+  invoiceId   String  @map("invoice_id")
+  articleId   String? @map("article_id")
+  description String
+  quantity    Int
+  unitPrice   Decimal @map("unit_price") @db.Decimal(10, 2)
+  totalPrice  Decimal @map("total_price") @db.Decimal(10, 2)
+
+  invoice Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  article Article? @relation(fields: [articleId], references: [id])
+
+  @@map("invoice_items")
+}
+
+model Payment {
+  id              String        @id @default(uuid())
+  tenantId        String        @map("tenant_id")
+  invoiceId       String        @map("invoice_id")
+  amount          Decimal       @db.Decimal(10, 2)
+  method          PaymentMethod
+  reference       String?
+  transactionUuid String?       @unique @map("transaction_uuid")
+  paidAt          DateTime      @default(now()) @map("paid_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@index([tenantId])
+  @@index([transactionUuid])
+  @@map("payments")
+}
+
+// =============================================================================
+// STOCK & INVENTORY
+// =============================================================================
+
+model ArticleCategory {
+  id       String  @id @default(uuid())
+  tenantId String  @map("tenant_id")
+  name     String
+  parentId String? @map("parent_id")
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id])
+  parent   ArticleCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children ArticleCategory[] @relation("CategoryHierarchy")
+  articles Article[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("article_categories")
+}
+
+model Article {
+  id           String  @id @default(uuid())
+  tenantId     String  @map("tenant_id")
+  categoryId   String? @map("category_id")
+  name         String
+  sku          String?
+  description  String?
+  unitPrice    Decimal @map("unit_price") @db.Decimal(10, 2)
+  costPrice    Decimal @default(0) @map("cost_price") @db.Decimal(10, 2)
+  currentStock Int     @default(0) @map("current_stock")
+  minimumStock Int     @default(0) @map("minimum_stock")
+  unit         String  @default("pièce")
+  isActive     Boolean @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  tenant         Tenant            @relation(fields: [tenantId], references: [id])
+  category       ArticleCategory?  @relation(fields: [categoryId], references: [id])
+  stockMovements StockMovement[]
+  invoiceItems   InvoiceItem[]
+
+  @@unique([tenantId, sku])
+  @@index([tenantId])
+  @@index([tenantId, currentStock])
+  @@map("articles")
+}
+
+model Supplier {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  name      String
+  email     String?
+  phone     String?
+  address   String?
+  notes     String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id])
+  stockMovements StockMovement[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("suppliers")
+}
+
+model StockMovement {
+  id               String            @id @default(uuid())
+  tenantId         String            @map("tenant_id")
+  articleId        String            @map("article_id")
+  supplierId       String?           @map("supplier_id")
+  performedById    String            @map("performed_by_id")
+  type             StockMovementType
+  quantity         Int
+  unitCost         Decimal?          @map("unit_cost") @db.Decimal(10, 2)
+  previousStock    Int               @map("previous_stock")
+  newStock         Int               @map("new_stock")
+  reason           String?
+  requiresApproval Boolean           @default(false) @map("requires_approval")
+  approvedById     String?           @map("approved_by_id")
+  approvedAt       DateTime?         @map("approved_at")
+  createdAt        DateTime          @default(now()) @map("created_at")
+
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  article     Article   @relation(fields: [articleId], references: [id])
+  supplier    Supplier? @relation(fields: [supplierId], references: [id])
+  performedBy User      @relation(fields: [performedById], references: [id])
+  approvedBy  User?     @relation("MovementApprover", fields: [approvedById], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, articleId])
+  @@index([tenantId, createdAt])
+  @@map("stock_movements")
+}
+
+// =============================================================================
+// SUBSCRIPTION & BILLING
+// =============================================================================
+
+model SubscriptionPlan {
+  id                   String   @id @default(uuid())
+  name                 String
+  slug                 String   @unique
+  stripePriceIdMonthly String   @map("stripe_price_id_monthly")
+  stripePriceIdYearly  String   @map("stripe_price_id_yearly")
+  monthlyPrice         Decimal  @map("monthly_price") @db.Decimal(10, 2)
+  yearlyPrice          Decimal  @map("yearly_price") @db.Decimal(10, 2)
+  features             Json     @default("{}")
+  isActive             Boolean  @default(true) @map("is_active")
+  displayOrder         Int      @default(0) @map("display_order")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  subscriptions Subscription[]
+
+  @@map("subscription_plans")
+}
+
+model Subscription {
+  id                     String             @id @default(uuid())
+  tenantId               String             @unique @map("tenant_id")
+  planId                 String             @map("plan_id")
+  stripeCustomerId       String             @unique @map("stripe_customer_id")
+  stripeSubscriptionId   String?            @unique @map("stripe_subscription_id")
+  status                 SubscriptionStatus @default(PENDING)
+  billingInterval        BillingInterval    @map("billing_interval")
+  currentPeriodStart     DateTime?          @map("current_period_start")
+  currentPeriodEnd       DateTime?          @map("current_period_end")
+  cancelAtPeriodEnd      Boolean            @default(false) @map("cancel_at_period_end")
+  createdAt              DateTime           @default(now()) @map("created_at")
+  updatedAt              DateTime           @updatedAt @map("updated_at")
+
+  tenant Tenant           @relation(fields: [tenantId], references: [id])
+  plan   SubscriptionPlan @relation(fields: [planId], references: [id])
+
+  @@index([status])
+  @@map("subscriptions")
+}
