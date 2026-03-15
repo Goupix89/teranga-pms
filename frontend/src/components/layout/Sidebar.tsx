@@ -4,35 +4,73 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/hooks/useAuthStore';
+import { EstablishmentRole } from '@/types';
 import {
   LayoutDashboard, BedDouble, CalendarCheck, Receipt, CreditCard,
   Package, Truck, Users, Building2, Settings, LogOut, ChevronLeft,
-  BarChart3, AlertTriangle,
+  BarChart3, UtensilsCrossed, SprayCan, ClipboardCheck, AlertTriangle,
+  ChevronDown,
 } from 'lucide-react';
 import { useState } from 'react';
 
-const navigation = [
-  { name: 'Tableau de bord', href: '/dashboard', icon: LayoutDashboard, roles: ['SUPERADMIN', 'ADMIN', 'MANAGER', 'EMPLOYEE'] },
-  { name: 'Établissements', href: '/dashboard/establishments', icon: Building2, roles: ['SUPERADMIN', 'ADMIN'] },
-  { name: 'Chambres', href: '/dashboard/rooms', icon: BedDouble, roles: ['SUPERADMIN', 'ADMIN', 'MANAGER', 'EMPLOYEE'] },
-  { name: 'Réservations', href: '/dashboard/reservations', icon: CalendarCheck, roles: ['SUPERADMIN', 'ADMIN', 'MANAGER', 'EMPLOYEE'] },
-  { name: 'Factures', href: '/dashboard/invoices', icon: Receipt, roles: ['SUPERADMIN', 'ADMIN', 'MANAGER'] },
-  { name: 'Paiements', href: '/dashboard/payments', icon: CreditCard, roles: ['SUPERADMIN', 'ADMIN', 'MANAGER'] },
-  { name: 'Stock & Inventaire', href: '/dashboard/stock', icon: Package, roles: ['SUPERADMIN', 'ADMIN', 'MANAGER'] },
-  { name: 'Fournisseurs', href: '/dashboard/suppliers', icon: Truck, roles: ['SUPERADMIN', 'ADMIN'] },
-  { name: 'Utilisateurs', href: '/dashboard/users', icon: Users, roles: ['SUPERADMIN', 'ADMIN', 'MANAGER'] },
-  { name: 'Rapports', href: '/dashboard/reports', icon: BarChart3, roles: ['SUPERADMIN', 'ADMIN'] },
-  { name: 'Paramètres', href: '/dashboard/settings', icon: Settings, roles: ['SUPERADMIN'] },
+type NavItem = {
+  name: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  /** Tenant roles that can see this item (SUPERADMIN always sees everything) */
+  superadminOnly?: boolean;
+  /** Establishment roles that can see this item */
+  estRoles?: EstablishmentRole[];
+};
+
+const navigation: NavItem[] = [
+  { name: 'Tableau de bord', href: '/dashboard', icon: LayoutDashboard, estRoles: ['DAF', 'MANAGER', 'SERVER', 'POS', 'COOK', 'CLEANER'] },
+  { name: 'Établissements', href: '/dashboard/establishments', icon: Building2, superadminOnly: true },
+  { name: 'Chambres', href: '/dashboard/rooms', icon: BedDouble, estRoles: ['DAF', 'MANAGER', 'SERVER', 'CLEANER'] },
+  { name: 'Réservations', href: '/dashboard/reservations', icon: CalendarCheck, estRoles: ['DAF', 'MANAGER', 'SERVER'] },
+  { name: 'Commandes', href: '/dashboard/orders', icon: UtensilsCrossed, estRoles: ['DAF', 'MANAGER', 'SERVER'] },
+  { name: 'Cuisine', href: '/dashboard/kitchen', icon: UtensilsCrossed, estRoles: ['DAF', 'MANAGER', 'COOK'] },
+  { name: 'Factures', href: '/dashboard/invoices', icon: Receipt, estRoles: ['DAF', 'MANAGER', 'SERVER'] },
+  { name: 'Paiements', href: '/dashboard/payments', icon: CreditCard, estRoles: ['DAF', 'MANAGER', 'SERVER', 'POS'] },
+  { name: 'Stock & Inventaire', href: '/dashboard/stock', icon: Package, estRoles: ['DAF', 'MANAGER'] },
+  { name: 'Alertes Stock', href: '/dashboard/stock-alerts', icon: AlertTriangle, estRoles: ['DAF', 'MANAGER'] },
+  { name: 'Fournisseurs', href: '/dashboard/suppliers', icon: Truck, estRoles: ['DAF'] },
+  { name: 'Ménage', href: '/dashboard/cleaning', icon: SprayCan, estRoles: ['DAF', 'MANAGER', 'CLEANER'] },
+  { name: 'Approbations', href: '/dashboard/approvals', icon: ClipboardCheck, estRoles: ['DAF'] },
+  { name: 'Utilisateurs', href: '/dashboard/users', icon: Users, estRoles: ['DAF', 'MANAGER'] },
+  { name: 'Rapports', href: '/dashboard/reports', icon: BarChart3, estRoles: ['DAF'] },
+  { name: 'Paramètres', href: '/dashboard/settings', icon: Settings, superadminOnly: true },
 ];
+
+const estRoleLabels: Record<EstablishmentRole, string> = {
+  DAF: 'DAF',
+  MANAGER: 'Manager',
+  SERVER: 'Serveur',
+  POS: 'Point de vente',
+  COOK: 'Cuisinier',
+  CLEANER: 'Ménage',
+};
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { user, logout } = useAuthStore();
+  const { user, logout, currentEstablishmentId, currentEstablishmentRole, selectEstablishment } = useAuthStore();
   const [collapsed, setCollapsed] = useState(false);
+  const [estDropdownOpen, setEstDropdownOpen] = useState(false);
 
-  const filteredNav = navigation.filter(
-    (item) => user?.role && item.roles.includes(user.role)
-  );
+  const isSuperAdmin = user?.role === 'SUPERADMIN';
+
+  const filteredNav = navigation.filter((item) => {
+    if (!user) return false;
+    // SUPERADMIN sees everything
+    if (isSuperAdmin) return true;
+    // superadminOnly items are hidden for non-SUPERADMIN
+    if (item.superadminOnly) return false;
+    // Check establishment role
+    if (item.estRoles && currentEstablishmentRole) {
+      return item.estRoles.includes(currentEstablishmentRole);
+    }
+    return false;
+  });
 
   const handleLogout = async () => {
     try {
@@ -42,6 +80,16 @@ export function Sidebar() {
     logout();
     window.location.href = '/auth/login';
   };
+
+  const currentEstName = user?.memberships?.find(
+    (m) => m.establishmentId === currentEstablishmentId
+  )?.establishmentName;
+
+  const displayRole = isSuperAdmin
+    ? 'Super Admin'
+    : currentEstablishmentRole
+      ? estRoleLabels[currentEstablishmentRole]
+      : 'Employé';
 
   return (
     <aside
@@ -67,6 +115,39 @@ export function Sidebar() {
           <ChevronLeft className={cn('h-4 w-4 transition-transform', collapsed && 'rotate-180')} />
         </button>
       </div>
+
+      {/* Establishment selector (non-SUPERADMIN with multiple memberships) */}
+      {!collapsed && !isSuperAdmin && user?.memberships && user.memberships.length > 1 && (
+        <div className="relative border-b border-gray-100 px-3 py-2">
+          <button
+            onClick={() => setEstDropdownOpen(!estDropdownOpen)}
+            className="flex w-full items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+          >
+            <span className="truncate font-medium">{currentEstName || 'Sélectionner'}</span>
+            <ChevronDown className={cn('h-4 w-4 transition-transform', estDropdownOpen && 'rotate-180')} />
+          </button>
+          {estDropdownOpen && (
+            <div className="absolute left-3 right-3 top-full z-50 mt-1 rounded-lg border border-gray-200 bg-white shadow-lg">
+              {user.memberships.map((m) => (
+                <button
+                  key={m.establishmentId}
+                  onClick={() => {
+                    selectEstablishment(m.establishmentId);
+                    setEstDropdownOpen(false);
+                  }}
+                  className={cn(
+                    'flex w-full items-center justify-between px-3 py-2 text-sm hover:bg-gray-50',
+                    m.establishmentId === currentEstablishmentId && 'bg-primary-50 text-primary-700'
+                  )}
+                >
+                  <span className="truncate">{m.establishmentName}</span>
+                  <span className="text-xs text-gray-400">{estRoleLabels[m.role]}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
@@ -98,7 +179,7 @@ export function Sidebar() {
             <p className="text-sm font-medium text-gray-900 truncate">
               {user.firstName} {user.lastName}
             </p>
-            <p className="text-xs text-gray-500">{{ SUPERADMIN: 'Super Admin', ADMIN: 'Admin Établissement', MANAGER: 'Manager', EMPLOYEE: 'Employé' }[user.role]}</p>
+            <p className="text-xs text-gray-500">{displayRole}</p>
           </div>
         )}
         <button

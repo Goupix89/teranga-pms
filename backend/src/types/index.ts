@@ -1,4 +1,4 @@
-import { UserRole } from '@prisma/client';
+import { UserRole, EstablishmentRole } from '@prisma/client';
 
 // Extend Express Request
 declare global {
@@ -10,11 +10,17 @@ declare global {
   }
 }
 
+export interface EstablishmentMembership {
+  establishmentId: string;
+  role: EstablishmentRole;
+}
+
 export interface AuthUser {
   id: string;
   tenantId: string;
   role: UserRole;
-  establishmentIds?: string[];
+  memberships?: EstablishmentMembership[];
+  establishmentIds?: string[]; // derived from memberships for backward compat
 }
 
 export interface TokenPayload {

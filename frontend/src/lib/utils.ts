@@ -53,6 +53,7 @@ export const statusColors: Record<string, string> = {
   OCCUPIED: 'badge-danger',
   MAINTENANCE: 'badge-warning',
   OUT_OF_ORDER: 'badge-neutral',
+  CLEANING: 'badge-info',
   // Reservation status
   PENDING: 'badge-warning',
   CONFIRMED: 'badge-info',
@@ -71,6 +72,13 @@ export const statusColors: Record<string, string> = {
   PENDING_APPROVAL: 'badge-warning',
   LOCKED: 'badge-danger',
   ARCHIVED: 'badge-neutral',
+  // Order status
+  IN_PROGRESS: 'badge-info',
+  READY: 'badge-success',
+  SERVED: 'badge-neutral',
+  // Approval status
+  APPROVED: 'badge-success',
+  REJECTED: 'badge-danger',
 };
 
 export const statusLabels: Record<string, string> = {
@@ -98,14 +106,29 @@ export const statusLabels: Record<string, string> = {
   SUITE: 'Suite',
   FAMILY: 'Familiale',
   DELUXE: 'Deluxe',
+  CLEANING: 'Nettoyage',
+  IN_PROGRESS: 'En cours',
+  READY: 'Prête',
+  SERVED: 'Servie',
+  APPROVED: 'Approuvée',
+  REJECTED: 'Rejetée',
+  COMPLETED: 'Terminé',
+  // Tenant roles
   SUPERADMIN: 'Super Admin',
-  ADMIN: 'Admin Établissement',
-  MANAGER: 'Manager',
   EMPLOYEE: 'Employé',
+  // Establishment roles
+  DAF: 'DAF',
+  MANAGER: 'Manager',
+  SERVER: 'Serveur',
+  POS: 'Point de vente',
+  COOK: 'Cuisinier',
+  CLEANER: 'Ménage',
   CASH: 'Espèces',
   CARD: 'Carte',
   BANK_TRANSFER: 'Virement',
   MOBILE_MONEY: 'Mobile Money',
+  MOOV_MONEY: 'Moov Money',
+  MIXX_BY_YAS: 'Mixx by Yas',
   DIRECT: 'Direct',
   BOOKING_COM: 'Booking.com',
   EXPEDIA: 'Expedia',

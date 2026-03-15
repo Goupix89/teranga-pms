@@ -22,7 +22,7 @@ router.post('/login', validate(loginSchema), async (req: Request, res: Response,
     res.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       path: '/api/auth',
     });
@@ -31,6 +31,7 @@ router.post('/login', validate(loginSchema), async (req: Request, res: Response,
       success: true,
       data: {
         accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
         user: result.user,
       },
     });
@@ -103,10 +104,41 @@ router.post('/logout-all', authenticate, async (req: Request, res: Response, nex
  */
 router.get('/me', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { userService } = await import('../services/crud.service');
-    const user = await userService.getById(req.user!.tenantId, req.user!.id);
+    const { prisma } = await import('../utils/prisma');
+    const user = await prisma.user.findFirst({
+      where: { id: req.user!.id, tenantId: req.user!.tenantId },
+      select: {
+        id: true, email: true, firstName: true, lastName: true,
+        role: true, status: true, phone: true,
+        tenantId: true,
+        tenant: { select: { slug: true } },
+        memberships: {
+          where: { isActive: true },
+          select: {
+            establishmentId: true,
+            role: true,
+            establishment: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
 
-    res.json({ success: true, data: user });
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'Utilisateur introuvable' });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        ...user,
+        tenantSlug: user.tenant.slug,
+        memberships: user.memberships.map((m) => ({
+          establishmentId: m.establishmentId,
+          establishmentName: m.establishment.name,
+          role: m.role,
+        })),
+      },
+    });
   } catch (err) {
     next(err);
   }

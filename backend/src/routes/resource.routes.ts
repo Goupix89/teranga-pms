@@ -1,6 +1,19 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { authenticate, authenticateApiKey } from '../middlewares/auth.middleware';
-import { requireRole, requireManager, requireAdmin, requireSuperAdmin, requireAnyRole, requireSelfOrRole } from '../middlewares/rbac.middleware';
+import {
+  requireSuperAdmin,
+  requireAuthenticated,
+  requireDAF,
+  requireDAFOrManager,
+  requireDAFOrManagerOrServer,
+  requirePaymentRole,
+  requireKitchenAccess,
+  requireCleaningAccess,
+  requireAnyEstablishmentRole,
+  requireSelfOrRole,
+  requireEstablishmentRole,
+  getEstablishmentRole,
+} from '../middlewares/rbac.middleware';
 import { validate, validateQuery } from '../middlewares/validate.middleware';
 import { parsePagination } from '../utils/helpers';
 import * as v from '../validators';
@@ -11,6 +24,11 @@ import { reservationService } from '../services/reservation.service';
 import { invoiceService } from '../services/invoice.service';
 import { paymentService } from '../services/payment.service';
 import { stockService } from '../services/stock.service';
+import { orderService } from '../services/order.service';
+import { approvalService } from '../services/approval.service';
+import { cleaningService } from '../services/cleaning.service';
+import { stockAlertService } from '../services/stock-alert.service';
+import { memberService } from '../services/member.service';
 
 // Helper to wrap async route handlers
 const asyncHandler = (fn: (req: Request, res: Response, next: NextFunction) => Promise<any>) =>
@@ -21,7 +39,7 @@ const asyncHandler = (fn: (req: Request, res: Response, next: NextFunction) => P
 // =============================================================================
 export const userRouter = Router();
 
-userRouter.get('/', authenticate, requireManager,
+userRouter.get('/', authenticate, requireDAFOrManager,
   asyncHandler(async (req, res) => {
     const params = parsePagination(req);
     const { role, status, search } = req.query as any;
@@ -34,38 +52,43 @@ userRouter.get('/', authenticate, requireManager,
   })
 );
 
-userRouter.get('/:id', authenticate, requireSelfOrRole('SUPERADMIN', 'ADMIN', 'MANAGER'),
+userRouter.get('/:id', authenticate, requireSelfOrRole('DAF', 'MANAGER'),
   asyncHandler(async (req, res) => {
     const data = await userService.getById(req.user!.tenantId, req.params.id);
     res.json({ success: true, data });
   })
 );
 
-// SUPERADMIN & ADMIN can create any user; MANAGER can create EMPLOYEE only (pending approval)
-userRouter.post('/', authenticate, requireManager, validate(v.createUserSchema),
+// DAF & MANAGER can create users (MANAGER creates under DAF approval)
+userRouter.post('/', authenticate, requireDAFOrManager, validate(v.createUserSchema),
   asyncHandler(async (req, res) => {
-    const data = await userService.create(req.user!.tenantId, req.body, req.user!.role, req.user!.establishmentIds);
+    // Determine the requesting user's establishment role
+    const estId = req.body.establishmentIds?.[0];
+    const estRole = estId ? getEstablishmentRole(req, estId) : null;
+    const data = await userService.create(req.user!.tenantId, req.body, estRole ?? undefined);
     res.status(201).json({ success: true, data });
   })
 );
 
-// Approve a pending user (ADMIN+ only)
-userRouter.post('/:id/approve', authenticate, requireAdmin,
+// Approve a pending user (DAF only)
+userRouter.post('/:id/approve', authenticate, requireDAF,
   asyncHandler(async (req, res) => {
     const data = await userService.approve(req.user!.tenantId, req.params.id);
     res.json({ success: true, data });
   })
 );
 
-userRouter.patch('/:id', authenticate, requireSelfOrRole('SUPERADMIN', 'ADMIN'),
+userRouter.patch('/:id', authenticate, requireSelfOrRole('DAF'),
   validate(v.updateUserSchema),
   asyncHandler(async (req, res) => {
-    const data = await userService.update(req.user!.tenantId, req.params.id, req.body, req.user!.role);
+    const estId = req.body.establishmentIds?.[0];
+    const estRole = estId ? getEstablishmentRole(req, estId) : null;
+    const data = await userService.update(req.user!.tenantId, req.params.id, req.body, estRole);
     res.json({ success: true, data });
   })
 );
 
-userRouter.delete('/:id', authenticate, requireAdmin,
+userRouter.delete('/:id', authenticate, requireDAF,
   asyncHandler(async (req, res) => {
     await userService.archive(req.user!.tenantId, req.params.id);
     res.json({ success: true, message: 'Utilisateur archivé' });
@@ -77,7 +100,7 @@ userRouter.delete('/:id', authenticate, requireAdmin,
 // =============================================================================
 export const establishmentRouter = Router();
 
-establishmentRouter.get('/', authenticate, requireAnyRole,
+establishmentRouter.get('/', authenticate, requireAnyEstablishmentRole,
   asyncHandler(async (req, res) => {
     const params = parsePagination(req);
     const data = await establishmentService.list(req.user!.tenantId, params, req.user!.establishmentIds);
@@ -85,7 +108,7 @@ establishmentRouter.get('/', authenticate, requireAnyRole,
   })
 );
 
-establishmentRouter.get('/:id', authenticate, requireAnyRole,
+establishmentRouter.get('/:id', authenticate, requireAnyEstablishmentRole,
   asyncHandler(async (req, res) => {
     const data = await establishmentService.getById(req.user!.tenantId, req.params.id);
     res.json({ success: true, data });
@@ -99,7 +122,7 @@ establishmentRouter.post('/', authenticate, requireSuperAdmin, validate(v.create
   })
 );
 
-establishmentRouter.patch('/:id', authenticate, requireAdmin, validate(v.updateEstablishmentSchema),
+establishmentRouter.patch('/:id', authenticate, requireDAF, validate(v.updateEstablishmentSchema),
   asyncHandler(async (req, res) => {
     const data = await establishmentService.update(req.user!.tenantId, req.params.id, req.body);
     res.json({ success: true, data });
@@ -114,11 +137,46 @@ establishmentRouter.delete('/:id', authenticate, requireSuperAdmin,
 );
 
 // =============================================================================
+// ESTABLISHMENT MEMBERS
+// =============================================================================
+export const memberRouter = Router();
+
+memberRouter.get('/:establishmentId/members', authenticate, requireDAFOrManager,
+  asyncHandler(async (req, res) => {
+    const data = await memberService.list(req.user!.tenantId, req.params.establishmentId);
+    res.json({ success: true, data });
+  })
+);
+
+memberRouter.post('/:establishmentId/members', authenticate, requireDAF, validate(v.addMemberSchema),
+  asyncHandler(async (req, res) => {
+    const data = await memberService.add(req.user!.tenantId, req.params.establishmentId, req.body);
+    res.status(201).json({ success: true, data });
+  })
+);
+
+memberRouter.patch('/:establishmentId/members/:memberId', authenticate, requireDAF, validate(v.updateMemberRoleSchema),
+  asyncHandler(async (req, res) => {
+    const data = await memberService.updateRole(
+      req.user!.tenantId, req.params.establishmentId, req.params.memberId, req.body.role
+    );
+    res.json({ success: true, data });
+  })
+);
+
+memberRouter.delete('/:establishmentId/members/:memberId', authenticate, requireDAF,
+  asyncHandler(async (req, res) => {
+    await memberService.remove(req.user!.tenantId, req.params.establishmentId, req.params.memberId);
+    res.json({ success: true, message: 'Membre retiré' });
+  })
+);
+
+// =============================================================================
 // ROOMS
 // =============================================================================
 export const roomRouter = Router();
 
-roomRouter.get('/', authenticate, requireAnyRole,
+roomRouter.get('/', authenticate, requireAnyEstablishmentRole,
   asyncHandler(async (req, res) => {
     const params = parsePagination(req);
     const { status, type, establishmentId, search, minPrice, maxPrice } = req.query as any;
@@ -132,35 +190,35 @@ roomRouter.get('/', authenticate, requireAnyRole,
   })
 );
 
-roomRouter.get('/:id', authenticate, requireAnyRole,
+roomRouter.get('/:id', authenticate, requireAnyEstablishmentRole,
   asyncHandler(async (req, res) => {
     const data = await roomService.getById(req.user!.tenantId, req.params.id);
     res.json({ success: true, data });
   })
 );
 
-roomRouter.post('/', authenticate, requireManager, validate(v.createRoomSchema),
+roomRouter.post('/', authenticate, requireDAFOrManager, validate(v.createRoomSchema),
   asyncHandler(async (req, res) => {
     const data = await roomService.create(req.user!.tenantId, req.body);
     res.status(201).json({ success: true, data });
   })
 );
 
-roomRouter.patch('/:id', authenticate, requireManager, validate(v.updateRoomSchema),
+roomRouter.patch('/:id', authenticate, requireDAFOrManager, validate(v.updateRoomSchema),
   asyncHandler(async (req, res) => {
     const data = await roomService.update(req.user!.tenantId, req.params.id, req.body);
     res.json({ success: true, data });
   })
 );
 
-roomRouter.patch('/:id/status', authenticate, requireAnyRole, validate(v.updateRoomStatusSchema),
+roomRouter.patch('/:id/status', authenticate, requireAnyEstablishmentRole, validate(v.updateRoomStatusSchema),
   asyncHandler(async (req, res) => {
     const data = await roomService.updateStatus(req.user!.tenantId, req.params.id, req.body.status);
     res.json({ success: true, data });
   })
 );
 
-roomRouter.delete('/:id', authenticate, requireManager,
+roomRouter.delete('/:id', authenticate, requireDAFOrManager,
   asyncHandler(async (req, res) => {
     await roomService.delete(req.user!.tenantId, req.params.id);
     res.json({ success: true, message: 'Chambre désactivée' });
@@ -172,7 +230,7 @@ roomRouter.delete('/:id', authenticate, requireManager,
 // =============================================================================
 export const reservationRouter = Router();
 
-reservationRouter.get('/', authenticate, requireAnyRole,
+reservationRouter.get('/', authenticate, requireAnyEstablishmentRole,
   asyncHandler(async (req, res) => {
     const params = parsePagination(req);
     const { status, roomId, from, to, source, search } = req.query as any;
@@ -184,44 +242,101 @@ reservationRouter.get('/', authenticate, requireAnyRole,
   })
 );
 
-reservationRouter.get('/:id', authenticate, requireAnyRole,
+reservationRouter.get('/:id', authenticate, requireAnyEstablishmentRole,
   asyncHandler(async (req, res) => {
     const data = await reservationService.getById(req.user!.tenantId, req.params.id);
     res.json({ success: true, data });
   })
 );
 
-reservationRouter.post('/', authenticate, requireAnyRole, validate(v.createReservationSchema),
+// DAF + MANAGER can create reservations
+reservationRouter.post('/', authenticate, requireDAFOrManager, validate(v.createReservationSchema),
   asyncHandler(async (req, res) => {
     const data = await reservationService.create(req.user!.tenantId, req.body);
     res.status(201).json({ success: true, data });
   })
 );
 
-reservationRouter.patch('/:id', authenticate, requireManager, validate(v.updateReservationSchema),
+// MANAGER modifications require DAF approval → handled in approval flow
+reservationRouter.patch('/:id', authenticate, requireDAF, validate(v.updateReservationSchema),
   asyncHandler(async (req, res) => {
     const data = await reservationService.update(req.user!.tenantId, req.params.id, req.body);
     res.json({ success: true, data });
   })
 );
 
-reservationRouter.post('/:id/check-in', authenticate, requireAnyRole,
+reservationRouter.post('/:id/check-in', authenticate, requireDAFOrManagerOrServer,
   asyncHandler(async (req, res) => {
     const data = await reservationService.checkIn(req.user!.tenantId, req.params.id);
     res.json({ success: true, data });
   })
 );
 
-reservationRouter.post('/:id/check-out', authenticate, requireAnyRole,
+reservationRouter.post('/:id/check-out', authenticate, requireDAFOrManagerOrServer,
   asyncHandler(async (req, res) => {
     const data = await reservationService.checkOut(req.user!.tenantId, req.params.id);
     res.json({ success: true, data });
   })
 );
 
-reservationRouter.post('/:id/cancel', authenticate, requireManager,
+reservationRouter.post('/:id/cancel', authenticate, requireDAFOrManager,
   asyncHandler(async (req, res) => {
     const data = await reservationService.cancel(req.user!.tenantId, req.params.id);
+    res.json({ success: true, data });
+  })
+);
+
+// =============================================================================
+// ORDERS
+// =============================================================================
+export const orderRouter = Router();
+
+orderRouter.get('/', authenticate, requireDAFOrManagerOrServer,
+  asyncHandler(async (req, res) => {
+    const params = parsePagination(req);
+    const { establishmentId, status, from, to } = req.query as any;
+    const data = await orderService.list(req.user!.tenantId, params, {
+      establishmentId, status, from, to,
+    });
+    res.json({ success: true, ...data });
+  })
+);
+
+orderRouter.get('/kitchen/:establishmentId', authenticate, requireKitchenAccess,
+  asyncHandler(async (req, res) => {
+    const data = await orderService.getKitchenOrders(req.user!.tenantId, req.params.establishmentId);
+    res.json({ success: true, data });
+  })
+);
+
+orderRouter.get('/stats/:establishmentId', authenticate, requireDAFOrManagerOrServer,
+  asyncHandler(async (req, res) => {
+    const userId = req.query.userId as string | undefined;
+    const data = await orderService.getStats(req.user!.tenantId, req.params.establishmentId, userId);
+    res.json({ success: true, data });
+  })
+);
+
+orderRouter.get('/:id', authenticate, requireDAFOrManagerOrServer,
+  asyncHandler(async (req, res) => {
+    const data = await orderService.getById(req.user!.tenantId, req.params.id);
+    res.json({ success: true, data });
+  })
+);
+
+// Servers create orders
+orderRouter.post('/', authenticate, requireDAFOrManagerOrServer, validate(v.createOrderSchema),
+  asyncHandler(async (req, res) => {
+    const data = await orderService.create(req.user!.tenantId, req.user!.id, req.body);
+    res.status(201).json({ success: true, data });
+  })
+);
+
+// Cooks mark IN_PROGRESS/READY, servers mark SERVED, DAF/MANAGER can cancel
+orderRouter.patch('/:id/status', authenticate, requireEstablishmentRole('DAF', 'MANAGER', 'SERVER', 'COOK'),
+  validate(v.updateOrderStatusSchema),
+  asyncHandler(async (req, res) => {
+    const data = await orderService.updateStatus(req.user!.tenantId, req.params.id, req.body.status, req.user!.id);
     res.json({ success: true, data });
   })
 );
@@ -231,7 +346,7 @@ reservationRouter.post('/:id/cancel', authenticate, requireManager,
 // =============================================================================
 export const invoiceRouter = Router();
 
-invoiceRouter.get('/', authenticate, requireAnyRole,
+invoiceRouter.get('/', authenticate, requireDAFOrManagerOrServer,
   asyncHandler(async (req, res) => {
     const params = parsePagination(req);
     const { status, reservationId, search } = req.query as any;
@@ -243,35 +358,35 @@ invoiceRouter.get('/', authenticate, requireAnyRole,
   })
 );
 
-invoiceRouter.get('/:id', authenticate, requireAnyRole,
+invoiceRouter.get('/:id', authenticate, requireDAFOrManagerOrServer,
   asyncHandler(async (req, res) => {
     const data = await invoiceService.getById(req.user!.tenantId, req.params.id);
     res.json({ success: true, data });
   })
 );
 
-invoiceRouter.post('/', authenticate, requireAnyRole, validate(v.createInvoiceSchema),
+invoiceRouter.post('/', authenticate, requireDAFOrManagerOrServer, validate(v.createInvoiceSchema),
   asyncHandler(async (req, res) => {
     const data = await invoiceService.create(req.user!.tenantId, req.user!.id, req.body);
     res.status(201).json({ success: true, data });
   })
 );
 
-invoiceRouter.patch('/:id', authenticate, requireManager, validate(v.updateInvoiceSchema),
+invoiceRouter.patch('/:id', authenticate, requireDAFOrManager, validate(v.updateInvoiceSchema),
   asyncHandler(async (req, res) => {
     const data = await invoiceService.update(req.user!.tenantId, req.params.id, req.body);
     res.json({ success: true, data });
   })
 );
 
-invoiceRouter.post('/:id/issue', authenticate, requireManager,
+invoiceRouter.post('/:id/issue', authenticate, requireDAFOrManager,
   asyncHandler(async (req, res) => {
     const data = await invoiceService.issue(req.user!.tenantId, req.params.id);
     res.json({ success: true, data });
   })
 );
 
-invoiceRouter.post('/:id/cancel', authenticate, requireRole('SUPERADMIN', 'ADMIN'),
+invoiceRouter.post('/:id/cancel', authenticate, requireDAF,
   asyncHandler(async (req, res) => {
     const data = await invoiceService.cancel(req.user!.tenantId, req.params.id);
     res.json({ success: true, data });
@@ -283,14 +398,14 @@ invoiceRouter.post('/:id/cancel', authenticate, requireRole('SUPERADMIN', 'ADMIN
 // =============================================================================
 export const paymentRouter = Router();
 
-paymentRouter.post('/', authenticate, requireAnyRole, validate(v.createPaymentSchema),
+paymentRouter.post('/', authenticate, requirePaymentRole, validate(v.createPaymentSchema),
   asyncHandler(async (req, res) => {
     const { payment, alreadyProcessed } = await paymentService.create(req.user!.tenantId, req.body);
     res.status(alreadyProcessed ? 200 : 201).json({ success: true, data: payment });
   })
 );
 
-paymentRouter.get('/invoice/:invoiceId', authenticate, requireAnyRole,
+paymentRouter.get('/invoice/:invoiceId', authenticate, requirePaymentRole,
   asyncHandler(async (req, res) => {
     const data = await paymentService.listByInvoice(req.user!.tenantId, req.params.invoiceId);
     res.json({ success: true, data });
@@ -302,7 +417,7 @@ paymentRouter.get('/invoice/:invoiceId', authenticate, requireAnyRole,
 // =============================================================================
 export const articleRouter = Router();
 
-articleRouter.get('/', authenticate, requireAnyRole,
+articleRouter.get('/', authenticate, requireAnyEstablishmentRole,
   asyncHandler(async (req, res) => {
     const params = parsePagination(req);
     const { categoryId, search, lowStock } = req.query as any;
@@ -311,28 +426,29 @@ articleRouter.get('/', authenticate, requireAnyRole,
   })
 );
 
-articleRouter.get('/low-stock', authenticate, requireManager,
+articleRouter.get('/low-stock', authenticate, requireDAFOrManager,
   asyncHandler(async (req, res) => {
     const data = await articleService.getLowStock(req.user!.tenantId);
     res.json({ success: true, data });
   })
 );
 
-articleRouter.get('/:id', authenticate, requireAnyRole,
+articleRouter.get('/:id', authenticate, requireAnyEstablishmentRole,
   asyncHandler(async (req, res) => {
     const data = await articleService.getById(req.user!.tenantId, req.params.id);
     res.json({ success: true, data });
   })
 );
 
-articleRouter.post('/', authenticate, requireManager, validate(v.createArticleSchema),
+// DAF creates products and sets prices
+articleRouter.post('/', authenticate, requireDAF, validate(v.createArticleSchema),
   asyncHandler(async (req, res) => {
     const data = await articleService.create(req.user!.tenantId, req.body);
     res.status(201).json({ success: true, data });
   })
 );
 
-articleRouter.patch('/:id', authenticate, requireManager, validate(v.updateArticleSchema),
+articleRouter.patch('/:id', authenticate, requireDAF, validate(v.updateArticleSchema),
   asyncHandler(async (req, res) => {
     const data = await articleService.update(req.user!.tenantId, req.params.id, req.body);
     res.json({ success: true, data });
@@ -344,21 +460,21 @@ articleRouter.patch('/:id', authenticate, requireManager, validate(v.updateArtic
 // =============================================================================
 export const categoryRouter = Router();
 
-categoryRouter.get('/', authenticate, requireAnyRole,
+categoryRouter.get('/', authenticate, requireAnyEstablishmentRole,
   asyncHandler(async (req, res) => {
     const data = await categoryService.list(req.user!.tenantId);
     res.json({ success: true, data });
   })
 );
 
-categoryRouter.post('/', authenticate, requireManager, validate(v.createCategorySchema),
+categoryRouter.post('/', authenticate, requireDAF, validate(v.createCategorySchema),
   asyncHandler(async (req, res) => {
     const data = await categoryService.create(req.user!.tenantId, req.body);
     res.status(201).json({ success: true, data });
   })
 );
 
-categoryRouter.patch('/:id', authenticate, requireManager, validate(v.updateCategorySchema),
+categoryRouter.patch('/:id', authenticate, requireDAF, validate(v.updateCategorySchema),
   asyncHandler(async (req, res) => {
     const data = await categoryService.update(req.user!.tenantId, req.params.id, req.body);
     res.json({ success: true, data });
@@ -370,7 +486,7 @@ categoryRouter.patch('/:id', authenticate, requireManager, validate(v.updateCate
 // =============================================================================
 export const stockMovementRouter = Router();
 
-stockMovementRouter.get('/', authenticate, requireAnyRole,
+stockMovementRouter.get('/', authenticate, requireDAFOrManager,
   asyncHandler(async (req, res) => {
     const params = parsePagination(req);
     const { articleId, type, from, to, pendingApproval } = req.query as any;
@@ -382,16 +498,148 @@ stockMovementRouter.get('/', authenticate, requireAnyRole,
   })
 );
 
-stockMovementRouter.post('/', authenticate, requireAnyRole, validate(v.createStockMovementSchema),
+stockMovementRouter.post('/', authenticate, requireDAFOrManager, validate(v.createStockMovementSchema),
   asyncHandler(async (req, res) => {
     const data = await stockService.createMovement(req.user!.tenantId, req.user!.id, req.body);
     res.status(201).json({ success: true, ...data });
   })
 );
 
-stockMovementRouter.post('/:id/approve', authenticate, requireManager,
+stockMovementRouter.post('/:id/approve', authenticate, requireDAF,
   asyncHandler(async (req, res) => {
     const data = await stockService.approveMovement(req.user!.tenantId, req.params.id, req.user!.id);
+    res.json({ success: true, data });
+  })
+);
+
+// =============================================================================
+// STOCK ALERTS
+// =============================================================================
+export const stockAlertRouter = Router();
+
+stockAlertRouter.get('/', authenticate, requireDAFOrManager,
+  asyncHandler(async (req, res) => {
+    const params = parsePagination(req);
+    const { establishmentId, isResolved } = req.query as any;
+    const data = await stockAlertService.list(req.user!.tenantId, params, {
+      establishmentId,
+      isResolved: isResolved !== undefined ? isResolved === 'true' : undefined,
+    });
+    res.json({ success: true, ...data });
+  })
+);
+
+// MANAGER creates stock alerts to notify DAF
+stockAlertRouter.post('/', authenticate, requireDAFOrManager, validate(v.createStockAlertSchema),
+  asyncHandler(async (req, res) => {
+    const data = await stockAlertService.create(req.user!.tenantId, {
+      ...req.body,
+      createdById: req.user!.id,
+    });
+    res.status(201).json({ success: true, data });
+  })
+);
+
+// DAF resolves alerts
+stockAlertRouter.post('/:id/resolve', authenticate, requireDAF,
+  asyncHandler(async (req, res) => {
+    const data = await stockAlertService.resolve(req.user!.tenantId, req.params.id);
+    res.json({ success: true, data });
+  })
+);
+
+stockAlertRouter.get('/count/:establishmentId', authenticate, requireDAFOrManager,
+  asyncHandler(async (req, res) => {
+    const count = await stockAlertService.getUnresolvedCount(req.user!.tenantId, req.params.establishmentId);
+    res.json({ success: true, data: { count } });
+  })
+);
+
+// =============================================================================
+// APPROVAL REQUESTS
+// =============================================================================
+export const approvalRouter = Router();
+
+approvalRouter.get('/', authenticate, requireDAF,
+  asyncHandler(async (req, res) => {
+    const params = parsePagination(req);
+    const { establishmentId, status, type } = req.query as any;
+    const data = await approvalService.list(req.user!.tenantId, params, {
+      establishmentId, status, type,
+    });
+    res.json({ success: true, ...data });
+  })
+);
+
+approvalRouter.post('/', authenticate, requireDAFOrManager, validate(v.createApprovalSchema),
+  asyncHandler(async (req, res) => {
+    const data = await approvalService.create(req.user!.tenantId, {
+      ...req.body,
+      requestedById: req.user!.id,
+    });
+    res.status(201).json({ success: true, data });
+  })
+);
+
+approvalRouter.post('/:id/approve', authenticate, requireDAF,
+  asyncHandler(async (req, res) => {
+    const data = await approvalService.approve(req.user!.tenantId, req.params.id, req.user!.id);
+    res.json({ success: true, data });
+  })
+);
+
+approvalRouter.post('/:id/reject', authenticate, requireDAF, validate(v.rejectApprovalSchema),
+  asyncHandler(async (req, res) => {
+    const data = await approvalService.reject(req.user!.tenantId, req.params.id, req.user!.id, req.body.reason);
+    res.json({ success: true, data });
+  })
+);
+
+approvalRouter.get('/pending-count/:establishmentId', authenticate, requireDAF,
+  asyncHandler(async (req, res) => {
+    const count = await approvalService.getPendingCount(req.user!.tenantId, req.params.establishmentId);
+    res.json({ success: true, data: { count } });
+  })
+);
+
+// =============================================================================
+// CLEANING SESSIONS
+// =============================================================================
+export const cleaningRouter = Router();
+
+cleaningRouter.get('/', authenticate, requireCleaningAccess,
+  asyncHandler(async (req, res) => {
+    const params = parsePagination(req);
+    const { establishmentId, cleanerId, status, roomId, from, to } = req.query as any;
+    const data = await cleaningService.list(req.user!.tenantId, params, {
+      establishmentId, cleanerId, status, roomId, from, to,
+    });
+    res.json({ success: true, ...data });
+  })
+);
+
+cleaningRouter.get('/active/:establishmentId', authenticate, requireCleaningAccess,
+  asyncHandler(async (req, res) => {
+    const data = await cleaningService.getActiveSessions(req.user!.tenantId, req.params.establishmentId);
+    res.json({ success: true, data });
+  })
+);
+
+// Cleaner clocks in
+cleaningRouter.post('/clock-in', authenticate, requireCleaningAccess, validate(v.clockInSchema),
+  asyncHandler(async (req, res) => {
+    const data = await cleaningService.clockIn(req.user!.tenantId, {
+      ...req.body,
+      cleanerId: req.user!.id,
+    });
+    res.status(201).json({ success: true, data });
+  })
+);
+
+// Cleaner clocks out
+cleaningRouter.post('/:id/clock-out', authenticate, requireCleaningAccess,
+  asyncHandler(async (req, res) => {
+    const data = await cleaningService.clockOut(req.user!.tenantId, req.params.id, req.user!.id);
     res.json({ success: true, data });
   })
 );
@@ -401,7 +649,7 @@ stockMovementRouter.post('/:id/approve', authenticate, requireManager,
 // =============================================================================
 export const supplierRouter = Router();
 
-supplierRouter.get('/', authenticate, requireAnyRole,
+supplierRouter.get('/', authenticate, requireDAFOrManager,
   asyncHandler(async (req, res) => {
     const params = parsePagination(req);
     const data = await supplierService.list(req.user!.tenantId, params, req.query.search as string);
@@ -409,28 +657,28 @@ supplierRouter.get('/', authenticate, requireAnyRole,
   })
 );
 
-supplierRouter.get('/:id', authenticate, requireAnyRole,
+supplierRouter.get('/:id', authenticate, requireDAFOrManager,
   asyncHandler(async (req, res) => {
     const data = await supplierService.getById(req.user!.tenantId, req.params.id);
     res.json({ success: true, data });
   })
 );
 
-supplierRouter.post('/', authenticate, requireManager, validate(v.createSupplierSchema),
+supplierRouter.post('/', authenticate, requireDAF, validate(v.createSupplierSchema),
   asyncHandler(async (req, res) => {
     const data = await supplierService.create(req.user!.tenantId, req.body);
     res.status(201).json({ success: true, data });
   })
 );
 
-supplierRouter.patch('/:id', authenticate, requireManager, validate(v.updateSupplierSchema),
+supplierRouter.patch('/:id', authenticate, requireDAF, validate(v.updateSupplierSchema),
   asyncHandler(async (req, res) => {
     const data = await supplierService.update(req.user!.tenantId, req.params.id, req.body);
     res.json({ success: true, data });
   })
 );
 
-supplierRouter.delete('/:id', authenticate, requireManager,
+supplierRouter.delete('/:id', authenticate, requireDAF,
   asyncHandler(async (req, res) => {
     await supplierService.delete(req.user!.tenantId, req.params.id);
     res.json({ success: true, message: 'Fournisseur désactivé' });
@@ -498,7 +746,7 @@ integrationRouter.post('/external-bookings', authenticateApiKey, validate(v.exte
 );
 
 // POST /api/pos/transactions (POS app)
-integrationRouter.post('/pos/transactions', authenticate, requireAnyRole, validate(v.posTransactionSchema),
+integrationRouter.post('/pos/transactions', authenticate, requirePaymentRole, validate(v.posTransactionSchema),
   asyncHandler(async (req, res) => {
     const result = await paymentService.processPosTransaction(
       req.user!.tenantId,

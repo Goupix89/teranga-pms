@@ -26,7 +26,7 @@ export default function SettingsPage() {
           </div>
           <div className="flex justify-between py-2 border-b border-gray-100">
             <span className="text-gray-500">Rôle</span>
-            <span className="font-medium">{{ SUPERADMIN: 'Super Admin', ADMIN: 'Admin Établissement', MANAGER: 'Manager', EMPLOYEE: 'Employé' }[user?.role || ''] || user?.role}</span>
+            <span className="font-medium">{user?.role === 'SUPERADMIN' ? 'Super Admin' : 'Employé'}</span>
           </div>
         </div>
       </div>

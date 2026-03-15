@@ -15,7 +15,7 @@ async function archiveInactiveUsers() {
       where: {
         status: 'ACTIVE',
         lastActiveAt: { lt: cutoff },
-        role: { notIn: ['SUPERADMIN', 'ADMIN'] },
+        role: { not: 'SUPERADMIN' },
       },
       select: { id: true, tenantId: true, email: true, lastActiveAt: true },
     });

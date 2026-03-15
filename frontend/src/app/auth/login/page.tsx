@@ -25,7 +25,7 @@ export default function LoginPage() {
 
     try {
       const { data } = await api.post('/auth/login', { email, password });
-      setAuth(data.data.accessToken, data.data.user);
+      setAuth(data.data.accessToken, data.data.refreshToken, data.data.user);
       toast.success(`Bienvenue, ${data.data.user.firstName} !`);
       router.push('/dashboard');
     } catch (err: any) {
@@ -149,8 +149,8 @@ export default function LoginPage() {
 
           <div className="mt-6 rounded-lg bg-gray-50 border border-gray-200 p-4">
             <p className="text-xs font-medium text-gray-500 mb-2">Compte de démonstration :</p>
-            <p className="text-xs text-gray-600">Email: <code className="bg-white px-1.5 py-0.5 rounded text-primary-700">admin@hoteldemo.com</code></p>
-            <p className="text-xs text-gray-600 mt-1">Mot de passe: <code className="bg-white px-1.5 py-0.5 rounded text-primary-700">Admin123!</code></p>
+            <p className="text-xs text-gray-600">Email: <code className="bg-white px-1.5 py-0.5 rounded text-primary-700">daf@hoteldemo.com</code></p>
+            <p className="text-xs text-gray-600 mt-1">Mot de passe: <code className="bg-white px-1.5 py-0.5 rounded text-primary-700">Daf12345!</code></p>
           </div>
         </div>
       </div>

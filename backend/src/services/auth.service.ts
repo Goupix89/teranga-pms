@@ -105,6 +105,16 @@ export class AuthService {
       },
     });
 
+    // Load active memberships
+    const memberships = await prisma.establishmentMember.findMany({
+      where: { userId: user.id, isActive: true },
+      select: {
+        establishmentId: true,
+        role: true,
+        establishment: { select: { id: true, name: true } },
+      },
+    });
+
     logger.info('User logged in', {
       userId: user.id,
       tenantId: user.tenantId,
@@ -122,6 +132,11 @@ export class AuthService {
         role: user.role,
         tenantId: user.tenantId,
         tenantSlug: user.tenant.slug,
+        memberships: memberships.map(m => ({
+          establishmentId: m.establishmentId,
+          establishmentName: m.establishment.name,
+          role: m.role,
+        })),
       },
     };
   }

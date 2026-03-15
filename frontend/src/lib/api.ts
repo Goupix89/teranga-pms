@@ -7,6 +7,7 @@ export const api = axios.create({
   baseURL: `${API_URL}/api`,
   headers: { 'Content-Type': 'application/json' },
   timeout: 30000,
+  withCredentials: true,
 });
 
 // Request interceptor — inject access token
@@ -41,7 +42,8 @@ api.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    const isAuthRoute = originalRequest.url?.includes('/auth/login') || originalRequest.url?.includes('/auth/refresh');
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthRoute) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
@@ -55,8 +57,9 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const { data } = await axios.post(`${API_URL}/api/auth/refresh`, {}, {
-          withCredentials: true,
+        const currentRefreshToken = useAuthStore.getState().refreshToken;
+        const { data } = await axios.post(`${API_URL}/api/auth/refresh`, {
+          refreshToken: currentRefreshToken,
         });
 
         const newToken = data.data.accessToken;

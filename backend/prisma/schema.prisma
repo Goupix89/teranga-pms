@@ -17,8 +17,6 @@ datasource db {
 
 enum UserRole {
   SUPERADMIN
-  ADMIN
-  MANAGER
   EMPLOYEE
 }
 
@@ -27,6 +25,15 @@ enum UserStatus {
   PENDING_APPROVAL
   LOCKED
   ARCHIVED
+}
+
+enum EstablishmentRole {
+  DAF
+  MANAGER
+  SERVER
+  POS
+  COOK
+  CLEANER
 }
 
 enum RoomType {
@@ -41,6 +48,7 @@ enum RoomStatus {
   AVAILABLE
   OCCUPIED
   MAINTENANCE
+  CLEANING
   OUT_OF_ORDER
 }
 
@@ -67,6 +75,8 @@ enum PaymentMethod {
   CARD
   BANK_TRANSFER
   MOBILE_MONEY
+  MOOV_MONEY
+  MIXX_BY_YAS
   OTHER
 }
 
@@ -102,6 +112,30 @@ enum BillingInterval {
   YEARLY
 }
 
+enum OrderStatus {
+  PENDING
+  IN_PROGRESS
+  READY
+  SERVED
+  CANCELLED
+}
+
+enum ApprovalType {
+  EMPLOYEE_CREATION
+  RESERVATION_MODIFICATION
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum CleaningStatus {
+  IN_PROGRESS
+  COMPLETED
+}
+
 // =============================================================================
 // CORE MODELS
 // =============================================================================
@@ -117,19 +151,23 @@ model Tenant {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  users          User[]
-  establishments Establishment[]
-  rooms          Room[]
-  reservations   Reservation[]
-  invoices       Invoice[]
-  payments       Payment[]
-  articles       Article[]
-  categories     ArticleCategory[]
-  suppliers      Supplier[]
-  stockMovements StockMovement[]
-  refreshTokens  RefreshToken[]
-  apiKeys        ApiKey[]
-  subscription   Subscription?
+  users            User[]
+  establishments   Establishment[]
+  rooms            Room[]
+  reservations     Reservation[]
+  invoices         Invoice[]
+  payments         Payment[]
+  articles         Article[]
+  categories       ArticleCategory[]
+  suppliers        Supplier[]
+  stockMovements   StockMovement[]
+  refreshTokens    RefreshToken[]
+  apiKeys          ApiKey[]
+  subscription     Subscription?
+  orders           Order[]
+  approvalRequests ApprovalRequest[]
+  stockAlerts      StockAlert[]
+  cleaningSessions CleaningSession[]
 
   @@map("tenants")
 }
@@ -139,7 +177,7 @@ model ApiKey {
   tenantId  String   @map("tenant_id")
   name      String
   keyHash   String   @unique @map("key_hash")
-  prefix    String   // First 8 chars for identification
+  prefix    String
   isActive  Boolean  @default(true) @map("is_active")
   expiresAt DateTime @map("expires_at")
   lastUsedAt DateTime? @map("last_used_at")
@@ -169,12 +207,17 @@ model User {
   createdAt           DateTime   @default(now()) @map("created_at")
   updatedAt           DateTime   @updatedAt @map("updated_at")
 
-  tenant          Tenant          @relation(fields: [tenantId], references: [id])
-  establishments  Establishment[] @relation("UserEstablishments")
-  refreshTokens   RefreshToken[]
-  stockMovements  StockMovement[]
-  invoicesCreated Invoice[]       @relation("InvoiceCreator")
-  approvedMovements StockMovement[] @relation("MovementApprover")
+  tenant              Tenant                @relation(fields: [tenantId], references: [id])
+  memberships         EstablishmentMember[]
+  refreshTokens       RefreshToken[]
+  stockMovements      StockMovement[]
+  invoicesCreated     Invoice[]             @relation("InvoiceCreator")
+  approvedMovements   StockMovement[]       @relation("MovementApprover")
+  ordersCreated       Order[]
+  approvalRequests    ApprovalRequest[]     @relation("ApprovalRequester")
+  approvalReviews     ApprovalRequest[]     @relation("ApprovalReviewer")
+  stockAlerts         StockAlert[]
+  cleaningSessions    CleaningSession[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -201,6 +244,10 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
+// =============================================================================
+// ESTABLISHMENT & MEMBERSHIP
+// =============================================================================
+
 model Establishment {
   id         String   @id @default(uuid())
   tenantId   String   @map("tenant_id")
@@ -217,14 +264,36 @@ model Establishment {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-  users  User[] @relation("UserEstablishments")
-  rooms  Room[]
+  tenant           Tenant                @relation(fields: [tenantId], references: [id])
+  members          EstablishmentMember[]
+  rooms            Room[]
+  orders           Order[]
+  cleaningSessions CleaningSession[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
   @@map("establishments")
 }
+
+model EstablishmentMember {
+  id              String            @id @default(uuid())
+  userId          String            @map("user_id")
+  establishmentId String            @map("establishment_id")
+  role            EstablishmentRole
+  isActive        Boolean           @default(true) @map("is_active")
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  establishment Establishment @relation(fields: [establishmentId], references: [id])
+
+  @@unique([userId, establishmentId])
+  @@index([establishmentId, role])
+  @@map("establishment_members")
+}
+
+// =============================================================================
+// ROOMS & RESERVATIONS
+// =============================================================================
 
 model Room {
   id              String     @id @default(uuid())
@@ -242,9 +311,10 @@ model Room {
   createdAt       DateTime   @default(now()) @map("created_at")
   updatedAt       DateTime   @updatedAt @map("updated_at")
 
-  tenant        Tenant        @relation(fields: [tenantId], references: [id])
-  establishment Establishment @relation(fields: [establishmentId], references: [id])
-  reservations  Reservation[]
+  tenant           Tenant            @relation(fields: [tenantId], references: [id])
+  establishment    Establishment     @relation(fields: [establishmentId], references: [id])
+  reservations     Reservation[]
+  cleaningSessions CleaningSession[]
 
   @@unique([tenantId, establishmentId, number])
   @@index([tenantId])
@@ -282,6 +352,56 @@ model Reservation {
   @@map("reservations")
 }
 
+// =============================================================================
+// ORDERS (Restaurant / Bar / Services)
+// =============================================================================
+
+model Order {
+  id              String      @id @default(uuid())
+  tenantId        String      @map("tenant_id")
+  establishmentId String      @map("establishment_id")
+  createdById     String      @map("created_by_id")
+  orderNumber     String      @map("order_number")
+  tableNumber     String?     @map("table_number")
+  status          OrderStatus @default(PENDING)
+  notes           String?
+  totalAmount     Decimal     @default(0) @map("total_amount") @db.Decimal(10, 2)
+  invoiceId       String?     @map("invoice_id")
+  readyAt         DateTime?   @map("ready_at")
+  servedAt        DateTime?   @map("served_at")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id])
+  establishment Establishment @relation(fields: [establishmentId], references: [id])
+  createdBy     User          @relation(fields: [createdById], references: [id])
+  invoice       Invoice?      @relation(fields: [invoiceId], references: [id])
+  items         OrderItem[]
+
+  @@unique([tenantId, orderNumber])
+  @@index([tenantId, establishmentId, status])
+  @@index([tenantId, createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String  @id @default(uuid())
+  orderId   String  @map("order_id")
+  articleId String  @map("article_id")
+  quantity  Int
+  unitPrice Decimal @map("unit_price") @db.Decimal(10, 2)
+  notes     String?
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  article Article @relation(fields: [articleId], references: [id])
+
+  @@map("order_items")
+}
+
+// =============================================================================
+// INVOICES & PAYMENTS
+// =============================================================================
+
 model Invoice {
   id            String        @id @default(uuid())
   tenantId      String        @map("tenant_id")
@@ -305,6 +425,7 @@ model Invoice {
   createdBy   User         @relation("InvoiceCreator", fields: [createdById], references: [id])
   items       InvoiceItem[]
   payments    Payment[]
+  orders      Order[]
 
   @@unique([tenantId, invoiceNumber])
   @@index([tenantId])
@@ -386,6 +507,8 @@ model Article {
   category       ArticleCategory?  @relation(fields: [categoryId], references: [id])
   stockMovements StockMovement[]
   invoiceItems   InvoiceItem[]
+  orderItems     OrderItem[]
+  stockAlerts    StockAlert[]
 
   @@unique([tenantId, sku])
   @@index([tenantId])
@@ -440,6 +563,78 @@ model StockMovement {
   @@index([tenantId, articleId])
   @@index([tenantId, createdAt])
   @@map("stock_movements")
+}
+
+model StockAlert {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  establishmentId String   @map("establishment_id")
+  articleId       String   @map("article_id")
+  createdById     String   @map("created_by_id")
+  message         String
+  isResolved      Boolean  @default(false) @map("is_resolved")
+  resolvedAt      DateTime? @map("resolved_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  tenant    Tenant  @relation(fields: [tenantId], references: [id])
+  article   Article @relation(fields: [articleId], references: [id])
+  createdBy User    @relation(fields: [createdById], references: [id])
+
+  @@index([tenantId, establishmentId, isResolved])
+  @@map("stock_alerts")
+}
+
+// =============================================================================
+// APPROVAL WORKFLOW
+// =============================================================================
+
+model ApprovalRequest {
+  id              String         @id @default(uuid())
+  tenantId        String         @map("tenant_id")
+  establishmentId String         @map("establishment_id")
+  type            ApprovalType
+  status          ApprovalStatus @default(PENDING)
+  requestedById   String         @map("requested_by_id")
+  reviewedById    String?        @map("reviewed_by_id")
+  payload         Json
+  targetId        String?        @map("target_id")
+  reason          String?
+  reviewedAt      DateTime?      @map("reviewed_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id])
+  requestedBy User   @relation("ApprovalRequester", fields: [requestedById], references: [id])
+  reviewedBy  User?  @relation("ApprovalReviewer", fields: [reviewedById], references: [id])
+
+  @@index([tenantId, establishmentId, status])
+  @@map("approval_requests")
+}
+
+// =============================================================================
+// CLEANING
+// =============================================================================
+
+model CleaningSession {
+  id              String         @id @default(uuid())
+  tenantId        String         @map("tenant_id")
+  establishmentId String         @map("establishment_id")
+  roomId          String         @map("room_id")
+  cleanerId       String         @map("cleaner_id")
+  status          CleaningStatus @default(IN_PROGRESS)
+  clockInAt       DateTime       @default(now()) @map("clock_in_at")
+  clockOutAt      DateTime?      @map("clock_out_at")
+  durationMinutes Int?           @map("duration_minutes")
+  notes           String?
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id])
+  establishment Establishment @relation(fields: [establishmentId], references: [id])
+  room          Room          @relation(fields: [roomId], references: [id])
+  cleaner       User          @relation(fields: [cleanerId], references: [id])
+
+  @@index([tenantId, establishmentId, status])
+  @@index([roomId, status])
+  @@map("cleaning_sessions")
 }
 
 // =============================================================================

@@ -24,13 +24,13 @@ export const config = {
 
   cors: {
     originPattern: process.env.CORS_ORIGIN_PATTERN || 'http://localhost:*',
-    allowedOrigins: (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(','),
+    allowedOrigins: (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:3001').split(','),
   },
 
   rateLimit: {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10),
     max: parseInt(process.env.RATE_LIMIT_MAX || '100', 10),
-    authMax: parseInt(process.env.AUTH_RATE_LIMIT_MAX || '5', 10),
+    authMax: parseInt(process.env.AUTH_RATE_LIMIT_MAX || '30', 10),
   },
 
   bcrypt: {

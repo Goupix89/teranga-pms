@@ -26,19 +26,30 @@ export interface PaginatedResponse<T> {
 // Enums
 // =============================================================================
 
-export type UserRole = 'SUPERADMIN' | 'ADMIN' | 'MANAGER' | 'EMPLOYEE';
+export type UserRole = 'SUPERADMIN' | 'EMPLOYEE';
+export type EstablishmentRole = 'DAF' | 'MANAGER' | 'SERVER' | 'POS' | 'COOK' | 'CLEANER';
 export type UserStatus = 'ACTIVE' | 'PENDING_APPROVAL' | 'LOCKED' | 'ARCHIVED';
 export type RoomType = 'SINGLE' | 'DOUBLE' | 'SUITE' | 'FAMILY' | 'DELUXE';
-export type RoomStatus = 'AVAILABLE' | 'OCCUPIED' | 'MAINTENANCE' | 'OUT_OF_ORDER';
+export type RoomStatus = 'AVAILABLE' | 'OCCUPIED' | 'MAINTENANCE' | 'OUT_OF_ORDER' | 'CLEANING';
 export type ReservationStatus = 'PENDING' | 'CONFIRMED' | 'CHECKED_IN' | 'CHECKED_OUT' | 'CANCELLED' | 'NO_SHOW';
 export type InvoiceStatus = 'DRAFT' | 'ISSUED' | 'PAID' | 'PARTIALLY_PAID' | 'CANCELLED' | 'OVERDUE';
-export type PaymentMethod = 'CASH' | 'CARD' | 'BANK_TRANSFER' | 'MOBILE_MONEY' | 'OTHER';
+export type PaymentMethod = 'CASH' | 'CARD' | 'BANK_TRANSFER' | 'MOBILE_MONEY' | 'MOOV_MONEY' | 'MIXX_BY_YAS' | 'OTHER';
 export type StockMovementType = 'PURCHASE' | 'SALE' | 'ADJUSTMENT' | 'TRANSFER' | 'WASTE' | 'RETURN';
 export type BookingSource = 'DIRECT' | 'BOOKING_COM' | 'EXPEDIA' | 'AIRBNB' | 'CHANNEL_MANAGER' | 'PHONE' | 'WALK_IN';
+export type OrderStatus = 'PENDING' | 'IN_PROGRESS' | 'READY' | 'SERVED' | 'CANCELLED';
+export type ApprovalType = 'EMPLOYEE_CREATION' | 'RESERVATION_MODIFICATION';
+export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+export type CleaningStatus = 'IN_PROGRESS' | 'COMPLETED';
 
 // =============================================================================
 // Auth
 // =============================================================================
+
+export interface EstablishmentMembership {
+  establishmentId: string;
+  establishmentName: string;
+  role: EstablishmentRole;
+}
 
 export interface AuthUser {
   id: string;
@@ -48,10 +59,12 @@ export interface AuthUser {
   role: UserRole;
   tenantId: string;
   tenantSlug: string;
+  memberships: EstablishmentMembership[];
 }
 
 export interface LoginResponse {
   accessToken: string;
+  refreshToken: string;
   user: AuthUser;
 }
 
@@ -80,7 +93,11 @@ export interface User {
   lastLoginAt?: string | null;
   lastActiveAt?: string | null;
   createdAt: string;
-  establishments?: Array<{ id: string; name: string }>;
+  memberships?: Array<{
+    establishmentId: string;
+    role: EstablishmentRole;
+    establishment?: { id: string; name: string };
+  }>;
 }
 
 export interface Establishment {
@@ -234,5 +251,69 @@ export interface StockMovement {
   article?: { name: string; sku?: string | null; unit: string };
   supplier?: { name: string } | null;
   performedBy?: { firstName: string; lastName: string };
+  createdAt: string;
+}
+
+export interface Order {
+  id: string;
+  orderNumber: string;
+  establishmentId: string;
+  tableNumber?: string | null;
+  status: OrderStatus;
+  totalAmount: number;
+  notes?: string | null;
+  readyAt?: string | null;
+  servedAt?: string | null;
+  items: OrderItem[];
+  createdBy?: { id: string; firstName: string; lastName: string };
+  establishment?: { id: string; name: string };
+  createdAt: string;
+}
+
+export interface OrderItem {
+  id: string;
+  articleId: string;
+  quantity: number;
+  unitPrice: number;
+  article?: { id: string; name: string };
+}
+
+export interface ApprovalRequest {
+  id: string;
+  establishmentId: string;
+  type: ApprovalType;
+  status: ApprovalStatus;
+  payload: Record<string, unknown>;
+  targetId?: string | null;
+  reason?: string | null;
+  requestedBy?: { id: string; firstName: string; lastName: string; email: string };
+  reviewedBy?: { id: string; firstName: string; lastName: string } | null;
+  reviewedAt?: string | null;
+  createdAt: string;
+}
+
+export interface CleaningSession {
+  id: string;
+  establishmentId: string;
+  roomId: string;
+  cleanerId: string;
+  status: CleaningStatus;
+  clockInAt: string;
+  clockOutAt?: string | null;
+  durationMinutes?: number | null;
+  notes?: string | null;
+  room?: { id: string; number: string; floor?: number | null };
+  cleaner?: { id: string; firstName: string; lastName: string };
+}
+
+export interface StockAlert {
+  id: string;
+  establishmentId: string;
+  articleId: string;
+  message: string;
+  isResolved: boolean;
+  resolvedAt?: string | null;
+  article?: { id: string; name: string; sku?: string | null; currentStock: number; minimumStock: number };
+  createdBy?: { id: string; firstName: string; lastName: string };
   createdAt: string;
 }

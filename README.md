@@ -28,9 +28,9 @@ hotel-pms/
 ## Modules Fonctionnels
 
 1. **Multi-tenant** — Isolation par `tenant_id`, middleware Prisma automatique
-2. **Authentification** — JWT dual-token, RBAC 4 niveaux (SuperAdmin/Admin/Manager/Employé)
-3. **Utilisateurs** — CRUD, approbation par admin, archivage automatique des comptes inactifs, isolation par établissement
-4. **Établissements** — Multi-établissement par tenant, admin dédié par établissement
+2. **Authentification** — JWT dual-token, RBAC 2 niveaux (tenant + établissement)
+3. **Utilisateurs** — CRUD, approbation par DAF, archivage automatique des comptes inactifs, rôles par établissement
+4. **Établissements** — Multi-établissement par tenant, rôles dédiés (DAF, Manager, Serveur, POS, Cuisinier, Ménage)
 5. **Chambres** — CRUD, gestion des statuts, filtres avancés
 6. **Réservations** — CRUD, check-in/check-out, anti-double-booking transactionnel
 7. **Factures** — Lifecycle complet (brouillon → émise → payée), numérotation auto
@@ -119,64 +119,101 @@ npm run dev
 | Rôle | Email | Mot de passe |
 |------|-------|-------------|
 | Super Admin | superadmin@hoteldemo.com | Admin123! |
-| Admin Établissement | admin@hoteldemo.com | Admin123! |
+| DAF (admin étab.) | daf@hoteldemo.com | Daf12345! |
 | Manager | manager@hoteldemo.com | Manager123! |
-| Employé | employee@hoteldemo.com | Employee123! |
+| Serveur | serveur@hoteldemo.com | Serveur123! |
+| POS | pos@hoteldemo.com | Pos12345! |
+| Cuisinier | cuisinier@hoteldemo.com | Cook1234! |
+| Ménage | menage@hoteldemo.com | Menage123! |
 
 ## Rôles et permissions (RBAC)
 
-Le système définit **4 niveaux d'accès** :
+Le système utilise un **RBAC à 2 niveaux** :
 
-| Rôle | Portée | Description |
-|------|--------|-------------|
-| **SUPERADMIN** | Plateforme | Administrateur principal, accès total à tous les établissements et paramètres |
-| **ADMIN** | Établissement | Administrateur rattaché à un ou plusieurs établissements, gère uniquement ses établissements |
-| **MANAGER** | Établissement | Peut créer des employés (sous validation de l'admin), gère les opérations courantes |
-| **EMPLOYEE** | Établissement | Accès opérationnel : chambres, réservations |
+### Niveau 1 — Rôle Tenant (UserRole)
+
+| Rôle | Description |
+|------|-------------|
+| **SUPERADMIN** | Administrateur plateforme, accès total, bypass toutes les vérifications |
+| **EMPLOYEE** | Utilisateur standard, ses droits dépendent de ses rôles par établissement |
+
+### Niveau 2 — Rôle Établissement (EstablishmentRole)
+
+Chaque utilisateur EMPLOYEE est assigné à un ou plusieurs établissements via un `EstablishmentMember` portant un rôle :
+
+| Rôle | Description |
+|------|-------------|
+| **DAF** | Directeur Administratif et Financier — administrateur de l'établissement. Valide les créations d'employés, gère finances/stock/rapports, crée les produits et fixe les prix, dashboard avec graphiques (occupation, fréquentation, stock, revenus), vue performance utilisateurs |
+| **MANAGER** | Vue stock + alertes DAF en cas de pénurie, crée réservations (modifications sous validation DAF), crée employés par rôle (sous validation DAF) |
+| **SERVER** | Serveur — application mobile pour prise de commandes, crée des commandes payables via QR code (Moov Money / Mixx by Yas → USSD marchand), stats commandes jour/semaine/mois |
+| **POS** | Point de vente — regroupe toutes les facturations, paiements carte/Momo depuis l'application mobile |
+| **COOK** | Cuisinier — interface temps réel des commandes, signale les serveurs quand une commande est prête |
+| **CLEANER** | Ménage — pointage début/fin de ménage, chambre indisponible pendant le nettoyage |
 
 ### Matrice des permissions
 
-| Fonctionnalité | Super Admin | Admin Étab. | Manager | Employé |
-|----------------|:-----------:|:-----------:|:-------:|:-------:|
-| Paramètres plateforme | ✅ | | | |
-| Créer/supprimer établissements | ✅ | | | |
-| Modifier un établissement | ✅ | ✅ | | |
-| Gérer les utilisateurs | ✅ | ✅ | ✅ ¹ | |
-| Approuver les nouveaux employés | ✅ | ✅ | | |
-| Rapports | ✅ | ✅ | | |
-| Fournisseurs | ✅ | ✅ | | |
-| Factures & Paiements | ✅ | ✅ | ✅ | |
-| Stock & Inventaire | ✅ | ✅ | ✅ | |
-| Chambres (CRUD) | ✅ | ✅ | ✅ | lecture |
-| Réservations | ✅ | ✅ | ✅ | ✅ |
-| Tableau de bord | ✅ | ✅ | ✅ | ✅ |
+| Fonctionnalité | SuperAdmin | DAF | Manager | Serveur | POS | Cuisinier | Ménage |
+|----------------|:----------:|:---:|:-------:|:-------:|:---:|:---------:|:------:|
+| Paramètres plateforme | ✅ | | | | | | |
+| Créer/supprimer établissements | ✅ | | | | | | |
+| Modifier établissement | ✅ | ✅ | | | | | |
+| Gérer utilisateurs | ✅ | ✅ | ✅ ¹ | | | | |
+| Approuver employés | ✅ | ✅ | | | | | |
+| Rapports & Dashboard | ✅ | ✅ | | | | | |
+| Fournisseurs | ✅ | ✅ | | | | | |
+| Approbations | ✅ | ✅ | | | | | |
+| Articles & Prix | ✅ | ✅ | | | | | |
+| Stock & Inventaire | ✅ | ✅ | ✅ | | | | |
+| Alertes stock | ✅ | ✅ | ✅ | | | | |
+| Factures & Paiements | ✅ | ✅ | ✅ | ✅ | ✅ | | |
+| Commandes | ✅ | ✅ | ✅ | ✅ | | | |
+| Cuisine (temps réel) | ✅ | ✅ | ✅ | | | ✅ | |
+| Chambres | ✅ | ✅ | ✅ | ✅ | | | ✅ |
+| Réservations | ✅ | ✅ | ✅ | ✅ | | | |
+| Ménage & Pointage | ✅ | ✅ | ✅ | | | | ✅ |
+| Tableau de bord | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-¹ Le manager ne peut créer que des employés, qui restent en statut **« En attente »** jusqu'à validation par un admin.
+¹ Le manager ne peut créer que des serveurs, cuisiniers et ménage, qui restent en statut **« En attente »** jusqu'à validation par le DAF.
 
 ### Isolation par établissement
 
 - **SUPERADMIN** : accès global à tous les établissements du tenant
-- **ADMIN / MANAGER / EMPLOYEE** : accès limité aux établissements auxquels ils sont assignés
+- **Autres** : accès limité aux établissements auxquels ils sont assignés via `EstablishmentMember`
 
 ## Endpoints API
 
 ### Authentification
-- `POST /api/auth/login` — Connexion
+- `POST /api/auth/login` — Connexion (retourne les memberships de l'utilisateur)
 - `POST /api/auth/refresh` — Renouvellement token
 - `POST /api/auth/logout` — Déconnexion
 - `GET /api/auth/me` — Profil courant
 
-### Ressources (CRUD)
-- `/api/users` — Gestion utilisateurs (+ approve pour validation admin)
+### Utilisateurs & Membres
+- `/api/users` — Gestion utilisateurs (+ `POST /:id/approve` pour validation DAF)
+- `/api/establishments/:id/members` — Membres d'un établissement (CRUD, rôle par membre)
+
+### Établissements & Chambres
 - `/api/establishments` — Établissements
-- `/api/rooms` — Chambres
+- `/api/rooms` — Chambres (+ `PATCH /:id/status` pour changement de statut)
+
+### Réservations & Commandes
 - `/api/reservations` — Réservations (+ check-in, check-out, cancel)
+- `/api/orders` — Commandes restaurant/bar (+ `GET /kitchen/:estId`, `GET /stats/:estId`)
+
+### Facturation & Paiements
 - `/api/invoices` — Factures (+ issue, cancel)
 - `/api/payments` — Paiements
-- `/api/articles` — Articles inventaire
+
+### Stock & Inventaire
+- `/api/articles` — Articles inventaire (+ `/low-stock`)
 - `/api/categories` — Catégories articles
 - `/api/stock-movements` — Mouvements de stock (+ approve)
+- `/api/stock-alerts` — Alertes de stock (Manager → DAF)
 - `/api/suppliers` — Fournisseurs
+
+### Workflows
+- `/api/approvals` — Demandes d'approbation (création employé, modification réservation)
+- `/api/cleaning` — Sessions de ménage (clock-in/clock-out, sessions actives)
 
 ### Inscription & Abonnements
 - `GET /api/registration/plans` — Liste des plans d'abonnement (public)

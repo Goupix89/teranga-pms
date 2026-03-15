@@ -18,4 +18,4 @@ COPY . .
 EXPOSE 4000
 
 # Dev mode: tsx watch for hot reload, prisma push on startup
-CMD ["sh", "-c", "npx prisma db push --skip-generate && npx tsx watch src/server.ts"]
+CMD ["sh", "-c", "npx prisma db push --skip-generate --accept-data-loss && npx tsx watch src/server.ts"]

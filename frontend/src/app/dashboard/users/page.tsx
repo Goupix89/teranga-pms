@@ -6,20 +6,30 @@ import { apiGet, apiPost, apiPatch, apiDelete } from '@/lib/api';
 import { PageHeader, StatusBadge, Pagination, Modal, SearchInput, EmptyState, LoadingPage, ConfirmDialog } from '@/components/ui';
 import { Users as UsersIcon, Plus, Pencil, Archive, Loader2, Building2, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { formatDate } from '@/lib/utils';
+import { formatDate, statusLabels } from '@/lib/utils';
 import { useAuthStore } from '@/hooks/useAuthStore';
+import { EstablishmentRole } from '@/types';
+
+const estRoleOptions: Array<{ value: EstablishmentRole; label: string }> = [
+  { value: 'DAF', label: 'DAF' },
+  { value: 'MANAGER', label: 'Manager' },
+  { value: 'SERVER', label: 'Serveur' },
+  { value: 'POS', label: 'Point de vente' },
+  { value: 'COOK', label: 'Cuisinier' },
+  { value: 'CLEANER', label: 'Ménage' },
+];
 
 export default function UsersPage() {
   const queryClient = useQueryClient();
   const currentUser = useAuthStore((s) => s.user);
-  const role = currentUser?.role;
-  const isSuperAdmin = role === 'SUPERADMIN';
-  const isAdmin = role === 'ADMIN' || isSuperAdmin;
-  const isManager = role === 'MANAGER';
-  const canCreateUser = isAdmin || isManager;
-  const canEditUser = isAdmin;
-  const canArchiveUser = isAdmin;
-  const canApprove = isAdmin;
+  const currentEstRole = useAuthStore((s) => s.currentEstablishmentRole);
+  const isSuperAdmin = currentUser?.role === 'SUPERADMIN';
+  const isDAF = currentEstRole === 'DAF' || isSuperAdmin;
+  const isManager = currentEstRole === 'MANAGER';
+  const canCreateUser = isDAF || isManager;
+  const canEditUser = isDAF;
+  const canArchiveUser = isDAF;
+  const canApprove = isDAF;
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -27,7 +37,7 @@ export default function UsersPage() {
   const [editTarget, setEditTarget] = useState<any>(null);
   const [archiveTarget, setArchiveTarget] = useState<any>(null);
 
-  const defaultForm = { email: '', password: '', firstName: '', lastName: '', role: 'EMPLOYEE', phone: '', establishmentIds: [] as string[] };
+  const defaultForm = { email: '', password: '', firstName: '', lastName: '', phone: '', establishmentIds: [] as string[], establishmentRole: 'SERVER' as EstablishmentRole };
   const [form, setForm] = useState(defaultForm);
 
   const { data, isLoading } = useQuery({
@@ -44,7 +54,7 @@ export default function UsersPage() {
 
   const createMutation = useMutation({
     mutationFn: (body: any) => apiPost('/users', body),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['users'] }); setShowModal(false); setForm(defaultForm); toast.success(isManager ? 'Employé créé (en attente de validation)' : 'Utilisateur créé'); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['users'] }); setShowModal(false); setForm(defaultForm); toast.success(isManager ? 'Employé créé (en attente de validation du DAF)' : 'Utilisateur créé'); },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
   });
 
@@ -68,14 +78,15 @@ export default function UsersPage() {
 
   const openEdit = (u: any) => {
     setEditTarget(u);
+    const firstMembership = u.memberships?.[0];
     setForm({
       email: u.email,
       password: '',
       firstName: u.firstName,
       lastName: u.lastName,
-      role: u.role,
       phone: u.phone || '',
-      establishmentIds: u.establishments?.map((e: any) => e.id) || [],
+      establishmentIds: u.memberships?.map((m: any) => m.establishmentId) || [],
+      establishmentRole: firstMembership?.role || 'SERVER',
     });
   };
 
@@ -89,19 +100,15 @@ export default function UsersPage() {
   };
 
   // Role options depend on who's creating
-  const getRoleOptions = () => {
-    if (isSuperAdmin) return [
-      { value: 'EMPLOYEE', label: 'Employé' },
-      { value: 'MANAGER', label: 'Manager' },
-      { value: 'ADMIN', label: 'Admin Établissement' },
-      { value: 'SUPERADMIN', label: 'Super Admin' },
-    ];
-    if (role === 'ADMIN') return [
-      { value: 'EMPLOYEE', label: 'Employé' },
-      { value: 'MANAGER', label: 'Manager' },
-    ];
-    // MANAGER can only create EMPLOYEE
-    return [{ value: 'EMPLOYEE', label: 'Employé' }];
+  const getRoleOptions = (): Array<{ value: EstablishmentRole; label: string }> => {
+    if (isSuperAdmin || isDAF) {
+      // DAF can create all roles except DAF (DAF created by SUPERADMIN)
+      return isDAF && !isSuperAdmin
+        ? estRoleOptions.filter((o) => o.value !== 'DAF')
+        : estRoleOptions;
+    }
+    // MANAGER can only create SERVER, COOK, CLEANER
+    return estRoleOptions.filter((o) => ['SERVER', 'COOK', 'CLEANER'].includes(o.value));
   };
 
   const users = data?.data || [];
@@ -111,7 +118,7 @@ export default function UsersPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Utilisateurs" subtitle={`${meta?.total || 0} utilisateur${(meta?.total || 0) > 1 ? 's' : ''}`}
-        action={canCreateUser && <button onClick={() => { setForm(defaultForm); setShowModal(true); }} className="btn-primary"><Plus className="mr-2 h-4 w-4" /> {isManager ? 'Nouvel employé' : 'Nouvel utilisateur'}</button>} />
+        action={canCreateUser && <button onClick={() => { setForm(defaultForm); setShowModal(true); }} className="btn-primary"><Plus className="mr-2 h-4 w-4" /> Nouvel utilisateur</button>} />
 
       <div className="w-64"><SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Rechercher..." /></div>
 
@@ -119,22 +126,23 @@ export default function UsersPage() {
         <div className="card">
           <div className="table-container">
             <table>
-              <thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Établissements</th><th>Statut</th><th>Dernière connexion</th><th></th></tr></thead>
+              <thead><tr><th>Nom</th><th>Email</th><th>Établissements & Rôles</th><th>Statut</th><th>Dernière connexion</th><th></th></tr></thead>
               <tbody>
                 {users.map((u: any) => (
                   <tr key={u.id}>
                     <td className="font-medium text-gray-900">{u.firstName} {u.lastName}</td>
                     <td className="text-gray-500">{u.email}</td>
-                    <td><StatusBadge status={u.role} /></td>
                     <td>
                       <div className="flex flex-wrap gap-1">
-                        {u.establishments?.length > 0
-                          ? u.establishments.map((e: any) => (
-                              <span key={e.id} className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
-                                <Building2 className="h-3 w-3" />{e.name}
-                              </span>
-                            ))
-                          : <span className="text-xs text-gray-400">{u.role === 'SUPERADMIN' ? 'Tous' : 'Aucun'}</span>
+                        {u.role === 'SUPERADMIN'
+                          ? <span className="inline-flex items-center rounded-full bg-purple-50 px-2 py-0.5 text-xs text-purple-700 font-medium">Super Admin</span>
+                          : u.memberships?.length > 0
+                            ? u.memberships.map((m: any) => (
+                                <span key={m.establishmentId} className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
+                                  <Building2 className="h-3 w-3" />{m.establishment?.name} ({statusLabels[m.role] || m.role})
+                                </span>
+                              ))
+                            : <span className="text-xs text-gray-400">Aucun</span>
                         }
                       </div>
                     </td>
@@ -159,7 +167,7 @@ export default function UsersPage() {
       )}
 
       {/* Create user modal */}
-      <Modal open={showModal} onClose={() => setShowModal(false)} title={isManager ? 'Nouvel employé' : 'Nouvel utilisateur'} size="md">
+      <Modal open={showModal} onClose={() => setShowModal(false)} title="Nouvel utilisateur" size="md">
         <form onSubmit={(e) => { e.preventDefault(); createMutation.mutate(form); }} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div><label className="label">Prénom</label><input value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} className="input" required /></div>
@@ -169,8 +177,8 @@ export default function UsersPage() {
           <div><label className="label">Mot de passe</label><input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="input" required minLength={8} /></div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="label">Rôle</label>
-              <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="input">
+              <label className="label">Rôle d'établissement</label>
+              <select value={form.establishmentRole} onChange={(e) => setForm({ ...form, establishmentRole: e.target.value as EstablishmentRole })} className="input">
                 {getRoleOptions().map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
@@ -180,7 +188,7 @@ export default function UsersPage() {
           </div>
           {isManager && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-              <p className="text-sm text-amber-800">L'employé devra être approuvé par un administrateur avant de pouvoir se connecter.</p>
+              <p className="text-sm text-amber-800">L'employé devra être approuvé par le DAF avant de pouvoir se connecter.</p>
             </div>
           )}
           {establishments.length > 0 && (
@@ -218,8 +226,8 @@ export default function UsersPage() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="label">Rôle</label>
-              <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="input">
+              <label className="label">Rôle d'établissement</label>
+              <select value={form.establishmentRole} onChange={(e) => setForm({ ...form, establishmentRole: e.target.value as EstablishmentRole })} className="input">
                 {getRoleOptions().map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}

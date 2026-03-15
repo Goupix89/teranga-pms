@@ -19,14 +19,19 @@ import { registrationService } from './services/registration.service';
 import {
   userRouter,
   establishmentRouter,
+  memberRouter,
   roomRouter,
   reservationRouter,
+  orderRouter,
   invoiceRouter,
   paymentRouter,
   articleRouter,
   categoryRouter,
   stockMovementRouter,
+  stockAlertRouter,
   supplierRouter,
+  approvalRouter,
+  cleaningRouter,
   integrationRouter,
 } from './routes/resource.routes';
 
@@ -111,9 +116,11 @@ const authLimiter = rateLimit({
   message: { success: false, error: 'Trop de tentatives. Réessayez dans quelques minutes.', code: 'RATE_LIMIT' },
 });
 
-app.use('/api/', generalLimiter);
-app.use('/api/auth/login', authLimiter);
-app.use('/api/auth/refresh', authLimiter);
+if (config.isProd) {
+  app.use('/api/', generalLimiter);
+  app.use('/api/auth/login', authLimiter);
+  app.use('/api/auth/refresh', authLimiter);
+}
 
 // =============================================================================
 // HEALTH CHECK
@@ -144,6 +151,13 @@ app.use('/api/articles', articleRouter);
 app.use('/api/categories', categoryRouter);
 app.use('/api/stock-movements', stockMovementRouter);
 app.use('/api/suppliers', supplierRouter);
+app.use('/api/orders', orderRouter);
+app.use('/api/approvals', approvalRouter);
+app.use('/api/cleaning', cleaningRouter);
+app.use('/api/stock-alerts', stockAlertRouter);
+
+// Establishment members (nested under /api/establishments/:establishmentId/members)
+app.use('/api/establishments', memberRouter);
 
 // Integration endpoints (availability, external bookings, POS)
 app.use('/api', integrationRouter);

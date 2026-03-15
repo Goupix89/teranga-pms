@@ -1,10 +1,13 @@
-import { Prisma, UserRole, UserStatus } from '@prisma/client';
+import { Prisma, UserRole, UserStatus, EstablishmentRole } from '@prisma/client';
 import bcrypt from 'bcrypt';
 import { prisma, createTenantClient } from '../utils/prisma';
 import { NotFoundError, ValidationError, ForbiddenError } from '../utils/errors';
 import { paginate, toSkipTake } from '../utils/helpers';
 import { PaginationParams } from '../types';
 import { config } from '../config';
+
+// Establishment roles that MANAGER can create
+const MANAGER_CREATABLE_ROLES: EstablishmentRole[] = ['SERVER', 'COOK', 'CLEANER'];
 
 // =============================================================================
 // USER SERVICE
@@ -29,7 +32,7 @@ export class UserService {
       }),
       // Non-SUPERADMIN users only see users from their establishments
       ...(filters.requestingRole !== 'SUPERADMIN' && filters.establishmentIds && {
-        establishments: { some: { id: { in: filters.establishmentIds } } },
+        memberships: { some: { establishmentId: { in: filters.establishmentIds } } },
       }),
     };
 
@@ -37,7 +40,13 @@ export class UserService {
       id: true, email: true, firstName: true, lastName: true,
       role: true, status: true, phone: true,
       lastLoginAt: true, lastActiveAt: true, createdAt: true,
-      establishments: { select: { id: true, name: true } },
+      memberships: {
+        select: {
+          establishmentId: true,
+          role: true,
+          establishment: { select: { id: true, name: true } },
+        },
+      },
     };
 
     const [data, total] = await Promise.all([
@@ -57,7 +66,13 @@ export class UserService {
         id: true, email: true, firstName: true, lastName: true,
         role: true, status: true, phone: true,
         lastLoginAt: true, lastActiveAt: true, createdAt: true, updatedAt: true,
-        establishments: { select: { id: true, name: true } },
+        memberships: {
+          select: {
+            establishmentId: true,
+            role: true,
+            establishment: { select: { id: true, name: true } },
+          },
+        },
       },
     });
 
@@ -70,65 +85,67 @@ export class UserService {
     password: string;
     firstName: string;
     lastName: string;
-    role?: UserRole;
     phone?: string;
     establishmentIds?: string[];
-  }, requestingRole?: UserRole, requestingEstablishmentIds?: string[]) {
-    // MANAGER can only create EMPLOYEE users
-    if (requestingRole === 'MANAGER') {
-      if (data.role && data.role !== 'EMPLOYEE') {
-        throw new ForbiddenError('Un manager ne peut créer que des employés');
+    establishmentRole?: EstablishmentRole;
+  }, requestingEstRole?: EstablishmentRole) {
+    // MANAGER can only create SERVER, COOK, CLEANER → status PENDING_APPROVAL
+    if (requestingEstRole === 'MANAGER') {
+      if (data.establishmentRole && !MANAGER_CREATABLE_ROLES.includes(data.establishmentRole)) {
+        throw new ForbiddenError('Un manager ne peut créer que des serveurs, cuisiniers ou agents d\'entretien');
       }
-      data.role = 'EMPLOYEE';
-
-      // Manager can only assign users to their own establishments
-      if (data.establishmentIds && requestingEstablishmentIds) {
-        const unauthorized = data.establishmentIds.filter(
-          (id) => !requestingEstablishmentIds.includes(id)
-        );
-        if (unauthorized.length > 0) {
-          throw new ForbiddenError('Vous ne pouvez assigner un utilisateur qu\'à vos propres établissements');
-        }
+      if (!data.establishmentRole) {
+        throw new ForbiddenError('Le rôle d\'établissement est requis');
       }
     }
 
-    // ADMIN can create MANAGER and EMPLOYEE, not SUPERADMIN
-    if (requestingRole === 'ADMIN') {
-      if (data.role === 'SUPERADMIN') {
-        throw new ForbiddenError('Seul un super administrateur peut créer un autre super administrateur');
-      }
-      if (data.role === 'ADMIN') {
-        throw new ForbiddenError('Seul un super administrateur peut créer un administrateur d\'établissement');
+    // DAF can create any role except DAF (DAF is created by SUPERADMIN)
+    if (requestingEstRole === 'DAF') {
+      if (data.establishmentRole === 'DAF') {
+        throw new ForbiddenError('Seul un super administrateur peut créer un DAF');
       }
     }
 
     const passwordHash = await bcrypt.hash(data.password, config.bcrypt.saltRounds);
 
     // Users created by MANAGER need admin approval
-    const needsApproval = requestingRole === 'MANAGER';
+    const needsApproval = requestingEstRole === 'MANAGER';
 
-    return prisma.user.create({
+    const user = await prisma.user.create({
       data: {
         tenantId,
         email: data.email.toLowerCase().trim(),
         passwordHash,
         firstName: data.firstName,
         lastName: data.lastName,
-        role: data.role || 'EMPLOYEE',
+        role: 'EMPLOYEE',
         status: needsApproval ? 'PENDING_APPROVAL' : 'ACTIVE',
         phone: data.phone,
-        ...(data.establishmentIds && {
-          establishments: {
-            connect: data.establishmentIds.map((id) => ({ id })),
+        ...(data.establishmentIds && data.establishmentIds.length > 0 && data.establishmentRole && {
+          memberships: {
+            createMany: {
+              data: data.establishmentIds.map((estId) => ({
+                establishmentId: estId,
+                role: data.establishmentRole!,
+              })),
+            },
           },
         }),
       },
       select: {
         id: true, email: true, firstName: true, lastName: true,
         role: true, status: true, createdAt: true,
-        establishments: { select: { id: true, name: true } },
+        memberships: {
+          select: {
+            establishmentId: true,
+            role: true,
+            establishment: { select: { id: true, name: true } },
+          },
+        },
       },
     });
+
+    return user;
   }
 
   async approve(tenantId: string, id: string) {
@@ -145,7 +162,13 @@ export class UserService {
       select: {
         id: true, email: true, firstName: true, lastName: true,
         role: true, status: true, createdAt: true,
-        establishments: { select: { id: true, name: true } },
+        memberships: {
+          select: {
+            establishmentId: true,
+            role: true,
+            establishment: { select: { id: true, name: true } },
+          },
+        },
       },
     });
   }
@@ -153,45 +176,51 @@ export class UserService {
   async update(tenantId: string, id: string, data: {
     firstName?: string;
     lastName?: string;
-    role?: UserRole;
     phone?: string | null;
     status?: UserStatus;
     establishmentIds?: string[];
-  }, requestingUserRole: UserRole) {
+    establishmentRole?: EstablishmentRole;
+  }, requestingEstRole: EstablishmentRole | null) {
     const user = await prisma.user.findFirst({ where: { id, tenantId } });
     if (!user) throw new NotFoundError('Utilisateur');
 
-    // Only SUPERADMIN and ADMIN can change roles
-    if (data.role && requestingUserRole !== 'SUPERADMIN' && requestingUserRole !== 'ADMIN') {
-      throw new ForbiddenError('Seul un administrateur peut modifier les rôles');
+    // Can't demote a SUPERADMIN
+    if (user.role === 'SUPERADMIN') {
+      throw new ValidationError('Impossible de modifier un super administrateur via cette méthode');
     }
 
-    // ADMIN can't assign SUPERADMIN or ADMIN roles
-    if (data.role && requestingUserRole === 'ADMIN' && (data.role === 'SUPERADMIN' || data.role === 'ADMIN')) {
-      throw new ForbiddenError('Seul un super administrateur peut attribuer ce rôle');
-    }
+    const { establishmentIds, establishmentRole, ...updateData } = data;
 
-    // Can't demote yourself
-    if (data.role && user.role === 'SUPERADMIN' && data.role !== 'SUPERADMIN') {
-      throw new ValidationError('Un super administrateur ne peut pas se rétrograder');
-    }
+    // Sync memberships: delete existing, create new
+    if (establishmentIds !== undefined && establishmentRole) {
+      await prisma.establishmentMember.deleteMany({
+        where: { userId: id },
+      });
 
-    const { establishmentIds, ...updateData } = data;
+      if (establishmentIds.length > 0) {
+        await prisma.establishmentMember.createMany({
+          data: establishmentIds.map((estId) => ({
+            userId: id,
+            establishmentId: estId,
+            role: establishmentRole,
+          })),
+        });
+      }
+    }
 
     return prisma.user.update({
       where: { id },
-      data: {
-        ...updateData,
-        ...(establishmentIds !== undefined && {
-          establishments: {
-            set: establishmentIds.map((estId) => ({ id: estId })),
-          },
-        }),
-      },
+      data: updateData,
       select: {
         id: true, email: true, firstName: true, lastName: true,
         role: true, status: true, phone: true, updatedAt: true,
-        establishments: { select: { id: true, name: true } },
+        memberships: {
+          select: {
+            establishmentId: true,
+            role: true,
+            establishment: { select: { id: true, name: true } },
+          },
+        },
       },
     });
   }

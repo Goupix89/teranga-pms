@@ -55,6 +55,8 @@ export const updateTenantSchema = z.object({
 // User
 // =============================================================================
 
+export const establishmentRoleEnum = z.enum(['DAF', 'MANAGER', 'SERVER', 'POS', 'COOK', 'CLEANER']);
+
 export const createUserSchema = z.object({
   email: z.string().email('Email invalide'),
   password: z.string().min(8, 'Minimum 8 caractères')
@@ -63,18 +65,18 @@ export const createUserSchema = z.object({
     .regex(/[0-9]/, 'Au moins un chiffre'),
   firstName: z.string().min(1).max(50),
   lastName: z.string().min(1).max(50),
-  role: z.enum(['SUPERADMIN', 'ADMIN', 'MANAGER', 'EMPLOYEE']).default('EMPLOYEE'),
   phone: z.string().regex(/^\+?[0-9]{8,15}$/, 'Numéro invalide').optional(),
   establishmentIds: z.array(z.string().uuid()).optional(),
+  establishmentRole: establishmentRoleEnum.optional(),
 });
 
 export const updateUserSchema = z.object({
   firstName: z.string().min(1).max(50).optional(),
   lastName: z.string().min(1).max(50).optional(),
-  role: z.enum(['SUPERADMIN', 'ADMIN', 'MANAGER', 'EMPLOYEE']).optional(),
   phone: z.string().regex(/^\+?[0-9]{8,15}$/, 'Numéro invalide').optional().nullable(),
   status: z.enum(['ACTIVE', 'PENDING_APPROVAL', 'LOCKED']).optional(),
   establishmentIds: z.array(z.string().uuid()).optional(),
+  establishmentRole: establishmentRoleEnum.optional(),
 });
 
 // =============================================================================
@@ -122,7 +124,7 @@ export const updateRoomSchema = z.object({
 });
 
 export const updateRoomStatusSchema = z.object({
-  status: z.enum(['AVAILABLE', 'OCCUPIED', 'MAINTENANCE', 'OUT_OF_ORDER']),
+  status: z.enum(['AVAILABLE', 'OCCUPIED', 'MAINTENANCE', 'OUT_OF_ORDER', 'CLEANING']),
 });
 
 // =============================================================================
@@ -192,7 +194,7 @@ export const updateInvoiceSchema = z.object({
 export const createPaymentSchema = z.object({
   invoiceId: z.string().uuid(),
   amount: z.number().positive(),
-  method: z.enum(['CASH', 'CARD', 'BANK_TRANSFER', 'MOBILE_MONEY', 'OTHER']),
+  method: z.enum(['CASH', 'CARD', 'BANK_TRANSFER', 'MOBILE_MONEY', 'MOOV_MONEY', 'MIXX_BY_YAS', 'OTHER']),
   reference: z.string().max(100).optional(),
 });
 
@@ -315,4 +317,70 @@ export const registerTenantSchema = z.object({
   lastName: z.string().min(1).max(50),
   planSlug: z.enum(['basic', 'pro', 'enterprise']),
   billingInterval: z.enum(['MONTHLY', 'YEARLY']),
+});
+
+// =============================================================================
+// Order
+// =============================================================================
+
+export const createOrderSchema = z.object({
+  establishmentId: z.string().uuid(),
+  tableNumber: z.string().max(20).optional(),
+  items: z.array(z.object({
+    articleId: z.string().uuid(),
+    quantity: z.number().int().positive().max(999),
+  })).min(1, 'Au moins un article requis'),
+  notes: z.string().max(500).optional(),
+});
+
+export const updateOrderStatusSchema = z.object({
+  status: z.enum(['PENDING', 'IN_PROGRESS', 'READY', 'SERVED', 'CANCELLED']),
+});
+
+// =============================================================================
+// Approval Request
+// =============================================================================
+
+export const createApprovalSchema = z.object({
+  establishmentId: z.string().uuid(),
+  type: z.enum(['EMPLOYEE_CREATION', 'RESERVATION_MODIFICATION']),
+  payload: z.record(z.unknown()),
+  targetId: z.string().uuid().optional(),
+});
+
+export const rejectApprovalSchema = z.object({
+  reason: z.string().max(500).optional(),
+});
+
+// =============================================================================
+// Cleaning Session
+// =============================================================================
+
+export const clockInSchema = z.object({
+  establishmentId: z.string().uuid(),
+  roomId: z.string().uuid(),
+  notes: z.string().max(500).optional(),
+});
+
+// =============================================================================
+// Stock Alert
+// =============================================================================
+
+export const createStockAlertSchema = z.object({
+  establishmentId: z.string().uuid(),
+  articleId: z.string().uuid(),
+  message: z.string().min(1).max(500),
+});
+
+// =============================================================================
+// Establishment Member
+// =============================================================================
+
+export const addMemberSchema = z.object({
+  userId: z.string().uuid(),
+  role: establishmentRoleEnum,
+});
+
+export const updateMemberRoleSchema = z.object({
+  role: establishmentRoleEnum,
 });

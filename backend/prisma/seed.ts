@@ -1,4 +1,4 @@
-import { PrismaClient, UserRole, UserStatus } from '@prisma/client';
+import { PrismaClient, UserRole } from '@prisma/client';
 import bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -86,10 +86,10 @@ async function main() {
 
   console.log(`✅ Tenant: ${tenant.name} (${tenant.id})`);
 
-  // Create users with new role hierarchy
+  // Create users — two-tier roles: SUPERADMIN (platform) + EMPLOYEE (establishment)
   const passwordHash = await bcrypt.hash('Admin123!', 12);
 
-  // SUPERADMIN — platform-level admin
+  // SUPERADMIN — platform-level admin (bypasses all establishment checks)
   const superAdmin = await prisma.user.upsert({
     where: { tenantId_email: { tenantId: tenant.id, email: 'superadmin@hoteldemo.com' } },
     update: {},
@@ -104,17 +104,17 @@ async function main() {
     },
   });
 
-  // ADMIN — establishment-level admin
-  const admin = await prisma.user.upsert({
-    where: { tenantId_email: { tenantId: tenant.id, email: 'admin@hoteldemo.com' } },
+  // DAF — Establishment admin (Directeur Administratif et Financier)
+  const daf = await prisma.user.upsert({
+    where: { tenantId_email: { tenantId: tenant.id, email: 'daf@hoteldemo.com' } },
     update: {},
     create: {
       tenantId: tenant.id,
-      email: 'admin@hoteldemo.com',
-      passwordHash: await bcrypt.hash('Admin123!', 12),
-      firstName: 'Admin',
-      lastName: 'Établissement',
-      role: UserRole.ADMIN,
+      email: 'daf@hoteldemo.com',
+      passwordHash: await bcrypt.hash('Daf12345!', 12),
+      firstName: 'Kokou',
+      lastName: 'Mensah',
+      role: UserRole.EMPLOYEE,
     },
   });
 
@@ -128,25 +128,67 @@ async function main() {
       passwordHash: await bcrypt.hash('Manager123!', 12),
       firstName: 'Marie',
       lastName: 'Dupont',
-      role: UserRole.MANAGER,
-    },
-  });
-
-  // EMPLOYEE
-  const employee = await prisma.user.upsert({
-    where: { tenantId_email: { tenantId: tenant.id, email: 'employee@hoteldemo.com' } },
-    update: {},
-    create: {
-      tenantId: tenant.id,
-      email: 'employee@hoteldemo.com',
-      passwordHash: await bcrypt.hash('Employee123!', 12),
-      firstName: 'Jean',
-      lastName: 'Kofi',
       role: UserRole.EMPLOYEE,
     },
   });
 
-  console.log(`✅ Users: superadmin, admin, manager, employee created`);
+  // SERVER (serveur)
+  const server = await prisma.user.upsert({
+    where: { tenantId_email: { tenantId: tenant.id, email: 'serveur@hoteldemo.com' } },
+    update: {},
+    create: {
+      tenantId: tenant.id,
+      email: 'serveur@hoteldemo.com',
+      passwordHash: await bcrypt.hash('Serveur123!', 12),
+      firstName: 'Afi',
+      lastName: 'Agbeko',
+      role: UserRole.EMPLOYEE,
+    },
+  });
+
+  // POS
+  const pos = await prisma.user.upsert({
+    where: { tenantId_email: { tenantId: tenant.id, email: 'pos@hoteldemo.com' } },
+    update: {},
+    create: {
+      tenantId: tenant.id,
+      email: 'pos@hoteldemo.com',
+      passwordHash: await bcrypt.hash('Pos12345!', 12),
+      firstName: 'Yao',
+      lastName: 'Koffi',
+      role: UserRole.EMPLOYEE,
+    },
+  });
+
+  // COOK (cuisinier)
+  const cook = await prisma.user.upsert({
+    where: { tenantId_email: { tenantId: tenant.id, email: 'cuisinier@hoteldemo.com' } },
+    update: {},
+    create: {
+      tenantId: tenant.id,
+      email: 'cuisinier@hoteldemo.com',
+      passwordHash: await bcrypt.hash('Cook1234!', 12),
+      firstName: 'Akossiwa',
+      lastName: 'Tété',
+      role: UserRole.EMPLOYEE,
+    },
+  });
+
+  // CLEANER (ménage)
+  const cleaner = await prisma.user.upsert({
+    where: { tenantId_email: { tenantId: tenant.id, email: 'menage@hoteldemo.com' } },
+    update: {},
+    create: {
+      tenantId: tenant.id,
+      email: 'menage@hoteldemo.com',
+      passwordHash: await bcrypt.hash('Menage123!', 12),
+      firstName: 'Ama',
+      lastName: 'Sossou',
+      role: UserRole.EMPLOYEE,
+    },
+  });
+
+  console.log(`✅ Users: superadmin, daf, manager, serveur, pos, cuisinier, menage created`);
 
   // Create establishment
   const establishment = await prisma.establishment.upsert({
@@ -168,14 +210,30 @@ async function main() {
 
   console.log(`✅ Establishment: ${establishment.name}`);
 
-  // Assign users to establishment (SUPERADMIN has global access but we link for completeness)
-  for (const user of [superAdmin, admin, manager, employee]) {
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { establishments: { connect: [{ id: establishment.id }] } },
+  // Assign establishment memberships with roles
+  const memberships = [
+    { userId: daf.id, establishmentId: establishment.id, role: 'DAF' as const },
+    { userId: manager.id, establishmentId: establishment.id, role: 'MANAGER' as const },
+    { userId: server.id, establishmentId: establishment.id, role: 'SERVER' as const },
+    { userId: pos.id, establishmentId: establishment.id, role: 'POS' as const },
+    { userId: cook.id, establishmentId: establishment.id, role: 'COOK' as const },
+    { userId: cleaner.id, establishmentId: establishment.id, role: 'CLEANER' as const },
+  ];
+
+  for (const m of memberships) {
+    await prisma.establishmentMember.upsert({
+      where: {
+        userId_establishmentId: {
+          userId: m.userId,
+          establishmentId: m.establishmentId,
+        },
+      },
+      update: { role: m.role },
+      create: m,
     });
   }
-  console.log(`✅ Users assigned to ${establishment.name}`);
+
+  console.log(`✅ ${memberships.length} establishment memberships assigned`);
 
   // Create rooms
   const roomData = [
@@ -270,10 +328,13 @@ async function main() {
 
   console.log(`✅ ${suppliers.length} suppliers created`);
   console.log('\n🎉 Seed complete!');
-  console.log('   Login Super Admin: superadmin@hoteldemo.com / Admin123!');
-  console.log('   Login Admin Étab: admin@hoteldemo.com / Admin123!');
-  console.log('   Login Manager:    manager@hoteldemo.com / Manager123!');
-  console.log('   Login Employé:    employee@hoteldemo.com / Employee123!');
+  console.log('   Login Super Admin:  superadmin@hoteldemo.com / Admin123!');
+  console.log('   Login DAF:          daf@hoteldemo.com / Daf12345!');
+  console.log('   Login Manager:      manager@hoteldemo.com / Manager123!');
+  console.log('   Login Serveur:      serveur@hoteldemo.com / Serveur123!');
+  console.log('   Login POS:          pos@hoteldemo.com / Pos12345!');
+  console.log('   Login Cuisinier:    cuisinier@hoteldemo.com / Cook1234!');
+  console.log('   Login Ménage:       menage@hoteldemo.com / Menage123!');
 }
 
 main()
