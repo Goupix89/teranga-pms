@@ -122,6 +122,45 @@ export class ApprovalService {
         }
       }
 
+      if (request.type === 'ROOM_CREATION') {
+        const payload = request.payload as Record<string, any>;
+        await tx.room.create({
+          data: {
+            tenantId,
+            establishmentId: payload.establishmentId,
+            number: payload.number,
+            floor: payload.floor,
+            type: payload.type,
+            status: payload.status ?? 'AVAILABLE',
+            pricePerNight: payload.pricePerNight,
+            maxOccupancy: payload.maxOccupancy,
+            amenities: payload.amenities ?? [],
+            description: payload.description,
+          },
+        });
+      }
+
+      if (request.type === 'STOCK_MOVEMENT' && request.targetId) {
+        const movement = await tx.stockMovement.findUnique({
+          where: { id: request.targetId },
+        });
+
+        if (!movement) throw new NotFoundError('Mouvement de stock');
+
+        await tx.stockMovement.update({
+          where: { id: request.targetId },
+          data: {
+            approvedById: reviewerId,
+            approvedAt: new Date(),
+          },
+        });
+
+        await tx.article.update({
+          where: { id: movement.articleId },
+          data: { currentStock: movement.newStock },
+        });
+      }
+
       return approved;
     });
   }

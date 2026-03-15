@@ -150,6 +150,17 @@ export class CleaningService {
   }
 
   /**
+   * Create a pending cleaning task from a checkout.
+   * Sets the room status to CLEANING so cleaners see it on their dashboard.
+   */
+  async createFromCheckout(tenantId: string, roomId: string, establishmentId: string) {
+    return prisma.room.update({
+      where: { id: roomId },
+      data: { status: 'CLEANING' },
+    });
+  }
+
+  /**
    * Get active cleaning sessions for an establishment.
    */
   async getActiveSessions(tenantId: string, establishmentId: string) {

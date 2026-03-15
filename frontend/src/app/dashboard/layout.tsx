@@ -20,11 +20,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       try {
         const { api } = await import('@/lib/api');
-        const { data } = await api.post('/auth/refresh');
+        const refreshToken = useAuthStore.getState().refreshToken;
+        const { data } = await api.post('/auth/refresh', { refreshToken });
         const { data: meData } = await api.get('/auth/me', {
           headers: { Authorization: `Bearer ${data.data.accessToken}` },
         });
-        setAuth(data.data.accessToken, meData.data);
+        setAuth(data.data.accessToken, data.data.refreshToken, meData.data);
       } catch {
         logout();
         router.replace('/auth/login');
@@ -45,7 +46,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="ml-64 flex-1 p-6 lg:p-8">
+      <main className="ml-64 flex-1 bg-wood-50 p-6 lg:p-8">
         {children}
       </main>
     </div>

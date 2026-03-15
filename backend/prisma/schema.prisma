@@ -123,6 +123,8 @@ enum OrderStatus {
 enum ApprovalType {
   EMPLOYEE_CREATION
   RESERVATION_MODIFICATION
+  ROOM_CREATION
+  STOCK_MOVEMENT
 }
 
 enum ApprovalStatus {
@@ -494,6 +496,7 @@ model Article {
   name         String
   sku          String?
   description  String?
+  imageUrl     String?  @map("image_url")
   unitPrice    Decimal @map("unit_price") @db.Decimal(10, 2)
   costPrice    Decimal @default(0) @map("cost_price") @db.Decimal(10, 2)
   currentStock Int     @default(0) @map("current_stock")

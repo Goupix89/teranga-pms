@@ -17,9 +17,7 @@ type NavItem = {
   name: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
-  /** Tenant roles that can see this item (SUPERADMIN always sees everything) */
   superadminOnly?: boolean;
-  /** Establishment roles that can see this item */
   estRoles?: EstablishmentRole[];
 };
 
@@ -61,11 +59,8 @@ export function Sidebar() {
 
   const filteredNav = navigation.filter((item) => {
     if (!user) return false;
-    // SUPERADMIN sees everything
     if (isSuperAdmin) return true;
-    // superadminOnly items are hidden for non-SUPERADMIN
     if (item.superadminOnly) return false;
-    // Check establishment role
     if (item.estRoles && currentEstablishmentRole) {
       return item.estRoles.includes(currentEstablishmentRole);
     }
@@ -94,40 +89,40 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-gray-200 bg-white transition-all duration-300',
+        'fixed left-0 top-0 z-40 flex h-screen flex-col bg-wood-800 transition-all duration-300',
         collapsed ? 'w-[72px]' : 'w-64'
       )}
     >
-      {/* Logo */}
-      <div className="flex h-16 items-center justify-between border-b border-gray-100 px-4">
+      {/* Logo — Gold accent on dark wood */}
+      <div className="flex h-16 items-center justify-between border-b border-wood-700 px-4">
         {!collapsed && (
           <Link href="/dashboard" className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 text-white font-bold text-sm">
-              H
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-500/20 text-accent-500 font-bold text-sm">
+              T
             </div>
-            <span className="font-semibold text-gray-900">Hotel PMS</span>
+            <span className="font-display font-bold text-accent-500 tracking-wide">TERANGA</span>
           </Link>
         )}
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          className="rounded-lg p-1.5 text-wood-500 hover:bg-wood-700 hover:text-accent-500 transition-colors"
         >
           <ChevronLeft className={cn('h-4 w-4 transition-transform', collapsed && 'rotate-180')} />
         </button>
       </div>
 
-      {/* Establishment selector (non-SUPERADMIN with multiple memberships) */}
+      {/* Establishment selector */}
       {!collapsed && !isSuperAdmin && user?.memberships && user.memberships.length > 1 && (
-        <div className="relative border-b border-gray-100 px-3 py-2">
+        <div className="relative border-b border-wood-700 px-3 py-2">
           <button
             onClick={() => setEstDropdownOpen(!estDropdownOpen)}
-            className="flex w-full items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+            className="flex w-full items-center justify-between rounded-lg bg-wood-700/50 px-3 py-2 text-sm text-wood-200 hover:bg-wood-700"
           >
             <span className="truncate font-medium">{currentEstName || 'Sélectionner'}</span>
-            <ChevronDown className={cn('h-4 w-4 transition-transform', estDropdownOpen && 'rotate-180')} />
+            <ChevronDown className={cn('h-4 w-4 transition-transform text-accent-500', estDropdownOpen && 'rotate-180')} />
           </button>
           {estDropdownOpen && (
-            <div className="absolute left-3 right-3 top-full z-50 mt-1 rounded-lg border border-gray-200 bg-white shadow-lg">
+            <div className="absolute left-3 right-3 top-full z-50 mt-1 rounded-lg border border-wood-600 bg-wood-700 shadow-lg overflow-hidden">
               {user.memberships.map((m) => (
                 <button
                   key={m.establishmentId}
@@ -136,12 +131,14 @@ export function Sidebar() {
                     setEstDropdownOpen(false);
                   }}
                   className={cn(
-                    'flex w-full items-center justify-between px-3 py-2 text-sm hover:bg-gray-50',
-                    m.establishmentId === currentEstablishmentId && 'bg-primary-50 text-primary-700'
+                    'flex w-full items-center justify-between px-3 py-2 text-sm hover:bg-wood-600 transition-colors',
+                    m.establishmentId === currentEstablishmentId
+                      ? 'bg-accent-500/10 text-accent-500'
+                      : 'text-wood-200'
                   )}
                 >
                   <span className="truncate">{m.establishmentName}</span>
-                  <span className="text-xs text-gray-400">{estRoleLabels[m.role]}</span>
+                  <span className="text-xs text-wood-400">{estRoleLabels[m.role]}</span>
                 </button>
               ))}
             </div>
@@ -152,7 +149,7 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
         {filteredNav.map((item) => {
-          const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+          const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href + '/'));
           return (
             <Link
               key={item.href}
@@ -160,31 +157,37 @@ export function Sidebar() {
               className={cn(
                 'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all',
                 isActive
-                  ? 'bg-primary-50 text-primary-700'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  ? 'bg-accent-500/15 text-accent-500'
+                  : 'text-wood-400 hover:bg-wood-700 hover:text-wood-100'
               )}
               title={collapsed ? item.name : undefined}
             >
-              <item.icon className={cn('h-5 w-5 flex-shrink-0', isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-gray-500')} />
+              <item.icon className={cn(
+                'h-5 w-5 flex-shrink-0 transition-colors',
+                isActive ? 'text-accent-500' : 'text-wood-500 group-hover:text-wood-300'
+              )} />
               {!collapsed && <span>{item.name}</span>}
             </Link>
           );
         })}
       </nav>
 
+      {/* Decorative Kuba divider */}
+      <div className="mx-4 h-px bg-gradient-to-r from-transparent via-accent-500/30 to-transparent" />
+
       {/* User section */}
-      <div className="border-t border-gray-100 p-3">
+      <div className="p-3">
         {!collapsed && user && (
-          <div className="mb-2 rounded-lg bg-gray-50 px-3 py-2">
-            <p className="text-sm font-medium text-gray-900 truncate">
+          <div className="mb-2 rounded-lg bg-wood-700/50 px-3 py-2">
+            <p className="text-sm font-medium text-wood-100 truncate">
               {user.firstName} {user.lastName}
             </p>
-            <p className="text-xs text-gray-500">{displayRole}</p>
+            <p className="text-xs text-accent-500/80">{displayRole}</p>
           </div>
         )}
         <button
           onClick={handleLogout}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:bg-red-50 hover:text-red-700 transition-colors"
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-wood-400 hover:bg-primary-500/15 hover:text-primary-300 transition-colors"
           title="Déconnexion"
         >
           <LogOut className="h-5 w-5 flex-shrink-0" />

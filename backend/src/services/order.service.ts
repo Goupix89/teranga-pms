@@ -164,7 +164,31 @@ export class OrderService {
         },
       });
 
-      return order;
+      // Auto-generate invoice for the order
+      const orderSuffix = orderNumber.replace('CMD-', '');
+      const invoiceNumber = `FAC-${orderSuffix}`;
+
+      const invoice = await tx.invoice.create({
+        data: {
+          tenantId,
+          createdById: userId,
+          invoiceNumber,
+          subtotal: totalAmount,
+          taxAmount: 0,
+          taxRate: 0,
+          totalAmount,
+          notes: `Commande ${orderNumber}${data.tableNumber ? ` - Table ${data.tableNumber}` : ''}`,
+          status: 'ISSUED',
+        },
+      });
+
+      // Link order to invoice
+      await tx.order.update({
+        where: { id: order.id },
+        data: { invoiceId: invoice.id },
+      });
+
+      return { ...order, invoiceId: invoice.id };
     });
   }
 
@@ -194,14 +218,35 @@ export class OrderService {
         );
       }
 
-      // Check COOK role restrictions
+      // Check role-based restrictions on status changes
       const membership = await tx.establishmentMember.findFirst({
         where: { userId, establishmentId: order.establishmentId, isActive: true },
       });
 
-      if (membership?.role === 'COOK') {
+      const role = membership?.role;
+
+      if (role === 'COOK') {
         if (!['IN_PROGRESS', 'READY'].includes(status)) {
           throw new ForbiddenError('Un cuisinier ne peut définir que les statuts EN_COURS et PRÊT');
+        }
+      }
+
+      if (role === 'SERVER') {
+        if (status !== 'SERVED') {
+          throw new ForbiddenError('Un serveur ne peut définir que le statut SERVI');
+        }
+      }
+
+      if (role === 'MANAGER' || role === 'DAF') {
+        if (['IN_PROGRESS', 'READY'].includes(status)) {
+          throw new ForbiddenError('Seul un cuisinier peut changer le statut en EN_COURS ou PRÊT');
+        }
+        if (status === 'SERVED') {
+          throw new ForbiddenError('Seul un serveur peut définir le statut SERVI');
+        }
+        // MANAGER and DAF can only set CANCELLED
+        if (status !== 'CANCELLED') {
+          throw new ForbiddenError('Un gestionnaire ne peut qu\'annuler les commandes');
         }
       }
 

@@ -199,6 +199,23 @@ roomRouter.get('/:id', authenticate, requireAnyEstablishmentRole,
 
 roomRouter.post('/', authenticate, requireDAFOrManager, validate(v.createRoomSchema),
   asyncHandler(async (req, res) => {
+    const estRole = getEstablishmentRole(req, req.body.establishmentId);
+
+    // MANAGER room creation requires DAF approval
+    if (estRole === 'MANAGER') {
+      const approval = await approvalService.create(req.user!.tenantId, {
+        establishmentId: req.body.establishmentId,
+        type: 'ROOM_CREATION',
+        requestedById: req.user!.id,
+        payload: req.body,
+      });
+      return res.status(202).json({
+        success: true,
+        message: 'Création soumise à validation du DAF',
+        data: approval,
+      });
+    }
+
     const data = await roomService.create(req.user!.tenantId, req.body);
     res.status(201).json({ success: true, data });
   })
@@ -257,6 +274,36 @@ reservationRouter.post('/', authenticate, requireDAFOrManager, validate(v.create
   })
 );
 
+// MANAGER can request date-only modifications (requires DAF approval)
+reservationRouter.patch('/:id/dates', authenticate, requireEstablishmentRole('MANAGER'),
+  asyncHandler(async (req, res) => {
+    const { checkIn, checkOut } = req.body;
+
+    if (!checkIn && !checkOut) {
+      return res.status(400).json({ success: false, error: 'checkIn ou checkOut requis' });
+    }
+
+    // Fetch the reservation to determine establishment context
+    const reservation = await reservationService.getById(req.user!.tenantId, req.params.id);
+    // Derive establishmentId from user's first membership as fallback
+    const establishmentId = req.body.establishmentId || req.user!.establishmentIds?.[0];
+
+    const approval = await approvalService.create(req.user!.tenantId, {
+      establishmentId,
+      type: 'RESERVATION_MODIFICATION',
+      requestedById: req.user!.id,
+      payload: { checkIn, checkOut },
+      targetId: req.params.id,
+    });
+
+    res.status(202).json({
+      success: true,
+      message: 'Modification de dates soumise à validation du DAF',
+      data: approval,
+    });
+  })
+);
+
 // MANAGER modifications require DAF approval → handled in approval flow
 reservationRouter.patch('/:id', authenticate, requireDAF, validate(v.updateReservationSchema),
   asyncHandler(async (req, res) => {
@@ -275,6 +322,17 @@ reservationRouter.post('/:id/check-in', authenticate, requireDAFOrManagerOrServe
 reservationRouter.post('/:id/check-out', authenticate, requireDAFOrManagerOrServer,
   asyncHandler(async (req, res) => {
     const data = await reservationService.checkOut(req.user!.tenantId, req.params.id);
+
+    // After checkout, set the room status to CLEANING so it appears in cleaning queue
+    try {
+      const reservation = await reservationService.getById(req.user!.tenantId, req.params.id);
+      if (reservation?.roomId) {
+        await roomService.updateStatus(req.user!.tenantId, reservation.roomId, 'CLEANING');
+      }
+    } catch (_e) {
+      // Non-blocking: if setting cleaning status fails, checkout still succeeded
+    }
+
     res.json({ success: true, data });
   })
 );
@@ -440,8 +498,8 @@ articleRouter.get('/:id', authenticate, requireAnyEstablishmentRole,
   })
 );
 
-// DAF creates products and sets prices
-articleRouter.post('/', authenticate, requireDAF, validate(v.createArticleSchema),
+// DAF and MANAGER can create articles
+articleRouter.post('/', authenticate, requireDAFOrManager, validate(v.createArticleSchema),
   asyncHandler(async (req, res) => {
     const data = await articleService.create(req.user!.tenantId, req.body);
     res.status(201).json({ success: true, data });
@@ -500,6 +558,31 @@ stockMovementRouter.get('/', authenticate, requireDAFOrManager,
 
 stockMovementRouter.post('/', authenticate, requireDAFOrManager, validate(v.createStockMovementSchema),
   asyncHandler(async (req, res) => {
+    const estId = req.body.establishmentId;
+    const estRole = estId ? getEstablishmentRole(req, estId) : null;
+
+    // MANAGER stock movements require DAF approval
+    if (estRole === 'MANAGER') {
+      const movement = await stockService.createMovement(req.user!.tenantId, req.user!.id, {
+        ...req.body,
+        requiresApproval: true,
+      });
+
+      const approval = await approvalService.create(req.user!.tenantId, {
+        establishmentId: estId,
+        type: 'STOCK_MOVEMENT',
+        requestedById: req.user!.id,
+        payload: req.body,
+        targetId: (movement as any).id || (movement as any).data?.id,
+      });
+
+      return res.status(202).json({
+        success: true,
+        message: 'Mouvement de stock soumis à validation du DAF',
+        data: approval,
+      });
+    }
+
     const data = await stockService.createMovement(req.user!.tenantId, req.user!.id, req.body);
     res.status(201).json({ success: true, ...data });
   })
@@ -625,8 +708,8 @@ cleaningRouter.get('/active/:establishmentId', authenticate, requireCleaningAcce
   })
 );
 
-// Cleaner clocks in
-cleaningRouter.post('/clock-in', authenticate, requireCleaningAccess, validate(v.clockInSchema),
+// Cleaner clocks in (only CLEANER role — MANAGER/DAF cannot clean)
+cleaningRouter.post('/clock-in', authenticate, requireEstablishmentRole('CLEANER'), validate(v.clockInSchema),
   asyncHandler(async (req, res) => {
     const data = await cleaningService.clockIn(req.user!.tenantId, {
       ...req.body,

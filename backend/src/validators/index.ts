@@ -245,6 +245,7 @@ export const createArticleSchema = z.object({
   currentStock: z.number().int().min(0).default(0),
   minimumStock: z.number().int().min(0).default(0),
   unit: z.string().max(20).default('pièce'),
+  imageUrl: z.string().url().max(500).optional(),
 });
 
 export const updateArticleSchema = createArticleSchema.partial().extend({
@@ -263,6 +264,7 @@ export const updateCategorySchema = z.object({
 
 export const createStockMovementSchema = z.object({
   articleId: z.string().uuid(),
+  establishmentId: z.string().uuid().optional(),
   supplierId: z.string().uuid().optional(),
   type: z.enum(['PURCHASE', 'SALE', 'ADJUSTMENT', 'TRANSFER', 'WASTE', 'RETURN']),
   quantity: z.number().int(),
@@ -343,7 +345,7 @@ export const updateOrderStatusSchema = z.object({
 
 export const createApprovalSchema = z.object({
   establishmentId: z.string().uuid(),
-  type: z.enum(['EMPLOYEE_CREATION', 'RESERVATION_MODIFICATION']),
+  type: z.enum(['EMPLOYEE_CREATION', 'RESERVATION_MODIFICATION', 'ROOM_CREATION', 'STOCK_MOVEMENT']),
   payload: z.record(z.unknown()),
   targetId: z.string().uuid().optional(),
 });
