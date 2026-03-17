@@ -24,6 +24,8 @@ class TokenManager(context: Context) {
         private const val KEY_USER_ID = "user_id"
         private const val KEY_USER_NAME = "user_name"
         private const val KEY_USER_ROLE = "user_role"
+        private const val KEY_ESTABLISHMENT_ID = "establishment_id"
+        private const val KEY_ESTABLISHMENT_ROLE = "establishment_role"
     }
 
     fun saveTokens(accessToken: String, refreshToken: String) {
@@ -42,12 +44,21 @@ class TokenManager(context: Context) {
             .apply()
     }
 
+    fun saveEstablishment(establishmentId: String, establishmentRole: String) {
+        prefs.edit()
+            .putString(KEY_ESTABLISHMENT_ID, establishmentId)
+            .putString(KEY_ESTABLISHMENT_ROLE, establishmentRole)
+            .apply()
+    }
+
     val accessToken: String? get() = prefs.getString(KEY_ACCESS_TOKEN, null)
     val refreshToken: String? get() = prefs.getString(KEY_REFRESH_TOKEN, null)
     val tenantId: String? get() = prefs.getString(KEY_TENANT_ID, null)
     val userId: String? get() = prefs.getString(KEY_USER_ID, null)
     val userName: String? get() = prefs.getString(KEY_USER_NAME, null)
     val userRole: String? get() = prefs.getString(KEY_USER_ROLE, null)
+    val establishmentId: String? get() = prefs.getString(KEY_ESTABLISHMENT_ID, null)
+    val establishmentRole: String? get() = prefs.getString(KEY_ESTABLISHMENT_ROLE, null)
 
     val isLoggedIn: Boolean get() = accessToken != null
 

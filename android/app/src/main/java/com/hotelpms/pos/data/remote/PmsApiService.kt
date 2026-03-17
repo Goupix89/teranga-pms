@@ -6,6 +6,7 @@ import retrofit2.http.*
 
 interface PmsApiService {
 
+    // Auth
     @POST("api/auth/login")
     suspend fun login(@Body request: LoginRequest): Response<LoginResponse>
 
@@ -15,14 +16,90 @@ interface PmsApiService {
     @POST("api/auth/logout")
     suspend fun logout(): Response<Unit>
 
+    // Articles
     @GET("api/articles")
     suspend fun getArticles(
         @Query("page") page: Int = 1,
         @Query("limit") limit: Int = 200
     ): Response<ArticlesResponse>
 
+    // POS Transactions
     @POST("api/pos/transactions")
     suspend fun postTransaction(
         @Body request: PosTransactionRequest
     ): Response<PosTransactionResponse>
+
+    // Establishments
+    @GET("api/establishments")
+    suspend fun getEstablishments(): EstablishmentsResponse
+
+    // Rooms
+    @GET("api/rooms")
+    suspend fun getRooms(@Query("establishmentId") establishmentId: String): RoomsResponse
+
+    @POST("api/rooms")
+    suspend fun createRoom(@Body room: Map<String, Any>): GenericResponse
+
+    // Reservations
+    @GET("api/reservations")
+    suspend fun getReservations(@Query("establishmentId") establishmentId: String? = null): ReservationsResponse
+
+    @POST("api/reservations")
+    suspend fun createReservation(@Body body: Map<String, Any>): GenericResponse
+
+    @PATCH("api/reservations/{id}/dates")
+    suspend fun updateReservationDates(@Path("id") id: String, @Body body: ReservationDatesRequest): GenericResponse
+
+    @POST("api/reservations/{id}/check-in")
+    suspend fun checkIn(@Path("id") id: String): GenericResponse
+
+    @POST("api/reservations/{id}/check-out")
+    suspend fun checkOut(@Path("id") id: String): GenericResponse
+
+    // Orders
+    @GET("api/orders")
+    suspend fun getOrders(
+        @Query("establishmentId") establishmentId: String? = null,
+        @Query("status") status: String? = null
+    ): OrdersResponse
+
+    @GET("api/orders/kitchen/{establishmentId}")
+    suspend fun getKitchenOrders(@Path("establishmentId") establishmentId: String): Response<List<Order>>
+
+    @POST("api/orders")
+    suspend fun createOrder(@Body body: CreateOrderRequest): GenericResponse
+
+    @PATCH("api/orders/{id}/status")
+    suspend fun updateOrderStatus(@Path("id") id: String, @Body body: OrderStatusRequest): GenericResponse
+
+    // Cleaning
+    @GET("api/cleaning")
+    suspend fun getCleaningSessions(@Query("establishmentId") establishmentId: String): CleaningResponse
+
+    @POST("api/cleaning/clock-in")
+    suspend fun clockIn(@Body body: ClockInRequest): GenericResponse
+
+    @POST("api/cleaning/{id}/clock-out")
+    suspend fun clockOut(@Path("id") id: String): GenericResponse
+
+    // Approvals
+    @GET("api/approvals")
+    suspend fun getApprovals(@Query("establishmentId") establishmentId: String? = null): ApprovalsResponse
+
+    @POST("api/approvals/{id}/approve")
+    suspend fun approveRequest(@Path("id") id: String): GenericResponse
+
+    @POST("api/approvals/{id}/reject")
+    suspend fun rejectRequest(@Path("id") id: String, @Body body: Map<String, String>): GenericResponse
+
+    // Stock
+    @GET("api/stock-movements")
+    suspend fun getStockMovements(@Query("establishmentId") establishmentId: String? = null): StockMovementsResponse
+
+    @POST("api/stock-movements")
+    suspend fun createStockMovement(@Body body: CreateStockMovementRequest): GenericResponse
+
+    // Articles management
+    @POST("api/articles")
+    suspend fun createArticle(@Body body: Map<String, Any>): GenericResponse
 }

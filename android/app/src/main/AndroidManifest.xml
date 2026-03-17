@@ -9,15 +9,15 @@
         android:name=".PmsApplication"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
-        android:label="Hotel PMS POS"
+        android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Material3.DayNight.NoActionBar"
+        android:theme="@style/Theme.TerangaPMS"
         android:networkSecurityConfig="@xml/network_security_config">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:screenOrientation="landscape"
+            android:screenOrientation="unspecified"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

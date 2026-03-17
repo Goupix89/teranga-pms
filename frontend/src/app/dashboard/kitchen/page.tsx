@@ -12,6 +12,8 @@ import { Order, OrderStatus } from '@/types';
 export default function KitchenPage() {
   const queryClient = useQueryClient();
   const currentEstId = useAuthStore((s) => s.currentEstablishmentId);
+  const currentEstRole = useAuthStore((s) => s.currentEstablishmentRole);
+  const canAct = currentEstRole === 'COOK';
 
   const { data, isLoading } = useQuery({
     queryKey: ['kitchen-orders', currentEstId],
@@ -71,6 +73,7 @@ export default function KitchenPage() {
                   actionColor="bg-blue-600 hover:bg-blue-700"
                   borderColor="border-l-amber-400"
                   loading={updateStatusMutation.isPending}
+                  showAction={canAct}
                 />
               ))}
               {pending.length === 0 && <p className="text-sm text-gray-400 italic">Aucune commande en attente</p>}
@@ -93,6 +96,7 @@ export default function KitchenPage() {
                   actionColor="bg-green-600 hover:bg-green-700"
                   borderColor="border-l-blue-400"
                   loading={updateStatusMutation.isPending}
+                  showAction={canAct}
                 />
               ))}
               {inProgress.length === 0 && <p className="text-sm text-gray-400 italic">Aucune commande en préparation</p>}
@@ -105,7 +109,7 @@ export default function KitchenPage() {
 }
 
 function KitchenCard({
-  order, onAction, actionLabel, actionColor, borderColor, loading,
+  order, onAction, actionLabel, actionColor, borderColor, loading, showAction,
 }: {
   order: Order;
   onAction: () => void;
@@ -113,6 +117,7 @@ function KitchenCard({
   actionColor: string;
   borderColor: string;
   loading: boolean;
+  showAction: boolean;
 }) {
   return (
     <div className={`card border-l-4 ${borderColor} p-4`}>
@@ -143,14 +148,16 @@ function KitchenCard({
         </p>
       )}
 
-      <button
-        onClick={onAction}
-        disabled={loading}
-        className={`w-full text-white font-medium py-2.5 rounded-lg transition-colors ${actionColor} disabled:opacity-50`}
-      >
-        <CheckCircle className="inline-block h-4 w-4 mr-2" />
-        {actionLabel}
-      </button>
+      {showAction && (
+        <button
+          onClick={onAction}
+          disabled={loading}
+          className={`w-full text-white font-medium py-2.5 rounded-lg transition-colors ${actionColor} disabled:opacity-50`}
+        >
+          <CheckCircle className="inline-block h-4 w-4 mr-2" />
+          {actionLabel}
+        </button>
+      )}
     </div>
   );
 }

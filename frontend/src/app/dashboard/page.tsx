@@ -17,14 +17,24 @@ import {
   CheckCircle2,
   ClipboardList,
   TrendingUp,
-  BarChart3,
-  PieChart,
-  LineChart,
   DollarSign,
   ArrowRightLeft,
   Clock,
   LayoutGrid,
 } from 'lucide-react';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  PieChart as RechartsPieChart,
+  Pie,
+  Cell,
+  ResponsiveContainer,
+} from 'recharts';
 import Link from 'next/link';
 import type { EstablishmentRole } from '@/types';
 
@@ -82,24 +92,236 @@ function useCleaningActive(establishmentId: string | null) {
 }
 
 // =============================================================================
-// Chart Placeholder Component
+// Chart Color Palette (Teranga)
 // =============================================================================
 
-function ChartPlaceholder({
-  title,
-  icon: Icon,
-}: {
-  title: string;
-  icon: React.ElementType;
-}) {
+const COLORS = {
+  primary: '#B85042',
+  accent: '#D4A857',
+  sage: '#7A9E88',
+  wood: '#9C8B7E',
+  woodDark: '#6B5B4E',
+  primaryLight: '#D4735E',
+  sageLight: '#A7BEAE',
+};
+
+// =============================================================================
+// Mock Data
+// =============================================================================
+
+const stockLevelsData = [
+  { name: 'Riz', stock: 150, min: 50 },
+  { name: 'Huile', stock: 80, min: 30 },
+  { name: 'Poulet', stock: 45, min: 40 },
+  { name: 'Oignons', stock: 120, min: 25 },
+  { name: 'Tomates', stock: 35, min: 30 },
+];
+
+const ordersByDayData = [
+  { jour: 'Lun', commandes: 12 },
+  { jour: 'Mar', commandes: 19 },
+  { jour: 'Mer', commandes: 15 },
+  { jour: 'Jeu', commandes: 22 },
+  { jour: 'Ven', commandes: 28 },
+  { jour: 'Sam', commandes: 35 },
+  { jour: 'Dim', commandes: 30 },
+];
+
+const ordersByServerData = [
+  { name: 'Amadou', commandes: 25 },
+  { name: 'Fatou', commandes: 18 },
+  { name: 'Moussa', commandes: 22 },
+  { name: 'Aïda', commandes: 15 },
+  { name: 'Ibrahima', commandes: 20 },
+];
+
+const paymentFlowData = [
+  { mois: 'Oct', montant: 1850000 },
+  { mois: 'Nov', montant: 2200000 },
+  { mois: 'Déc', montant: 2750000 },
+  { mois: 'Jan', montant: 1950000 },
+  { mois: 'Fév', montant: 2400000 },
+  { mois: 'Mar', montant: 2100000 },
+];
+
+const stockMovementsData = [
+  { name: 'Achat', value: 45 },
+  { name: 'Ajustement', value: 12 },
+  { name: 'Perte', value: 8 },
+  { name: 'Transfert', value: 15 },
+  { name: 'Retour', value: 5 },
+];
+
+const processingTimeData = [
+  { jour: 'Lun', minutes: 18 },
+  { jour: 'Mar', minutes: 22 },
+  { jour: 'Mer', minutes: 15 },
+  { jour: 'Jeu', minutes: 20 },
+  { jour: 'Ven', minutes: 25 },
+  { jour: 'Sam', minutes: 30 },
+  { jour: 'Dim', minutes: 28 },
+];
+
+const STOCK_MOVEMENT_COLORS = [
+  COLORS.sage,
+  COLORS.accent,
+  COLORS.primary,
+  COLORS.wood,
+  COLORS.primaryLight,
+];
+
+// =============================================================================
+// Chart Components
+// =============================================================================
+
+function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="card-accent flex flex-col items-center justify-center p-8">
-      <div className="rounded-xl bg-wood-100 p-3">
-        <Icon className="h-6 w-6 text-wood-400" />
-      </div>
-      <h4 className="mt-3 font-display text-sm font-bold text-wood-700">{title}</h4>
-      <p className="mt-1 text-xs text-wood-400">Graphique &agrave; venir</p>
+    <div className="card-accent p-5">
+      <h4 className="mb-3 font-display text-sm font-bold text-wood-700">{title}</h4>
+      {children}
     </div>
+  );
+}
+
+function StockLevelsChart() {
+  return (
+    <ChartCard title="Niveaux de stock">
+      <ResponsiveContainer width="100%" height={250}>
+        <BarChart data={stockLevelsData} layout="vertical" margin={{ left: 10 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#E7E8D1" />
+          <XAxis type="number" tick={{ fontSize: 11, fill: '#9C8B7E' }} />
+          <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: '#9C8B7E' }} width={60} />
+          <Tooltip contentStyle={{ borderRadius: 8, borderColor: '#E7E8D1' }} />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          <Bar dataKey="stock" name="Stock actuel" fill={COLORS.sage} radius={[0, 4, 4, 0]} />
+          <Bar dataKey="min" name="Stock minimum" fill={COLORS.primary} radius={[0, 4, 4, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  );
+}
+
+function RoomOccupancyChart({ available, occupied, maintenance }: { available: number; occupied: number; maintenance: number }) {
+  const data = [
+    { name: 'Disponibles', value: available },
+    { name: 'Occupées', value: occupied },
+    { name: 'Maintenance', value: maintenance },
+  ];
+  const pieColors = [COLORS.sage, COLORS.accent, COLORS.primary];
+
+  return (
+    <ChartCard title="Occupation des chambres">
+      <ResponsiveContainer width="100%" height={250}>
+        <RechartsPieChart>
+          <Pie
+            data={data}
+            cx="50%"
+            cy="50%"
+            innerRadius={50}
+            outerRadius={90}
+            paddingAngle={3}
+            dataKey="value"
+            label={({ name, value }) => `${name}: ${value}`}
+          >
+            {data.map((_, index) => (
+              <Cell key={`cell-${index}`} fill={pieColors[index]} />
+            ))}
+          </Pie>
+          <Tooltip contentStyle={{ borderRadius: 8, borderColor: '#E7E8D1' }} />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+        </RechartsPieChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  );
+}
+
+function KitchenOrdersChart() {
+  return (
+    <ChartCard title="Commandes cuisine">
+      <ResponsiveContainer width="100%" height={250}>
+        <BarChart data={ordersByDayData}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#E7E8D1" />
+          <XAxis dataKey="jour" tick={{ fontSize: 11, fill: '#9C8B7E' }} />
+          <YAxis tick={{ fontSize: 11, fill: '#9C8B7E' }} />
+          <Tooltip contentStyle={{ borderRadius: 8, borderColor: '#E7E8D1' }} />
+          <Bar dataKey="commandes" name="Commandes" fill={COLORS.accent} radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  );
+}
+
+function OrdersByServerChart() {
+  return (
+    <ChartCard title="Commandes par serveur">
+      <ResponsiveContainer width="100%" height={250}>
+        <BarChart data={ordersByServerData}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#E7E8D1" />
+          <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#9C8B7E' }} />
+          <YAxis tick={{ fontSize: 11, fill: '#9C8B7E' }} />
+          <Tooltip contentStyle={{ borderRadius: 8, borderColor: '#E7E8D1' }} />
+          <Bar dataKey="commandes" name="Commandes" fill={COLORS.sage} radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  );
+}
+
+function PaymentFlowChart() {
+  return (
+    <ChartCard title="Flux de paiement">
+      <ResponsiveContainer width="100%" height={250}>
+        <BarChart data={paymentFlowData}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#E7E8D1" />
+          <XAxis dataKey="mois" tick={{ fontSize: 11, fill: '#9C8B7E' }} />
+          <YAxis tick={{ fontSize: 11, fill: '#9C8B7E' }} tickFormatter={(v) => `${(v / 1000000).toFixed(1)}M`} />
+          <Tooltip contentStyle={{ borderRadius: 8, borderColor: '#E7E8D1' }} formatter={(value: number) => [`${value.toLocaleString()} FCFA`, 'Montant']} />
+          <Bar dataKey="montant" name="Montant (FCFA)" fill={COLORS.accent} radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  );
+}
+
+function StockMovementsChart() {
+  return (
+    <ChartCard title="Mouvements de stock">
+      <ResponsiveContainer width="100%" height={250}>
+        <RechartsPieChart>
+          <Pie
+            data={stockMovementsData}
+            cx="50%"
+            cy="50%"
+            outerRadius={90}
+            paddingAngle={3}
+            dataKey="value"
+            label={({ name, value }) => `${name}: ${value}`}
+          >
+            {stockMovementsData.map((_, index) => (
+              <Cell key={`cell-${index}`} fill={STOCK_MOVEMENT_COLORS[index]} />
+            ))}
+          </Pie>
+          <Tooltip contentStyle={{ borderRadius: 8, borderColor: '#E7E8D1' }} />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+        </RechartsPieChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  );
+}
+
+function ProcessingTimeChart() {
+  return (
+    <ChartCard title="Temps de traitement des commandes">
+      <ResponsiveContainer width="100%" height={250}>
+        <BarChart data={processingTimeData}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#E7E8D1" />
+          <XAxis dataKey="jour" tick={{ fontSize: 11, fill: '#9C8B7E' }} />
+          <YAxis tick={{ fontSize: 11, fill: '#9C8B7E' }} unit=" min" />
+          <Tooltip contentStyle={{ borderRadius: 8, borderColor: '#E7E8D1' }} formatter={(value: number) => [`${value} min`, 'Temps moyen']} />
+          <Bar dataKey="minutes" name="Minutes" fill={COLORS.primary} radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartCard>
   );
 }
 
@@ -521,10 +743,16 @@ function StockAlertsSection() {
 // =============================================================================
 
 function ManagerDashboard({ establishmentId }: { establishmentId: string | null }) {
+  const { data: rooms } = useRoomsStats();
   const { data: lowStock } = useLowStock();
   const { data: invoices } = useRecentInvoices();
   const lowStockItems = (lowStock as any)?.data || [];
   const recentInvoices = invoices?.data || [];
+
+  const roomsData = rooms?.data || [];
+  const mgrAvailable = roomsData.filter((r: any) => r.status === 'AVAILABLE').length;
+  const mgrOccupied = roomsData.filter((r: any) => r.status === 'OCCUPIED').length;
+  const mgrMaintenance = roomsData.filter((r: any) => r.status === 'MAINTENANCE').length;
 
   return (
     <div className="space-y-8">
@@ -558,16 +786,16 @@ function ManagerDashboard({ establishmentId }: { establishmentId: string | null 
         </div>
       </div>
 
-      {/* Chart placeholders */}
+      {/* Charts */}
       <div>
         <h2 className="font-display text-lg font-bold text-wood-800 mb-4">
           Analyses
         </h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <ChartPlaceholder title="Niveaux de stock" icon={BarChart3} />
-          <ChartPlaceholder title="Occupation des chambres" icon={PieChart} />
-          <ChartPlaceholder title="Commandes cuisine" icon={LineChart} />
-          <ChartPlaceholder title="Commandes par serveur" icon={BarChart3} />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <StockLevelsChart />
+          <RoomOccupancyChart available={mgrAvailable} occupied={mgrOccupied} maintenance={mgrMaintenance} />
+          <KitchenOrdersChart />
+          <OrdersByServerChart />
         </div>
       </div>
     </div>
@@ -591,6 +819,10 @@ function DafDashboard({ establishmentId }: { establishmentId: string | null }) {
   roomsData.forEach((r: any) => {
     statusCounts[r.status] = (statusCounts[r.status] || 0) + 1;
   });
+
+  const dafAvailable = roomsData.filter((r: any) => r.status === 'AVAILABLE').length;
+  const dafOccupied = roomsData.filter((r: any) => r.status === 'OCCUPIED').length;
+  const dafMaintenance = roomsData.filter((r: any) => r.status === 'MAINTENANCE').length;
 
   return (
     <div className="space-y-8">
@@ -685,21 +917,21 @@ function DafDashboard({ establishmentId }: { establishmentId: string | null }) {
         </div>
       </div>
 
-      {/* Chart placeholders — MANAGER charts + DAF extras */}
+      {/* Charts — MANAGER charts + DAF extras */}
       <div>
         <h2 className="font-display text-lg font-bold text-wood-800 mb-4">
           Analyses
         </h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <ChartPlaceholder title="Niveaux de stock" icon={BarChart3} />
-          <ChartPlaceholder title="Occupation des chambres" icon={PieChart} />
-          <ChartPlaceholder title="Commandes cuisine" icon={LineChart} />
-          <ChartPlaceholder title="Commandes par serveur" icon={BarChart3} />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <StockLevelsChart />
+          <RoomOccupancyChart available={dafAvailable} occupied={dafOccupied} maintenance={dafMaintenance} />
+          <KitchenOrdersChart />
+          <OrdersByServerChart />
         </div>
-        <div className="grid gap-4 sm:grid-cols-3 mt-4">
-          <ChartPlaceholder title="Flux de paiement" icon={DollarSign} />
-          <ChartPlaceholder title="Mouvements de stock" icon={ArrowRightLeft} />
-          <ChartPlaceholder title="Temps de traitement des commandes" icon={Clock} />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 mt-4">
+          <PaymentFlowChart />
+          <StockMovementsChart />
+          <ProcessingTimeChart />
         </div>
       </div>
     </div>

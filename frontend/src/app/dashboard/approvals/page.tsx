@@ -13,9 +13,14 @@ import { ApprovalRequest } from '@/types';
 export default function ApprovalsPage() {
   const queryClient = useQueryClient();
   const currentEstId = useAuthStore((s) => s.currentEstablishmentId);
+  const currentRole = useAuthStore((s) => s.currentEstablishmentRole);
+  const user = useAuthStore((s) => s.user);
+
+  const isDAF = currentRole === 'DAF';
+  const isManager = currentRole === 'MANAGER';
 
   const [page, setPage] = useState(1);
-  const [statusFilter, setStatusFilter] = useState('PENDING');
+  const [statusFilter, setStatusFilter] = useState(isDAF ? 'PENDING' : '');
   const [typeFilter, setTypeFilter] = useState('');
   const [rejectTarget, setRejectTarget] = useState<ApprovalRequest | null>(null);
   const [rejectReason, setRejectReason] = useState('');
@@ -54,13 +59,19 @@ export default function ApprovalsPage() {
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
   });
 
-  const approvals = data?.data || [];
+  const allApprovals: ApprovalRequest[] = data?.data || [];
+  // For MANAGER role, filter to only show their own requests
+  const approvals = isManager && user
+    ? allApprovals.filter((a) => a.requestedBy?.id === user.id)
+    : allApprovals;
   const meta = data?.meta;
   const count = pendingCount?.data?.count || 0;
 
   const typeLabels: Record<string, string> = {
     EMPLOYEE_CREATION: 'Création employé',
     RESERVATION_MODIFICATION: 'Modification réservation',
+    ROOM_CREATION: 'Création de chambre',
+    STOCK_MOVEMENT: 'Mouvement de stock',
   };
 
   const formatPayload = (approval: ApprovalRequest): string => {
@@ -71,7 +82,33 @@ export default function ApprovalsPage() {
     if (approval.type === 'RESERVATION_MODIFICATION') {
       return `Réservation: ${p.guestName || p.reservationId || ''}`;
     }
+    if (approval.type === 'ROOM_CREATION') {
+      const parts = [];
+      if (p.number) parts.push(`Chambre ${p.number}`);
+      if (p.type) parts.push(`Type: ${p.type}`);
+      if (p.floor != null) parts.push(`Étage: ${p.floor}`);
+      return parts.length > 0 ? parts.join(' — ') : JSON.stringify(p);
+    }
+    if (approval.type === 'STOCK_MOVEMENT') {
+      const parts = [];
+      if (p.articleName || p.articleId) parts.push(`Article: ${p.articleName || p.articleId}`);
+      if (p.quantity != null) parts.push(`Quantité: ${p.quantity}`);
+      if (p.type) parts.push(`Type: ${p.type}`);
+      return parts.length > 0 ? parts.join(' — ') : JSON.stringify(p);
+    }
     return JSON.stringify(p);
+  };
+
+  const statusBadgeClasses: Record<string, string> = {
+    PENDING: 'bg-yellow-50 text-yellow-700',
+    APPROVED: 'bg-green-50 text-green-700',
+    REJECTED: 'bg-red-50 text-red-700',
+  };
+
+  const statusLabelMap: Record<string, string> = {
+    PENDING: 'En attente',
+    APPROVED: 'Approuvée',
+    REJECTED: 'Rejetée',
   };
 
   if (isLoading) return <LoadingPage />;
@@ -79,8 +116,14 @@ export default function ApprovalsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Approbations"
-        subtitle={count > 0 ? `${count} demande${count > 1 ? 's' : ''} en attente` : 'Aucune demande en attente'}
+        title={isManager ? 'Mes demandes' : 'Approbations'}
+        subtitle={
+          isManager
+            ? `${approvals.length} demande${approvals.length > 1 ? 's' : ''} soumise${approvals.length > 1 ? 's' : ''}`
+            : count > 0
+              ? `${count} demande${count > 1 ? 's' : ''} en attente`
+              : 'Aucune demande en attente'
+        }
       />
 
       {/* Filters */}
@@ -95,11 +138,23 @@ export default function ApprovalsPage() {
           <option value="">Tous les types</option>
           <option value="EMPLOYEE_CREATION">Création employé</option>
           <option value="RESERVATION_MODIFICATION">Modification réservation</option>
+          <option value="ROOM_CREATION">Création de chambre</option>
+          <option value="STOCK_MOVEMENT">Mouvement de stock</option>
         </select>
       </div>
 
       {approvals.length === 0 ? (
-        <EmptyState icon={ClipboardCheck} title="Aucune demande" description={statusFilter === 'PENDING' ? 'Aucune demande en attente de validation' : 'Aucune demande trouvée'} />
+        <EmptyState
+          icon={ClipboardCheck}
+          title={isManager ? 'Aucune demande soumise' : 'Aucune demande'}
+          description={
+            isManager
+              ? 'Vous n\'avez soumis aucune demande'
+              : statusFilter === 'PENDING'
+                ? 'Aucune demande en attente de validation'
+                : 'Aucune demande trouvée'
+          }
+        />
       ) : (
         <div className="space-y-3">
           {approvals.map((approval: ApprovalRequest) => (
@@ -110,16 +165,27 @@ export default function ApprovalsPage() {
                     <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">
                       {typeLabels[approval.type] || approval.type}
                     </span>
-                    <StatusBadge status={approval.status} />
+                    {isManager ? (
+                      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadgeClasses[approval.status] || ''}`}>
+                        {statusLabelMap[approval.status] || approval.status}
+                      </span>
+                    ) : (
+                      <StatusBadge status={approval.status} />
+                    )}
                   </div>
 
                   <p className="text-sm text-gray-800 font-medium mb-1">{formatPayload(approval)}</p>
 
                   <div className="flex items-center gap-4 text-xs text-gray-400">
-                    <span>Demandé par : {approval.requestedBy?.firstName} {approval.requestedBy?.lastName}</span>
+                    {!isManager && (
+                      <span>Demandé par : {approval.requestedBy?.firstName} {approval.requestedBy?.lastName}</span>
+                    )}
                     <span>{formatDateTime(approval.createdAt)}</span>
                     {approval.reviewedBy && (
                       <span>Traité par : {approval.reviewedBy.firstName} {approval.reviewedBy.lastName}</span>
+                    )}
+                    {approval.reviewedAt && (
+                      <span>le {formatDateTime(approval.reviewedAt)}</span>
                     )}
                   </div>
 
@@ -130,7 +196,7 @@ export default function ApprovalsPage() {
                   )}
                 </div>
 
-                {approval.status === 'PENDING' && (
+                {approval.status === 'PENDING' && isDAF && (
                   <div className="flex gap-2 ml-4">
                     <button
                       onClick={() => approveMutation.mutate(approval.id)}

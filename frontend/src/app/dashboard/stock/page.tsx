@@ -16,7 +16,7 @@ export default function StockPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [showMovement, setShowMovement] = useState(false);
 
-  const [articleForm, setArticleForm] = useState({ name: '', sku: '', unitPrice: '', costPrice: '', currentStock: '0', minimumStock: '0', unit: 'pièce' });
+  const [articleForm, setArticleForm] = useState({ name: '', sku: '', unitPrice: '', costPrice: '', currentStock: '0', minimumStock: '0', unit: 'pièce', description: '', imageUrl: '' });
   const [movementForm, setMovementForm] = useState({ articleId: '', type: 'PURCHASE', quantity: '', unitCost: '', reason: '' });
 
   const { data: articles, isLoading: articlesLoading } = useQuery({
@@ -38,7 +38,7 @@ export default function StockPage() {
 
   const createArticleMutation = useMutation({
     mutationFn: (body: any) => apiPost('/articles', body),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['articles'] }); setShowCreate(false); toast.success('Article créé'); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['articles'] }); setShowCreate(false); setArticleForm({ name: '', sku: '', unitPrice: '', costPrice: '', currentStock: '0', minimumStock: '0', unit: 'pièce', description: '', imageUrl: '' }); toast.success('Article créé'); },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
   });
 
@@ -170,7 +170,7 @@ export default function StockPage() {
 
       {/* Create Article Modal */}
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Nouvel article" size="lg">
-        <form onSubmit={(e) => { e.preventDefault(); createArticleMutation.mutate({ ...articleForm, unitPrice: Number(articleForm.unitPrice), costPrice: Number(articleForm.costPrice), currentStock: Number(articleForm.currentStock), minimumStock: Number(articleForm.minimumStock) }); }} className="space-y-4">
+        <form onSubmit={(e) => { e.preventDefault(); createArticleMutation.mutate({ ...articleForm, unitPrice: Number(articleForm.unitPrice), costPrice: Number(articleForm.costPrice), currentStock: Number(articleForm.currentStock), minimumStock: Number(articleForm.minimumStock), description: articleForm.description || undefined, imageUrl: articleForm.imageUrl || undefined }); }} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div><label className="label">Nom</label><input value={articleForm.name} onChange={(e) => setArticleForm({ ...articleForm, name: e.target.value })} className="input" required /></div>
             <div><label className="label">SKU</label><input value={articleForm.sku} onChange={(e) => setArticleForm({ ...articleForm, sku: e.target.value })} className="input" /></div>
@@ -178,6 +178,14 @@ export default function StockPage() {
             <div><label className="label">Prix d'achat</label><input type="number" value={articleForm.costPrice} onChange={(e) => setArticleForm({ ...articleForm, costPrice: e.target.value })} className="input" min="0" /></div>
             <div><label className="label">Stock initial</label><input type="number" value={articleForm.currentStock} onChange={(e) => setArticleForm({ ...articleForm, currentStock: e.target.value })} className="input" min="0" /></div>
             <div><label className="label">Stock minimum</label><input type="number" value={articleForm.minimumStock} onChange={(e) => setArticleForm({ ...articleForm, minimumStock: e.target.value })} className="input" min="0" /></div>
+          </div>
+          <div>
+            <label className="label">Description</label>
+            <textarea value={articleForm.description} onChange={(e) => setArticleForm({ ...articleForm, description: e.target.value })} className="input" rows={3} maxLength={500} />
+          </div>
+          <div>
+            <label className="label">URL de l'image</label>
+            <input value={articleForm.imageUrl} onChange={(e) => setArticleForm({ ...articleForm, imageUrl: e.target.value })} className="input" placeholder="https://..." />
           </div>
           <div className="flex justify-end gap-3"><button type="button" onClick={() => setShowCreate(false)} className="btn-secondary">Annuler</button><button type="submit" className="btn-primary" disabled={createArticleMutation.isPending}>{createArticleMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Créer</button></div>
         </form>

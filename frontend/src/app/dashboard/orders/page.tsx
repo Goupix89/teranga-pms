@@ -183,7 +183,14 @@ export default function OrdersPage() {
                     <td className="text-gray-400 text-xs">{formatDateTime(order.createdAt)}</td>
                     <td>
                       <div className="flex gap-1">
-                        {getNextStatuses(order.status).map((action) => (
+                        {getNextStatuses(order.status).filter((action) => {
+                          if (isSuperAdmin) return true;
+                          const role = currentEstRole;
+                          if (role === 'COOK') return ['IN_PROGRESS', 'READY'].includes(action.status);
+                          if (role === 'SERVER') return action.status === 'SERVED';
+                          if (role === 'MANAGER' || role === 'DAF') return action.status === 'CANCELLED';
+                          return false;
+                        }).map((action) => (
                           <button
                             key={action.status}
                             onClick={() => updateStatusMutation.mutate({ id: order.id, status: action.status })}

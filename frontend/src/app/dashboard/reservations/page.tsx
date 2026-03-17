@@ -5,16 +5,20 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch } from '@/lib/api';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { PageHeader, StatusBadge, Pagination, Modal, SearchInput, EmptyState, LoadingPage } from '@/components/ui';
-import { CalendarCheck, Plus, LogIn, LogOut, XCircle, Loader2 } from 'lucide-react';
+import { CalendarCheck, Calendar, Plus, LogIn, LogOut, XCircle, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useAuthStore } from '@/hooks/useAuthStore';
 import type { Reservation, PaginatedResponse } from '@/types';
 
 export default function ReservationsPage() {
   const queryClient = useQueryClient();
+  const currentEstablishmentRole = useAuthStore((s) => s.currentEstablishmentRole);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [editingDates, setEditingDates] = useState<Reservation | null>(null);
+  const [dateForm, setDateForm] = useState({ checkIn: '', checkOut: '' });
 
   const [form, setForm] = useState({
     roomId: '', guestName: '', guestEmail: '', guestPhone: '',
@@ -37,6 +41,17 @@ export default function ReservationsPage() {
       queryClient.invalidateQueries({ queryKey: ['reservations'] });
       setShowModal(false);
       toast.success('Réservation créée');
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
+  });
+
+  const datesMutation = useMutation({
+    mutationFn: ({ id, checkIn, checkOut }: { id: string; checkIn: string; checkOut: string }) =>
+      apiPatch(`/reservations/${id}/dates`, { checkIn, checkOut }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['reservations'] });
+      setEditingDates(null);
+      toast.success('Modification soumise à validation du DAF');
     },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
   });
@@ -144,6 +159,15 @@ export default function ReservationsPage() {
                             <LogOut className="h-4 w-4" />
                           </button>
                         )}
+                        {currentEstablishmentRole === 'MANAGER' && !['CHECKED_OUT', 'CANCELLED'].includes(res.status) && (
+                          <button
+                            onClick={() => { setEditingDates(res); setDateForm({ checkIn: res.checkIn.slice(0, 10), checkOut: res.checkOut.slice(0, 10) }); }}
+                            className="btn-ghost p-1.5 text-amber-600"
+                            title="Modifier dates"
+                          >
+                            <Calendar className="h-4 w-4" />
+                          </button>
+                        )}
                         {!['CHECKED_OUT', 'CANCELLED'].includes(res.status) && (
                           <button
                             onClick={() => actionMutation.mutate({ id: res.id, action: 'cancel' })}
@@ -163,6 +187,29 @@ export default function ReservationsPage() {
           {meta && <Pagination page={meta.page} totalPages={meta.totalPages} total={meta.total} onPageChange={setPage} />}
         </div>
       )}
+
+      {/* Edit Dates Modal */}
+      <Modal open={!!editingDates} onClose={() => setEditingDates(null)} title="Modifier les dates" size="md">
+        <form onSubmit={(e) => { e.preventDefault(); if (editingDates) datesMutation.mutate({ id: editingDates.id, checkIn: dateForm.checkIn, checkOut: dateForm.checkOut }); }} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Date d'arrivée</label>
+              <input type="date" value={dateForm.checkIn} onChange={(e) => setDateForm({ ...dateForm, checkIn: e.target.value })} className="input" required />
+            </div>
+            <div>
+              <label className="label">Date de départ</label>
+              <input type="date" value={dateForm.checkOut} onChange={(e) => setDateForm({ ...dateForm, checkOut: e.target.value })} className="input" required />
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={() => setEditingDates(null)} className="btn-secondary">Annuler</button>
+            <button type="submit" className="btn-primary" disabled={datesMutation.isPending}>
+              {datesMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Soumettre la modification
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       {/* Create Modal */}
       <Modal open={showModal} onClose={() => setShowModal(false)} title="Nouvelle réservation" size="lg">
