@@ -49,8 +49,11 @@ app.use(helmet({
 }));
 
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin) return callback(null, true); // Allow non-browser requests
+  origin: (rawOrigin, callback) => {
+    if (!rawOrigin) return callback(null, true); // Allow non-browser requests
+
+    // Some reverse proxies (OLS) duplicate the Origin header → take the first value
+    const origin = rawOrigin.split(',')[0].trim();
 
     const allowed = config.cors.allowedOrigins;
     if (
