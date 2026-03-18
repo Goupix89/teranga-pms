@@ -11,9 +11,9 @@ const RESERVED_SLUGS = new Set([
   'support', 'help', 'docs', 'status', 'health',
 ]);
 
-const stripe = new Stripe(config.stripe.secretKey, {
-  apiVersion: '2025-02-24.acacia',
-});
+const stripe = config.stripe.secretKey
+  ? new Stripe(config.stripe.secretKey, { apiVersion: '2025-02-24.acacia' })
+  : null;
 
 export class RegistrationService {
   /**
@@ -77,6 +77,7 @@ export class RegistrationService {
     }
 
     // Create Stripe customer
+    if (!stripe) throw new AppError('Stripe non configuré', 503, 'STRIPE_NOT_CONFIGURED');
     const stripeCustomer = await stripe.customers.create({
       email: email.toLowerCase().trim(),
       name: tenantName,
@@ -152,6 +153,7 @@ export class RegistrationService {
     let event: Stripe.Event;
 
     try {
+      if (!stripe) throw new AppError('Stripe non configuré', 503, 'STRIPE_NOT_CONFIGURED');
       event = stripe.webhooks.constructEvent(
         rawBody,
         signature,
