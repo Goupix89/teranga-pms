@@ -23,8 +23,15 @@ android {
         debug {
             buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:4000\"")
         }
+        create("staging") {
+            initWith(getByName("debug"))
+            buildConfigField("String", "API_BASE_URL", "\"https://demo-teranga.jdidit.cloud\"")
+            applicationIdSuffix = ".staging"
+            versionNameSuffix = "-test"
+        }
         release {
             isMinifyEnabled = true
+            buildConfigField("String", "API_BASE_URL", "\"https://demo-teranga.jdidit.cloud\"")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
