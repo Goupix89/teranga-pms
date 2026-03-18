@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { prisma } from '../utils/prisma';
 import { config } from '../config';
 import { logger } from '../utils/logger';
+import { channelSyncService } from '../services/channel-sync.service';
 
 /**
  * Archive inactive users.
@@ -98,6 +99,46 @@ async function cleanExpiredTokens() {
 }
 
 /**
+ * Sync external calendars (iCal import from OTAs).
+ * Runs every 15 minutes.
+ */
+async function syncExternalCalendars() {
+  try {
+    const connections = await prisma.channelConnection.findMany({
+      where: {
+        isActive: true,
+        importUrl: { not: null },
+      },
+    });
+
+    let synced = 0;
+    let errors = 0;
+
+    for (const conn of connections) {
+      // Respect individual sync interval
+      if (conn.lastSyncAt) {
+        const msSinceLastSync = Date.now() - conn.lastSyncAt.getTime();
+        if (msSinceLastSync < conn.syncIntervalMin * 60 * 1000) continue;
+      }
+
+      try {
+        await channelSyncService.syncInbound(conn.id);
+        synced++;
+      } catch (err) {
+        errors++;
+        logger.error('Channel sync failed', { connectionId: conn.id, error: err });
+      }
+    }
+
+    if (synced > 0 || errors > 0) {
+      logger.info(`Channel sync: ${synced} synced, ${errors} errors`);
+    }
+  } catch (err) {
+    logger.error('Channel sync job failed', { error: err });
+  }
+}
+
+/**
  * Register all cron jobs.
  */
 export function registerCronJobs() {
@@ -113,6 +154,11 @@ export function registerCronJobs() {
 
   // Daily at 6:00 AM — mark overdue invoices
   cron.schedule('0 6 * * *', markOverdueInvoices, {
+    timezone: 'Africa/Lome',
+  });
+
+  // Every 15 minutes — sync external calendars (iCal)
+  cron.schedule('*/15 * * * *', syncExternalCalendars, {
     timezone: 'Africa/Lome',
   });
 

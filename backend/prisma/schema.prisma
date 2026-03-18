@@ -172,7 +172,8 @@ model Tenant {
   approvalRequests ApprovalRequest[]
   stockAlerts      StockAlert[]
   cleaningSessions CleaningSession[]
-  notifications    Notification[]
+  notifications      Notification[]
+  channelConnections ChannelConnection[]
 
   @@map("tenants")
 }
@@ -321,10 +322,11 @@ model Room {
   createdAt       DateTime   @default(now()) @map("created_at")
   updatedAt       DateTime   @updatedAt @map("updated_at")
 
-  tenant           Tenant            @relation(fields: [tenantId], references: [id])
-  establishment    Establishment     @relation(fields: [establishmentId], references: [id])
-  reservations     Reservation[]
-  cleaningSessions CleaningSession[]
+  tenant             Tenant              @relation(fields: [tenantId], references: [id])
+  establishment      Establishment       @relation(fields: [establishmentId], references: [id])
+  reservations       Reservation[]
+  cleaningSessions   CleaningSession[]
+  channelConnections ChannelConnection[]
 
   @@unique([tenantId, establishmentId, number])
   @@index([tenantId])
@@ -680,6 +682,53 @@ model Notification {
   @@index([userId, isRead])
   @@index([tenantId, establishmentId])
   @@map("notifications")
+}
+
+// =============================================================================
+// CHANNEL SYNC (iCal)
+// =============================================================================
+
+model ChannelConnection {
+  id              String        @id @default(uuid())
+  tenantId        String        @map("tenant_id")
+  roomId          String        @map("room_id")
+  channel         BookingSource
+  exportToken     String        @unique @map("export_token")
+  importUrl       String?       @map("import_url")
+  isActive        Boolean       @default(true) @map("is_active")
+  lastSyncAt      DateTime?     @map("last_sync_at")
+  lastSyncStatus  String?       @map("last_sync_status")
+  lastSyncError   String?       @map("last_sync_error")
+  syncIntervalMin Int           @default(15) @map("sync_interval_min")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  tenant   Tenant           @relation(fields: [tenantId], references: [id])
+  room     Room             @relation(fields: [roomId], references: [id])
+  syncLogs ChannelSyncLog[]
+
+  @@unique([tenantId, roomId, channel])
+  @@index([tenantId, isActive])
+  @@map("channel_connections")
+}
+
+model ChannelSyncLog {
+  id              String   @id @default(uuid())
+  connectionId    String   @map("connection_id")
+  direction       String
+  eventsFound     Int      @default(0) @map("events_found")
+  eventsCreated   Int      @default(0) @map("events_created")
+  eventsUpdated   Int      @default(0) @map("events_updated")
+  eventsCancelled Int      @default(0) @map("events_cancelled")
+  status          String
+  errorMessage    String?  @map("error_message")
+  durationMs      Int?     @map("duration_ms")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  connection ChannelConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([connectionId, createdAt])
+  @@map("channel_sync_logs")
 }
 
 // =============================================================================

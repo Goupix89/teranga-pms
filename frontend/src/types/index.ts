@@ -320,3 +320,36 @@ export interface StockAlert {
   createdBy?: { id: string; firstName: string; lastName: string };
   createdAt: string;
 }
+
+// =============================================================================
+// Channel Sync
+// =============================================================================
+
+export interface ChannelConnection {
+  id: string;
+  roomId: string;
+  channel: BookingSource;
+  exportToken: string;
+  importUrl?: string | null;
+  isActive: boolean;
+  lastSyncAt?: string | null;
+  lastSyncStatus?: string | null;
+  lastSyncError?: string | null;
+  syncIntervalMin: number;
+  room?: { id: string; number: string; type: RoomType; establishment?: { name: string } };
+  createdAt: string;
+}
+
+export interface ChannelSyncLog {
+  id: string;
+  connectionId: string;
+  direction: string;
+  eventsFound: number;
+  eventsCreated: number;
+  eventsUpdated: number;
+  eventsCancelled: number;
+  status: string;
+  errorMessage?: string | null;
+  durationMs?: number | null;
+  createdAt: string;
+}

@@ -37,7 +37,9 @@ import {
   approvalRouter,
   cleaningRouter,
   integrationRouter,
+  channelRouter,
 } from './routes/resource.routes';
+import { channelSyncService } from './services/channel-sync.service';
 
 const app = express();
 
@@ -100,6 +102,19 @@ app.use(morgan('combined', {
   stream: { write: (msg: string) => logger.info(msg.trim()) },
   skip: (req) => req.path === '/health',
 }));
+
+// Public iCal feed — no auth, no tenant resolution needed (token-based)
+app.get('/api/calendar/:token.ics', async (req, res, next) => {
+  try {
+    const ical = await channelSyncService.generateRoomIcal(req.params.token);
+    res.set('Content-Type', 'text/calendar; charset=utf-8');
+    res.set('Cache-Control', 'no-cache, no-store');
+    res.set('X-Accel-Buffering', 'no');
+    res.send(ical);
+  } catch (err) {
+    next(err);
+  }
+});
 
 // Tenant resolution from subdomain
 app.use(extractTenantFromSubdomain);
@@ -218,6 +233,9 @@ app.use('/api/notifications', notificationRouter);
 
 // Establishment members (nested under /api/establishments/:establishmentId/members)
 app.use('/api/establishments', memberRouter);
+
+// Channel sync (iCal)
+app.use('/api/channels', channelRouter);
 
 // Integration endpoints (availability, external bookings, POS)
 app.use('/api', integrationRouter);

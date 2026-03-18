@@ -55,6 +55,9 @@ hotel-pms/
 15. **Rapports** — Taux d'occupation, revenus, performance par serveur, export CSV, graphiques
 16. **Intégrations** — API disponibilité (JSON/iCal), Channel Manager, POS Android
 17. **Inscription & Abonnements** — Inscription self-service avec paiement Stripe, plans Basic/Pro/Enterprise
+18. **Notifications temps réel** — SSE + polling, alertes par rôle (checkout, ménage, commandes, approbations, stock)
+19. **Synchronisation calendrier (iCal)** — Sync bidirectionnelle des disponibilités avec Airbnb, Booking.com, Expedia via iCal
+20. **Profil utilisateur** — Modification des informations personnelles, changement de mot de passe
 
 ## Flux de Paiement (Commandes)
 
@@ -161,15 +164,16 @@ npm run dev
 
 | Plan | Prix mensuel | Prix annuel | Établissements | Chambres | Utilisateurs |
 |------|-------------|-------------|----------------|----------|-------------|
-| Basic | 29 EUR | 290 EUR | 1 | 20 | 5 |
-| Pro | 79 EUR | 790 EUR | 3 | 100 | 20 |
-| Enterprise | 199 EUR | 1990 EUR | Illimité | Illimité | Illimité |
+| Basic | 32 500 FCFA | 325 000 FCFA | 1 | 20 | 5 |
+| Pro | 65 000 FCFA | 650 000 FCFA | 3 | 100 | 20 |
+| Enterprise | 130 000 FCFA | 1 300 000 FCFA | Illimité | Illimité | Illimité |
 
 ### Identifiants de démonstration
 
 | Rôle | Email | Mot de passe |
 |------|-------|-------------|
 | Super Admin | superadmin@hoteldemo.com | Admin123! |
+| Propriétaire | owner@hoteldemo.com | Owner123! |
 | DAF | daf@hoteldemo.com | Daf12345! |
 | Manager | manager@hoteldemo.com | Manager123! |
 | Serveur | serveur@hoteldemo.com | Serveur123! |
@@ -192,6 +196,7 @@ Le système utilise un **RBAC à 2 niveaux** :
 
 | Rôle | Description |
 |------|-------------|
+| **OWNER** | Propriétaire — accès complet à l'établissement, mêmes droits que le DAF + gestion des canaux de réservation |
 | **DAF** | Directeur Administratif et Financier — administrateur de l'établissement. Valide les créations d'articles/employés, gère finances/stock/rapports. Badge d'approbation en temps réel sur le dashboard |
 | **MANAGER** | Gestion quotidienne — crée les articles du menu (soumis à approbation DAF), crée employés (sous validation DAF), rapports d'activité, gestion stock |
 | **SERVER** | Serveur — prise de commandes via le menu (Restaurant/Boissons), affichage QR code pour paiement client, stats personnelles. N'a pas accès aux réservations ni aux chambres directement |
@@ -201,26 +206,27 @@ Le système utilise un **RBAC à 2 niveaux** :
 
 ### Matrice des permissions
 
-| Fonctionnalité | SuperAdmin | DAF | Manager | Serveur | POS | Cuisinier | Ménage |
-|----------------|:----------:|:---:|:-------:|:-------:|:---:|:---------:|:------:|
-| Paramètres plateforme | X | | | | | | |
-| Créer/supprimer établissements | X | | | | | | |
-| Modifier établissement | X | X | | | | | |
-| Gérer utilisateurs | X | X | X ^1 | | | | |
-| Approuver demandes | X | X | | | | | |
-| Rapports & Export CSV | X | X | X | | | | |
-| Fournisseurs | X | X | | | | | |
-| Menu & Articles (créer) | X | X | X ^2 | | | | |
-| Stock & Inventaire | X | X | X | | | | |
-| Alertes stock | X | X | X | | | | |
-| Factures & Paiements | X | X | X | X | X | | |
-| Commandes + QR code | X | X | X | X | | | |
-| Filtrer commandes par serveur | X | X | X | | | | |
-| Cuisine (temps réel) | X | X | X | | | X | |
-| Chambres | X | X | X | | | | X |
-| Réservations | X | X | X | | | | |
-| Ménage & Pointage | X | X | X | | | | X |
-| Tableau de bord | X | X | X | X | X | X | X |
+| Fonctionnalité | SuperAdmin | Owner | DAF | Manager | Serveur | POS | Cuisinier | Ménage |
+|----------------|:----------:|:-----:|:---:|:-------:|:-------:|:---:|:---------:|:------:|
+| Paramètres plateforme | X | | | | | | | |
+| Créer/supprimer établissements | X | | | | | | | |
+| Modifier établissement | X | X | X | | | | | |
+| Gérer utilisateurs | X | X | X | X ^1 | | | | |
+| Approuver demandes | X | X | X | | | | | |
+| Rapports & Export CSV | X | X | X | X | | | | |
+| Fournisseurs | X | X | X | | | | | |
+| Menu & Articles (créer) | X | X | X | X ^2 | | | | |
+| Stock & Inventaire | X | X | X | X | | | | |
+| Alertes stock | X | X | X | X | | | | |
+| Canaux (iCal sync) | X | X | X | X | | | | |
+| Factures & Paiements | X | X | X | X | X | X | | |
+| Commandes + QR code | X | X | X | X | X | | | |
+| Filtrer commandes par serveur | X | X | X | X | | | | |
+| Cuisine (temps réel) | X | X | X | X | | | X | |
+| Chambres | X | X | X | X | | | | X |
+| Réservations | X | X | X | X | | | | |
+| Ménage & Pointage | X | X | X | X | | | | X |
+| Tableau de bord | X | X | X | X | X | X | X | X |
 
 ^1 Le Manager ne peut créer que des serveurs, cuisiniers et ménage (soumis à validation DAF).
 ^2 Les articles créés par le Manager nécessitent l'approbation du DAF avant d'apparaître au menu.
@@ -268,11 +274,84 @@ Le système utilise un **RBAC à 2 niveaux** :
 - `POST /api/registration/register` — Inscription + Stripe Checkout
 - `POST /api/webhooks/stripe` — Webhook Stripe
 
+### Notifications
+- `GET /api/notifications` — Liste des notifications (+ `?unread=true`)
+- `GET /api/notifications/unread-count` — Compteur non lues
+- `POST /api/notifications/:id/read` — Marquer comme lue
+- `POST /api/notifications/read-all` — Tout marquer comme lu
+- `GET /api/notifications/stream` — Flux SSE temps réel
+
+### Canaux de réservation (iCal sync)
+- `GET /api/channels` — Liste des connexions (+ `?roomId=`, `?establishmentId=`)
+- `GET /api/channels/:id` — Détail avec historique de sync
+- `POST /api/channels` — Créer une connexion
+- `PATCH /api/channels/:id` — Modifier (importUrl, isActive, syncIntervalMin)
+- `DELETE /api/channels/:id` — Supprimer
+- `POST /api/channels/:id/sync` — Déclencher un sync manuel
+- `POST /api/channels/:id/regenerate-token` — Régénérer le token d'export
+- `GET /api/calendar/:token.ics` — **Feed iCal public** (sans authentification, token dans l'URL)
+
 ### Intégrations
 - `GET /api/availability.json` — Disponibilité chambres (JSON)
-- `GET /api/availability.ics` — Calendrier iCal (RFC 5545)
+- `GET /api/availability.ics` — Calendrier iCal global (RFC 5545, authentifié)
 - `POST /api/external-bookings` — Réservations Channel Manager (API Key)
 - `POST /api/pos/transactions` — Transactions POS Android
+
+## Synchronisation Calendrier (iCal) — Guide de configuration
+
+La synchronisation iCal permet de connecter les chambres aux plateformes de réservation externes (Airbnb, Booking.com, Expedia) pour éviter les doubles réservations.
+
+### Principe
+
+Chaque chambre peut être connectée à un ou plusieurs canaux. La synchronisation est **bidirectionnelle** :
+
+- **Export (PMS → OTA)** : Le PMS génère un feed iCal par chambre, accessible via une URL publique unique. L'OTA s'y abonne pour voir les dates bloquées.
+- **Import (OTA → PMS)** : Le PMS importe périodiquement le feed iCal de l'OTA pour récupérer les réservations faites sur la plateforme externe.
+
+### Rôles autorisés
+
+Seuls les comptes **OWNER**, **DAF** et **MANAGER** ont accès à la page "Canaux" et peuvent configurer les connexions.
+
+### Étapes de configuration
+
+#### 1. Connecter une chambre à Airbnb
+
+1. Se connecter avec un compte OWNER, DAF ou MANAGER
+2. Aller dans **Canaux** (menu latéral)
+3. Cliquer **Connecter un canal**
+4. Sélectionner la chambre et la plateforme (Airbnb)
+5. Cliquer **Connecter**
+
+#### 2. Exporter les disponibilités vers Airbnb
+
+1. Sur la connexion créée, cliquer l'icône **Copier** pour copier l'URL d'export
+2. Dans Airbnb : Calendrier > Paramètres de disponibilité > **Importer le calendrier**
+3. Coller l'URL copiée
+4. Airbnb synchronisera automatiquement les dates bloquées du PMS
+
+#### 3. Importer les réservations Airbnb
+
+1. Dans Airbnb : Calendrier > Paramètres de disponibilité > **Exporter le calendrier**
+2. Copier l'URL iCal fournie par Airbnb (format : `https://www.airbnb.com/calendar/ical/xxx.ics`)
+3. Dans le PMS : déplier la connexion, coller l'URL dans le champ **URL d'import**
+4. Cliquer **Synchroniser maintenant** pour un premier test
+5. La synchronisation automatique s'exécute toutes les 15 minutes (configurable : 5 min à 24h)
+
+### Mêmes étapes pour Booking.com et Expedia
+
+Les plateformes proposent toutes un export/import iCal dans leurs paramètres de calendrier. Le principe est identique : coller l'URL d'export du PMS dans l'OTA, et l'URL d'export de l'OTA dans le PMS.
+
+### Gestion des conflits
+
+- Si une réservation externe entre en conflit avec une réservation PMS existante, elle est **ignorée** (le PMS a priorité)
+- Les conflits sont visibles dans l'historique de synchronisation de chaque connexion
+- Les annulations sur l'OTA sont automatiquement détectées et appliquées dans le PMS
+
+### Sécurité
+
+- Chaque URL d'export contient un **token unique de 64 caractères** (non devinable)
+- Si un token est compromis, il peut être régénéré (l'ancienne URL cesse de fonctionner immédiatement)
+- Les feeds iCal ne contiennent aucune donnée client (uniquement "Non disponible" + dates)
 
 ## App Mobile Android
 

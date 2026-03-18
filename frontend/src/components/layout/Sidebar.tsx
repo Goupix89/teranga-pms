@@ -9,7 +9,7 @@ import {
   LayoutDashboard, BedDouble, CalendarCheck, Receipt, CreditCard,
   Package, Truck, Users, Building2, Settings, LogOut, ChevronLeft,
   BarChart3, UtensilsCrossed, SprayCan, ClipboardCheck, AlertTriangle,
-  ChevronDown, UserCircle,
+  ChevronDown, UserCircle, Globe2,
 } from 'lucide-react';
 import { useState } from 'react';
 import { NotificationBell } from './NotificationBell';
@@ -27,6 +27,7 @@ const navigation: NavItem[] = [
   { name: 'Établissements', href: '/dashboard/establishments', icon: Building2, superadminOnly: true },
   { name: 'Chambres', href: '/dashboard/rooms', icon: BedDouble, estRoles: ['OWNER', 'DAF', 'MANAGER', 'CLEANER'] },
   { name: 'Réservations', href: '/dashboard/reservations', icon: CalendarCheck, estRoles: ['OWNER', 'DAF', 'MANAGER'] },
+  { name: 'Canaux', href: '/dashboard/channels', icon: Globe2, estRoles: ['OWNER', 'DAF', 'MANAGER'] },
   { name: 'Commandes', href: '/dashboard/orders', icon: UtensilsCrossed, estRoles: ['OWNER', 'DAF', 'MANAGER', 'SERVER'] },
   { name: 'Cuisine', href: '/dashboard/kitchen', icon: UtensilsCrossed, estRoles: ['OWNER', 'DAF', 'MANAGER', 'COOK'] },
   { name: 'Factures', href: '/dashboard/invoices', icon: Receipt, estRoles: ['OWNER', 'DAF', 'MANAGER', 'SERVER'] },

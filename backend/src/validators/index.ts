@@ -42,6 +42,22 @@ export const changePasswordSchema = z.object({
 });
 
 // =============================================================================
+// Channel Sync
+// =============================================================================
+
+export const createChannelSchema = z.object({
+  roomId: z.string().uuid('ID chambre invalide'),
+  channel: z.enum(['BOOKING_COM', 'EXPEDIA', 'AIRBNB', 'CHANNEL_MANAGER']),
+  importUrl: z.string().url('URL invalide').optional(),
+});
+
+export const updateChannelSchema = z.object({
+  importUrl: z.string().url('URL invalide').optional().nullable(),
+  isActive: z.boolean().optional(),
+  syncIntervalMin: z.number().int().min(5, 'Minimum 5 minutes').max(1440, 'Maximum 24 heures').optional(),
+});
+
+// =============================================================================
 // Tenant
 // =============================================================================
 

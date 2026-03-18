@@ -31,6 +31,7 @@ import { approvalService } from '../services/approval.service';
 import { cleaningService } from '../services/cleaning.service';
 import { stockAlertService } from '../services/stock-alert.service';
 import { memberService } from '../services/member.service';
+import { channelSyncService } from '../services/channel-sync.service';
 // QR code and prisma for invoice QR endpoint
 const QRCode = require('qrcode');
 import { PrismaClient } from '@prisma/client';
@@ -1040,5 +1041,67 @@ integrationRouter.post('/pos/transactions', authenticate, requirePaymentRole, va
       success: true,
       ...result,
     });
+  })
+);
+
+// =============================================================================
+// CHANNEL SYNC (iCal)
+// =============================================================================
+export const channelRouter = Router();
+
+// GET /api/channels — list connections
+channelRouter.get('/', authenticate, requireDAFOrManager,
+  asyncHandler(async (req, res) => {
+    const { roomId, establishmentId } = req.query as any;
+    const data = await channelSyncService.listConnections(req.user!.tenantId, { roomId, establishmentId });
+    res.json({ success: true, data });
+  })
+);
+
+// GET /api/channels/:id — detail with sync logs
+channelRouter.get('/:id', authenticate, requireDAFOrManager,
+  asyncHandler(async (req, res) => {
+    const data = await channelSyncService.getConnectionWithLogs(req.user!.tenantId, req.params.id);
+    res.json({ success: true, data });
+  })
+);
+
+// POST /api/channels — create connection
+channelRouter.post('/', authenticate, requireDAFOrManager, validate(v.createChannelSchema),
+  asyncHandler(async (req, res) => {
+    const data = await channelSyncService.createConnection(req.user!.tenantId, req.body);
+    res.status(201).json({ success: true, data });
+  })
+);
+
+// PATCH /api/channels/:id — update
+channelRouter.patch('/:id', authenticate, requireDAFOrManager, validate(v.updateChannelSchema),
+  asyncHandler(async (req, res) => {
+    const data = await channelSyncService.updateConnection(req.user!.tenantId, req.params.id, req.body);
+    res.json({ success: true, data });
+  })
+);
+
+// DELETE /api/channels/:id — remove
+channelRouter.delete('/:id', authenticate, requireDAFOrManager,
+  asyncHandler(async (req, res) => {
+    await channelSyncService.deleteConnection(req.user!.tenantId, req.params.id);
+    res.json({ success: true, message: 'Connexion supprimée' });
+  })
+);
+
+// POST /api/channels/:id/sync — manual inbound sync
+channelRouter.post('/:id/sync', authenticate, requireDAFOrManager,
+  asyncHandler(async (req, res) => {
+    const result = await channelSyncService.syncInbound(req.params.id);
+    res.json({ success: true, data: result });
+  })
+);
+
+// POST /api/channels/:id/regenerate-token — regenerate export token
+channelRouter.post('/:id/regenerate-token', authenticate, requireDAFOrManager,
+  asyncHandler(async (req, res) => {
+    const data = await channelSyncService.regenerateToken(req.user!.tenantId, req.params.id);
+    res.json({ success: true, data });
   })
 );
