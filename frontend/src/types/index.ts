@@ -37,7 +37,7 @@ export type PaymentMethod = 'CASH' | 'CARD' | 'BANK_TRANSFER' | 'MOBILE_MONEY' |
 export type StockMovementType = 'PURCHASE' | 'SALE' | 'ADJUSTMENT' | 'TRANSFER' | 'WASTE' | 'RETURN';
 export type BookingSource = 'DIRECT' | 'BOOKING_COM' | 'EXPEDIA' | 'AIRBNB' | 'CHANNEL_MANAGER' | 'PHONE' | 'WALK_IN';
 export type OrderStatus = 'PENDING' | 'IN_PROGRESS' | 'READY' | 'SERVED' | 'CANCELLED';
-export type ApprovalType = 'EMPLOYEE_CREATION' | 'RESERVATION_MODIFICATION' | 'ROOM_CREATION' | 'STOCK_MOVEMENT';
+export type ApprovalType = 'EMPLOYEE_CREATION' | 'RESERVATION_MODIFICATION' | 'ROOM_CREATION' | 'STOCK_MOVEMENT' | 'ARTICLE_CREATION';
 export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 export type CleaningStatus = 'IN_PROGRESS' | 'COMPLETED';
 
