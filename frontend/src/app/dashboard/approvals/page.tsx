@@ -188,7 +188,7 @@ export default function ApprovalsPage() {
 
                   <p className="text-sm text-gray-800 font-medium mb-1">{formatPayload(approval)}</p>
                   {approval.type === 'ARTICLE_CREATION' && approval.payload?.imageUrl && (
-                    <img src={approval.payload.imageUrl.startsWith('http') ? approval.payload.imageUrl : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}${approval.payload.imageUrl}`} alt={approval.payload.name} className="mt-2 h-20 w-20 rounded-lg object-cover border border-wood-200" />
+                    <img src={String(approval.payload.imageUrl).startsWith('http') ? String(approval.payload.imageUrl) : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}${approval.payload.imageUrl}`} alt={String(approval.payload.name || '')} className="mt-2 h-20 w-20 rounded-lg object-cover border border-wood-200" />
                   )}
 
                   <div className="flex items-center gap-4 text-xs text-gray-400">
