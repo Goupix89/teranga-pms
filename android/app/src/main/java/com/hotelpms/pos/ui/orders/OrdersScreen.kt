@@ -51,7 +51,13 @@ fun OrdersScreen(
     if (uiState.showQrCode && uiState.qrCodeData != null) {
         QrCodePaymentDialog(
             qrData = uiState.qrCodeData!!,
-            onDismiss = { viewModel.dismissQrCode() }
+            onDismiss = {
+                viewModel.dismissQrCode()
+                if (uiState.simulationSuccess) viewModel.fetchOrders()
+            },
+            onSimulatePayment = { invoiceId -> viewModel.simulatePayment(invoiceId) },
+            isSimulating = uiState.isSimulating,
+            simulationSuccess = uiState.simulationSuccess
         )
     }
 
@@ -633,7 +639,7 @@ private fun OrderCard(
                                 Text("Servie", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.White)
                             }
                         }
-                        if (order.status !in listOf("CANCELLED", "SERVED") && userRole in listOf("MANAGER", "DAF", "SUPERADMIN")) {
+                        if (order.status !in listOf("CANCELLED", "SERVED") && userRole in listOf("MANAGER", "DAF", "OWNER", "SUPERADMIN")) {
                             OutlinedButton(
                                 onClick = { onCancel(order.id) },
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = RougeDahomey),
@@ -654,7 +660,13 @@ private fun OrderCard(
 // =============================================================================
 
 @Composable
-private fun QrCodePaymentDialog(qrData: QrCodeData, onDismiss: () -> Unit) {
+private fun QrCodePaymentDialog(
+    qrData: QrCodeData,
+    onDismiss: () -> Unit,
+    onSimulatePayment: ((String) -> Unit)? = null,
+    isSimulating: Boolean = false,
+    simulationSuccess: Boolean = false
+) {
     Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -700,6 +712,44 @@ private fun QrCodePaymentDialog(qrData: QrCodeData, onDismiss: () -> Unit) {
                     fontSize = 11.sp, color = BronzeAbomey, textAlign = TextAlign.Center
                 )
                 Spacer(Modifier.height(16.dp))
+
+                if (simulationSuccess) {
+                    // Payment confirmed
+                    Surface(
+                        color = VertBeninois.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = VertBeninois, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Paiement reçu !", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = VertBeninois)
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+
+                // Simulate payment button
+                if (!simulationSuccess && onSimulatePayment != null && qrData.invoice?.id != null) {
+                    Button(
+                        onClick = { onSimulatePayment(qrData.invoice.id) },
+                        enabled = !isSimulating,
+                        colors = ButtonDefaults.buttonColors(containerColor = VertBeninois),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (isSimulating) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text("Simuler le paiement client", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+
                 Button(
                     onClick = onDismiss,
                     colors = ButtonDefaults.buttonColors(containerColor = RougeDahomey),

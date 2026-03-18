@@ -106,7 +106,7 @@ fun DashboardScreen(
                     "SERVER" -> {
                         item { ServerDashboard(state, currencyFormat, onNavigateToMenu) }
                     }
-                    "DAF" -> {
+                    "DAF", "OWNER" -> {
                         item { ManagerDashboard(state, currencyFormat) }
                         item { DafFinancialSection(state, currencyFormat) }
                     }

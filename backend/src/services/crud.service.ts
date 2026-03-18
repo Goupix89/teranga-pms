@@ -99,17 +99,24 @@ export class UserService {
       }
     }
 
-    // DAF can create any role except DAF (DAF is created by SUPERADMIN)
+    // DAF can create MANAGER, SERVER, COOK, CLEANER, POS — not DAF or OWNER
     if (requestingEstRole === 'DAF') {
-      if (data.establishmentRole === 'DAF') {
-        throw new ForbiddenError('Seul un super administrateur peut créer un DAF');
+      if (data.establishmentRole === 'DAF' || data.establishmentRole === 'OWNER') {
+        throw new ForbiddenError('Un DAF ne peut pas créer un DAF ou un propriétaire');
+      }
+    }
+
+    // OWNER can create any role except OWNER (one OWNER per establishment)
+    if (requestingEstRole === 'OWNER') {
+      if (data.establishmentRole === 'OWNER') {
+        throw new ForbiddenError('Il ne peut y avoir qu\'un seul propriétaire par établissement');
       }
     }
 
     const passwordHash = await bcrypt.hash(data.password, config.bcrypt.saltRounds);
 
-    // Users created by MANAGER need admin approval
-    const needsApproval = requestingEstRole === 'MANAGER';
+    // Users created by MANAGER or DAF need approval (from DAF/OWNER or OWNER respectively)
+    const needsApproval = requestingEstRole === 'MANAGER' || requestingEstRole === 'DAF';
 
     const user = await prisma.user.create({
       data: {
@@ -423,7 +430,7 @@ export class ArticleService {
       ...(filters.includeUnapproved ? {} : { isApproved: true }),
       ...(filters.categoryId && { categoryId: filters.categoryId }),
       ...(filters.menuOnly && {
-        category: { name: { in: ['Restaurant', 'Boissons'] } },
+        category: { name: { in: ['Restaurant', 'Nourriture', 'Boissons'] } },
       }),
       ...(filters.search && {
         OR: [
@@ -442,7 +449,14 @@ export class ArticleService {
       db.article.count({ where }),
     ]);
 
-    return paginate(data, total, params);
+    // Convert Decimal fields to numbers for JSON serialization (mobile compatibility)
+    const serialized = data.map((a: any) => ({
+      ...a,
+      unitPrice: Number(a.unitPrice),
+      costPrice: Number(a.costPrice),
+    }));
+
+    return paginate(serialized, total, params);
   }
 
   async getLowStock(tenantId: string) {
@@ -477,7 +491,7 @@ export class ArticleService {
     });
 
     if (!article) throw new NotFoundError('Article');
-    return article;
+    return { ...article, unitPrice: Number(article.unitPrice), costPrice: Number(article.costPrice) };
   }
 
   async create(tenantId: string, data: {
@@ -486,10 +500,11 @@ export class ArticleService {
     currentStock?: number; minimumStock?: number; unit?: string;
     isApproved?: boolean; createdById?: string;
   }) {
-    return prisma.article.create({
+    const article = await prisma.article.create({
       data: { tenantId, ...data },
       include: { category: { select: { id: true, name: true } } },
     });
+    return { ...article, unitPrice: Number(article.unitPrice), costPrice: Number(article.costPrice) };
   }
 
   async update(tenantId: string, id: string, data: any) {

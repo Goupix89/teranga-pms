@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch } from '@/lib/api';
 import { PageHeader, StatusBadge, Pagination, Modal, SearchInput, EmptyState, LoadingPage } from '@/components/ui';
-import { UtensilsCrossed, Plus, Loader2, BarChart3, QrCode, X } from 'lucide-react';
+import { UtensilsCrossed, Plus, Loader2, BarChart3, QrCode, X, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDateTime, formatCurrency, statusLabels } from '@/lib/utils';
 import { useAuthStore } from '@/hooks/useAuthStore';
@@ -27,7 +27,7 @@ export default function OrdersPage() {
   const isDAFOrManager = isSuperAdmin || ['DAF', 'MANAGER'].includes(currentEstRole || '');
 
   const [form, setForm] = useState({ establishmentId: '', tableNumber: '', paymentMethod: 'MOOV_MONEY' as PaymentMethod, items: [{ articleId: '', quantity: 1 }] as Array<{ articleId: string; quantity: number }>, notes: '' });
-  const [qrModal, setQrModal] = useState<{ open: boolean; invoiceId?: string; qrCode?: string; invoiceNumber?: string; totalAmount?: number; paymentLabel?: string; currency?: string }>({ open: false });
+  const [qrModal, setQrModal] = useState<{ open: boolean; invoiceId?: string; qrCode?: string; invoiceNumber?: string; totalAmount?: number; paymentLabel?: string; currency?: string; paid?: boolean }>({ open: false });
 
   // Fetch users (servers) for filter — only for DAF/Manager
   const { data: usersData } = useQuery({
@@ -298,9 +298,40 @@ export default function OrdersPage() {
           <p className="text-xs text-gray-400 text-center max-w-xs">
             Le client doit scanner ce QR code avec son application {qrModal.paymentLabel} pour effectuer le paiement.
           </p>
-          <button onClick={() => setQrModal({ open: false })} className="btn-primary w-full max-w-xs">
-            Fermer
-          </button>
+          {qrModal.paid ? (
+            <div className="flex flex-col items-center gap-2 w-full max-w-xs">
+              <div className="flex items-center gap-2 text-green-600 bg-green-50 border border-green-200 rounded-lg px-4 py-3 w-full justify-center">
+                <CheckCircle2 className="h-5 w-5" />
+                <span className="font-semibold">Paiement reçu !</span>
+              </div>
+              <button onClick={() => { setQrModal({ open: false }); queryClient.invalidateQueries({ queryKey: ['orders'] }); queryClient.invalidateQueries({ queryKey: ['invoices'] }); }} className="btn-primary w-full">
+                Fermer
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2 w-full max-w-xs">
+              <button
+                onClick={async () => {
+                  try {
+                    await apiPost(`/invoices/${qrModal.invoiceId}/simulate-payment`, {});
+                    setQrModal((prev) => ({ ...prev, paid: true }));
+                    queryClient.invalidateQueries({ queryKey: ['orders'] });
+                    queryClient.invalidateQueries({ queryKey: ['invoices'] });
+                    queryClient.invalidateQueries({ queryKey: ['order-stats'] });
+                    toast.success('Paiement simulé avec succès !');
+                  } catch (err: any) {
+                    toast.error(err.response?.data?.error || 'Erreur simulation paiement');
+                  }
+                }}
+                className="btn-primary bg-green-600 hover:bg-green-700 w-full"
+              >
+                Simuler le paiement client
+              </button>
+              <button onClick={() => setQrModal({ open: false })} className="btn-secondary w-full">
+                Fermer
+              </button>
+            </div>
+          )}
         </div>
       </Modal>
 

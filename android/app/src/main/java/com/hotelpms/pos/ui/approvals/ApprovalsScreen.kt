@@ -47,7 +47,7 @@ fun ApprovalsScreen(
             TopAppBar(
                 title = {
                     Text(
-                        if (state.userRole.uppercase() == "DAF") "Approbations"
+                        if (state.userRole.uppercase() in listOf("DAF", "OWNER")) "Approbations"
                         else "Mes demandes"
                     )
                 },
@@ -115,7 +115,7 @@ fun ApprovalsScreen(
                     items(state.filteredApprovals) { approval ->
                         ApprovalCard(
                             approval = approval,
-                            isDaf = state.userRole.uppercase() == "DAF",
+                            isDaf = state.userRole.uppercase() in listOf("DAF", "OWNER"),
                             isLoading = state.isLoading,
                             onApprove = { viewModel.approve(approval.id) },
                             onReject = { reason -> viewModel.reject(approval.id, reason) }

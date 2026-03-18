@@ -39,7 +39,9 @@ data class OrdersUiState(
     val paymentMethod: String = "CASH",
     val qrCodeData: QrCodeData? = null,
     val showQrCode: Boolean = false,
-    val isCreating: Boolean = false
+    val isCreating: Boolean = false,
+    val isSimulating: Boolean = false,
+    val simulationSuccess: Boolean = false
 ) {
     val filteredOrders: List<Order>
         get() = if (statusFilter == null) {
@@ -49,7 +51,18 @@ data class OrdersUiState(
         }
 
     val menuArticles: List<Article>
-        get() = articles.filter { it.category?.name == menuTab && it.isApproved }
+        get() {
+            val foodCategories = listOf("Restaurant", "Nourriture")
+            return articles.filter { article ->
+                val catName = article.category?.name
+                val matchesTab = if (menuTab == "Restaurant") {
+                    catName in foodCategories
+                } else {
+                    catName == menuTab
+                }
+                matchesTab && article.isApproved
+            }
+        }
 
     val cartTotal: Double
         get() = cart.sumOf { it.total }
@@ -234,7 +247,33 @@ class OrdersViewModel @Inject constructor(
     }
 
     fun dismissQrCode() {
-        uiState = uiState.copy(showQrCode = false, qrCodeData = null)
+        uiState = uiState.copy(showQrCode = false, qrCodeData = null, simulationSuccess = false)
+    }
+
+    fun simulatePayment(invoiceId: String) {
+        viewModelScope.launch {
+            uiState = uiState.copy(isSimulating = true)
+            try {
+                val response = apiService.simulatePayment(invoiceId)
+                if (response.isSuccessful) {
+                    uiState = uiState.copy(
+                        isSimulating = false,
+                        simulationSuccess = true,
+                        successMessage = "Paiement simulé avec succès"
+                    )
+                } else {
+                    uiState = uiState.copy(
+                        isSimulating = false,
+                        error = "Erreur lors de la simulation"
+                    )
+                }
+            } catch (e: Exception) {
+                uiState = uiState.copy(
+                    isSimulating = false,
+                    error = e.message ?: "Erreur réseau"
+                )
+            }
+        }
     }
 
     fun clearError() {

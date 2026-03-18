@@ -74,6 +74,10 @@ interface PmsApiService {
     @GET("api/invoices/{id}/qrcode")
     suspend fun getInvoiceQrCode(@Path("id") id: String): Response<QrCodeResponse>
 
+    // Simulate payment (dev/test)
+    @POST("api/invoices/{id}/simulate-payment")
+    suspend fun simulatePayment(@Path("id") id: String): Response<GenericResponse>
+
     @PATCH("api/orders/{id}/status")
     suspend fun updateOrderStatus(@Path("id") id: String, @Body body: OrderStatusRequest): GenericResponse
 

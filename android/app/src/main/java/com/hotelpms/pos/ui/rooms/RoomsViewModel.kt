@@ -93,7 +93,7 @@ class RoomsViewModel @Inject constructor(
                 )
                 val response = api.createRoom(body)
                 if (response.success) {
-                    val msg = if (uiState.userRole.uppercase() == "DAF") {
+                    val msg = if (uiState.userRole.uppercase() in listOf("DAF", "OWNER")) {
                         "Chambre cr\u00e9\u00e9e avec succ\u00e8s"
                     } else {
                         "Soumis \u00e0 validation DAF"

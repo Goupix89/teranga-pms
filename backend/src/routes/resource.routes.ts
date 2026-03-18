@@ -3,6 +3,7 @@ import { authenticate, authenticateApiKey } from '../middlewares/auth.middleware
 import {
   requireSuperAdmin,
   requireAuthenticated,
+  requireOwner,
   requireDAF,
   requireDAFOrManager,
   requireDAFOrManagerOrServer,
@@ -66,9 +67,10 @@ userRouter.get('/:id', authenticate, requireSelfOrRole('DAF', 'MANAGER'),
 // DAF & MANAGER can create users (MANAGER creates under DAF approval)
 userRouter.post('/', authenticate, requireDAFOrManager, validate(v.createUserSchema),
   asyncHandler(async (req, res) => {
-    // Determine the requesting user's establishment role
+    // SUPERADMIN bypasses all role restrictions
+    const isSuperAdmin = req.user!.role === 'SUPERADMIN';
     const estId = req.body.establishmentIds?.[0];
-    const estRole = estId ? getEstablishmentRole(req, estId) : null;
+    const estRole = isSuperAdmin ? undefined : (estId ? getEstablishmentRole(req, estId) : null);
     const data = await userService.create(req.user!.tenantId, req.body, estRole ?? undefined);
     res.status(201).json({ success: true, data });
   })
@@ -82,7 +84,7 @@ userRouter.post('/:id/approve', authenticate, requireDAF,
   })
 );
 
-userRouter.patch('/:id', authenticate, requireSelfOrRole('DAF'),
+userRouter.patch('/:id', authenticate, requireSelfOrRole('OWNER', 'DAF'),
   validate(v.updateUserSchema),
   asyncHandler(async (req, res) => {
     const estId = req.body.establishmentIds?.[0];
@@ -461,6 +463,56 @@ invoiceRouter.post('/:id/cancel', authenticate, requireDAF,
   })
 );
 
+// Simulate payment (dev/test only) — marks invoice as PAID
+invoiceRouter.post('/:id/simulate-payment', authenticate,
+  asyncHandler(async (req, res) => {
+    const invoice = await invoiceService.getById(req.user!.tenantId, req.params.id);
+    if (!invoice) {
+      res.status(404).json({ success: false, error: 'Facture introuvable' });
+      return;
+    }
+    if (['PAID', 'CANCELLED'].includes(invoice.status)) {
+      res.status(400).json({ success: false, error: `Facture déjà ${invoice.status === 'PAID' ? 'payée' : 'annulée'}` });
+      return;
+    }
+
+    // Find linked order to get paymentMethod
+    const order = await prisma.order.findFirst({
+      where: { invoiceId: invoice.id, tenantId: req.user!.tenantId },
+      select: { id: true, paymentMethod: true },
+    });
+
+    const method = (order?.paymentMethod || req.body.method || 'CASH') as any;
+
+    // Create payment record for the full amount
+    const { payment } = await paymentService.create(req.user!.tenantId, {
+      invoiceId: invoice.id,
+      amount: Number(invoice.totalAmount),
+      method,
+      reference: `SIM-${Date.now()}`,
+    });
+
+    // Also mark the linked order as SERVED if still pending
+    if (order) {
+      await prisma.order.updateMany({
+        where: { id: order.id, status: { notIn: ['SERVED', 'CANCELLED'] } },
+        data: { status: 'SERVED', servedAt: new Date() },
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Paiement simulé avec succès',
+      data: {
+        paymentId: payment.id,
+        invoiceId: invoice.id,
+        amount: Number(invoice.totalAmount),
+        method,
+      },
+    });
+  })
+);
+
 // QR code for invoice payment
 invoiceRouter.get('/:id/qrcode', authenticate,
   asyncHandler(async (req, res) => {
@@ -543,9 +595,9 @@ articleRouter.get('/', authenticate, requireAnyEstablishmentRole,
   asyncHandler(async (req, res) => {
     const params = parsePagination(req);
     const { categoryId, search, lowStock, menuOnly } = req.query as any;
-    // DAF/Manager can see unapproved articles
+    // OWNER/DAF/Manager can see unapproved articles
     const isDAFOrManager = req.user?.role === 'SUPERADMIN' || req.user?.memberships?.some(
-      (m) => ['DAF', 'MANAGER'].includes(m.role)
+      (m) => ['OWNER', 'DAF', 'MANAGER'].includes(m.role)
     );
     const data = await articleService.list(req.user!.tenantId, params, {
       categoryId, search, lowStock: lowStock === 'true',
@@ -580,7 +632,7 @@ articleRouter.post('/', authenticate, requireDAFOrManager, validate(v.createArti
     // Determine user's establishment role
     let estRole: string | null = null;
     if (userRole === 'SUPERADMIN') {
-      estRole = 'DAF';
+      estRole = 'OWNER';
     } else {
       const membership = req.user?.memberships?.find(
         (m) => resolvedEstId ? m.establishmentId === resolvedEstId : true
@@ -588,24 +640,35 @@ articleRouter.post('/', authenticate, requireDAFOrManager, validate(v.createArti
       estRole = membership?.role || null;
     }
 
-    if (estRole === 'MANAGER') {
-      // Manager creates article as unapproved + creates approval request
+    if (estRole === 'MANAGER' || estRole === 'DAF') {
+      // Manager and DAF create articles requiring approval (from DAF/OWNER or OWNER respectively)
       const article = await articleService.create(req.user!.tenantId, {
         ...articleData,
         isApproved: false,
         createdById: req.user!.id,
       });
-      // Create approval request for DAF
       await approvalService.create(req.user!.tenantId, {
         establishmentId: resolvedEstId,
         type: 'ARTICLE_CREATION',
         requestedById: req.user!.id,
-        payload: { articleId: article.id, name: article.name, unitPrice: Number(article.unitPrice), categoryId: article.categoryId },
+        payload: {
+          articleId: article.id,
+          name: article.name,
+          unitPrice: Number(article.unitPrice),
+          costPrice: Number(article.costPrice),
+          categoryId: article.categoryId,
+          categoryName: article.category?.name || '',
+          description: article.description || '',
+          imageUrl: article.imageUrl || '',
+          currentStock: article.currentStock,
+          minimumStock: article.minimumStock,
+          unit: article.unit,
+        },
         targetId: article.id,
       });
       res.status(201).json({ success: true, data: article, requiresApproval: true });
     } else {
-      // DAF creates article directly as approved
+      // OWNER (and SUPERADMIN) creates article directly as approved
       const data = await articleService.create(req.user!.tenantId, {
         ...articleData,
         isApproved: true,

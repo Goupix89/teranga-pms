@@ -13,17 +13,27 @@ export class InvoiceService {
   ) {
     const db = createTenantClient(tenantId);
 
-    const where: Prisma.InvoiceWhereInput = {
-      ...(filters.status && { status: filters.status }),
-      ...(filters.reservationId && { reservationId: filters.reservationId }),
-      ...(filters.establishmentIds && { reservation: { room: { establishmentId: { in: filters.establishmentIds } } } }),
-      ...(filters.search && {
+    const conditions: Prisma.InvoiceWhereInput[] = [];
+    if (filters.status) conditions.push({ status: filters.status });
+    if (filters.reservationId) conditions.push({ reservationId: filters.reservationId });
+    if (filters.establishmentIds) {
+      conditions.push({
+        OR: [
+          { reservation: { room: { establishmentId: { in: filters.establishmentIds } } } },
+          { orders: { some: { establishmentId: { in: filters.establishmentIds } } } },
+          { reservationId: null, orders: { none: {} } },
+        ],
+      });
+    }
+    if (filters.search) {
+      conditions.push({
         OR: [
           { invoiceNumber: { contains: filters.search, mode: 'insensitive' as const } },
           { reservation: { guestName: { contains: filters.search, mode: 'insensitive' as const } } },
         ],
-      }),
-    };
+      });
+    }
+    const where: Prisma.InvoiceWhereInput = conditions.length > 0 ? { AND: conditions } : {};
 
     const [data, total] = await Promise.all([
       db.invoice.findMany({
@@ -31,6 +41,7 @@ export class InvoiceService {
         include: {
           reservation: { select: { id: true, guestName: true, room: { select: { number: true } } } },
           createdBy: { select: { id: true, firstName: true, lastName: true } },
+          orders: { select: { id: true, orderNumber: true, establishmentId: true } },
           _count: { select: { payments: true, items: true } },
         },
         ...toSkipTake(params),
@@ -38,7 +49,16 @@ export class InvoiceService {
       db.invoice.count({ where }),
     ]);
 
-    return paginate(data, total, params);
+    // Convert Decimal fields to numbers for JSON serialization
+    const serialized = data.map((inv: any) => ({
+      ...inv,
+      subtotal: Number(inv.subtotal),
+      taxRate: Number(inv.taxRate),
+      taxAmount: Number(inv.taxAmount),
+      totalAmount: Number(inv.totalAmount),
+    }));
+
+    return paginate(serialized, total, params);
   }
 
   async getById(tenantId: string, id: string) {

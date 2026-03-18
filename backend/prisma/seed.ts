@@ -104,6 +104,20 @@ async function main() {
     },
   });
 
+  // OWNER — Establishment proprietor
+  const owner = await prisma.user.upsert({
+    where: { tenantId_email: { tenantId: tenant.id, email: 'owner@hoteldemo.com' } },
+    update: {},
+    create: {
+      tenantId: tenant.id,
+      email: 'owner@hoteldemo.com',
+      passwordHash: await bcrypt.hash('Owner123!', 12),
+      firstName: 'Kossi',
+      lastName: 'AHODIKPE',
+      role: UserRole.EMPLOYEE,
+    },
+  });
+
   // DAF — Establishment admin (Directeur Administratif et Financier)
   const daf = await prisma.user.upsert({
     where: { tenantId_email: { tenantId: tenant.id, email: 'daf@hoteldemo.com' } },
@@ -188,7 +202,7 @@ async function main() {
     },
   });
 
-  console.log(`✅ Users: superadmin, daf, manager, serveur, pos, cuisinier, menage created`);
+  console.log(`✅ Users: superadmin, owner, daf, manager, serveur, pos, cuisinier, menage created`);
 
   // Create establishment
   const establishment = await prisma.establishment.upsert({
@@ -212,6 +226,7 @@ async function main() {
 
   // Assign establishment memberships with roles
   const memberships = [
+    { userId: owner.id, establishmentId: establishment.id, role: 'OWNER' as const },
     { userId: daf.id, establishmentId: establishment.id, role: 'DAF' as const },
     { userId: manager.id, establishmentId: establishment.id, role: 'MANAGER' as const },
     { userId: server.id, establishmentId: establishment.id, role: 'SERVER' as const },
@@ -338,6 +353,7 @@ async function main() {
   console.log(`✅ ${suppliers.length} suppliers created`);
   console.log('\n🎉 Seed complete!');
   console.log('   Login Super Admin:  superadmin@hoteldemo.com / Admin123!');
+  console.log('   Login Propriétaire: owner@hoteldemo.com / Owner123!');
   console.log('   Login DAF:          daf@hoteldemo.com / Daf12345!');
   console.log('   Login Manager:      manager@hoteldemo.com / Manager123!');
   console.log('   Login Serveur:      serveur@hoteldemo.com / Serveur123!');

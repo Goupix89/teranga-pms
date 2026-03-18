@@ -100,32 +100,35 @@ export function requireAuthenticated(req: Request, _res: Response, next: NextFun
 
 // ─── Establishment-level shortcuts ─────────────────────────────────────────────
 
-/** DAF only (establishment admin) */
-export const requireDAF = requireEstablishmentRole('DAF');
+/** OWNER only (establishment proprietor) */
+export const requireOwner = requireEstablishmentRole('OWNER');
 
-/** DAF or Manager */
-export const requireDAFOrManager = requireEstablishmentRole('DAF', 'MANAGER');
+/** OWNER or DAF (establishment admin) */
+export const requireDAF = requireEstablishmentRole('OWNER', 'DAF');
 
-/** DAF, Manager, or Server */
-export const requireDAFOrManagerOrServer = requireEstablishmentRole('DAF', 'MANAGER', 'SERVER');
+/** OWNER, DAF or Manager */
+export const requireDAFOrManager = requireEstablishmentRole('OWNER', 'DAF', 'MANAGER');
 
-/** DAF, Manager, Server, POS (payment-related operations) */
-export const requirePaymentRole = requireEstablishmentRole('DAF', 'MANAGER', 'SERVER', 'POS');
+/** OWNER, DAF, Manager, or Server */
+export const requireDAFOrManagerOrServer = requireEstablishmentRole('OWNER', 'DAF', 'MANAGER', 'SERVER');
+
+/** OWNER, DAF, Manager, Server, POS (payment-related operations) */
+export const requirePaymentRole = requireEstablishmentRole('OWNER', 'DAF', 'MANAGER', 'SERVER', 'POS');
 
 /** Cook + kitchen supervisors */
-export const requireKitchenAccess = requireEstablishmentRole('DAF', 'MANAGER', 'COOK');
+export const requireKitchenAccess = requireEstablishmentRole('OWNER', 'DAF', 'MANAGER', 'COOK');
 
 /** Cleaning staff + supervisors */
-export const requireCleaningAccess = requireEstablishmentRole('DAF', 'MANAGER', 'CLEANER');
+export const requireCleaningAccess = requireEstablishmentRole('OWNER', 'DAF', 'MANAGER', 'CLEANER');
 
 /** All establishment roles (any member) */
-export const requireAnyEstablishmentRole = requireEstablishmentRole('DAF', 'MANAGER', 'SERVER', 'POS', 'COOK', 'CLEANER');
+export const requireAnyEstablishmentRole = requireEstablishmentRole('OWNER', 'DAF', 'MANAGER', 'SERVER', 'POS', 'COOK', 'CLEANER');
 
 /**
  * Helper: get user's role in a specific establishment.
  */
 export function getEstablishmentRole(req: Request, establishmentId: string): EstablishmentRole | null {
-  if (req.user?.role === 'SUPERADMIN') return 'DAF'; // SUPERADMIN treated as DAF everywhere
+  if (req.user?.role === 'SUPERADMIN') return 'OWNER'; // SUPERADMIN treated as OWNER everywhere
   return req.user?.memberships?.find((m) => m.establishmentId === establishmentId)?.role || null;
 }
 

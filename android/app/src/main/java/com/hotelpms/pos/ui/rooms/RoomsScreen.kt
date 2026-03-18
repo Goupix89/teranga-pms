@@ -62,7 +62,7 @@ fun RoomsScreen(
             )
         },
         floatingActionButton = {
-            if (state.userRole.uppercase() in listOf("MANAGER", "DAF")) {
+            if (state.userRole.uppercase() in listOf("MANAGER", "DAF", "OWNER")) {
                 FloatingActionButton(
                     onClick = { showCreateDialog = true },
                     containerColor = RougeDahomey

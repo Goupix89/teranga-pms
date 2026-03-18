@@ -11,6 +11,7 @@ import { useAuthStore } from '@/hooks/useAuthStore';
 import { EstablishmentRole } from '@/types';
 
 const estRoleOptions: Array<{ value: EstablishmentRole; label: string }> = [
+  { value: 'OWNER', label: 'Propriétaire' },
   { value: 'DAF', label: 'DAF' },
   { value: 'MANAGER', label: 'Manager' },
   { value: 'SERVER', label: 'Serveur' },
@@ -24,12 +25,12 @@ export default function UsersPage() {
   const currentUser = useAuthStore((s) => s.user);
   const currentEstRole = useAuthStore((s) => s.currentEstablishmentRole);
   const isSuperAdmin = currentUser?.role === 'SUPERADMIN';
-  const isDAF = currentEstRole === 'DAF' || isSuperAdmin;
+  const isOwnerOrDAF = currentEstRole === 'OWNER' || currentEstRole === 'DAF' || isSuperAdmin;
   const isManager = currentEstRole === 'MANAGER';
-  const canCreateUser = isDAF || isManager;
-  const canEditUser = isDAF;
-  const canArchiveUser = isDAF;
-  const canApprove = isDAF;
+  const canCreateUser = isOwnerOrDAF || isManager;
+  const canEditUser = isOwnerOrDAF;
+  const canArchiveUser = isOwnerOrDAF;
+  const canApprove = isOwnerOrDAF;
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -54,7 +55,7 @@ export default function UsersPage() {
 
   const createMutation = useMutation({
     mutationFn: (body: any) => apiPost('/users', body),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['users'] }); setShowModal(false); setForm(defaultForm); toast.success(isManager ? 'Employé créé (en attente de validation du DAF)' : 'Utilisateur créé'); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['users'] }); setShowModal(false); setForm(defaultForm); toast.success(isManager ? 'Employé créé (en attente de validation)' : 'Utilisateur créé'); },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
   });
 
@@ -101,12 +102,12 @@ export default function UsersPage() {
 
   // Role options depend on who's creating
   const getRoleOptions = (): Array<{ value: EstablishmentRole; label: string }> => {
-    if (isSuperAdmin || isDAF) {
-      // DAF can create all roles except DAF (DAF created by SUPERADMIN)
-      return isDAF && !isSuperAdmin
-        ? estRoleOptions.filter((o) => o.value !== 'DAF')
-        : estRoleOptions;
-    }
+    // SUPERADMIN can create any role
+    if (isSuperAdmin) return estRoleOptions;
+    // OWNER can create all except OWNER
+    if (currentEstRole === 'OWNER') return estRoleOptions.filter((o) => o.value !== 'OWNER');
+    // DAF can create MANAGER, SERVER, POS, COOK, CLEANER
+    if (currentEstRole === 'DAF') return estRoleOptions.filter((o) => !['OWNER', 'DAF'].includes(o.value));
     // MANAGER can only create SERVER, COOK, CLEANER
     return estRoleOptions.filter((o) => ['SERVER', 'COOK', 'CLEANER'].includes(o.value));
   };

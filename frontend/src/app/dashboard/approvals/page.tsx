@@ -16,7 +16,7 @@ export default function ApprovalsPage() {
   const currentRole = useAuthStore((s) => s.currentEstablishmentRole);
   const user = useAuthStore((s) => s.user);
 
-  const isDAF = currentRole === 'DAF';
+  const isDAF = currentRole === 'DAF' || currentRole === 'OWNER';
   const isManager = currentRole === 'MANAGER';
 
   const [page, setPage] = useState(1);
@@ -100,7 +100,11 @@ export default function ApprovalsPage() {
     if (approval.type === 'ARTICLE_CREATION') {
       const parts = [];
       if (p.name) parts.push(p.name);
-      if (p.unitPrice != null) parts.push(`Prix: ${p.unitPrice} FCFA`);
+      if (p.categoryName) parts.push(`Catégorie: ${p.categoryName}`);
+      if (p.unitPrice != null) parts.push(`Prix: ${Number(p.unitPrice).toLocaleString('fr-FR')} FCFA`);
+      if (p.costPrice != null && Number(p.costPrice) > 0) parts.push(`Coût: ${Number(p.costPrice).toLocaleString('fr-FR')} FCFA`);
+      if (p.description) parts.push(`Description: ${p.description}`);
+      if (p.currentStock != null) parts.push(`Stock: ${p.currentStock} ${p.unit || 'pièce(s)'}`);
       return parts.length > 0 ? parts.join(' — ') : JSON.stringify(p);
     }
     return JSON.stringify(p);
@@ -183,6 +187,9 @@ export default function ApprovalsPage() {
                   </div>
 
                   <p className="text-sm text-gray-800 font-medium mb-1">{formatPayload(approval)}</p>
+                  {approval.type === 'ARTICLE_CREATION' && approval.payload?.imageUrl && (
+                    <img src={approval.payload.imageUrl.startsWith('http') ? approval.payload.imageUrl : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}${approval.payload.imageUrl}`} alt={approval.payload.name} className="mt-2 h-20 w-20 rounded-lg object-cover border border-wood-200" />
+                  )}
 
                   <div className="flex items-center gap-4 text-xs text-gray-400">
                     {!isManager && (

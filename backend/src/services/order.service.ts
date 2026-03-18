@@ -51,7 +51,14 @@ export class OrderService {
       db.order.count({ where }),
     ]);
 
-    return paginate(data, total, params);
+    // Convert Decimal fields to numbers for JSON serialization
+    const serialized = data.map((o: any) => ({
+      ...o,
+      totalAmount: Number(o.totalAmount),
+      items: o.items?.map((i: any) => ({ ...i, unitPrice: Number(i.unitPrice) })),
+    }));
+
+    return paginate(serialized, total, params);
   }
 
   /**

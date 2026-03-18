@@ -85,7 +85,7 @@ export default function ReportsPage() {
   const occupancyRate = totalRooms > 0 ? Math.round((occupied / totalRooms) * 100) : 0;
 
   // Revenue
-  const totalRevenue = orderList.reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0);
+  const totalRevenue = orderList.reduce((sum: number, o: any) => sum + (Number(o.totalAmount) || 0), 0);
   const paidInvoices = invoiceList.filter((i: any) => i.status === 'PAID');
   const totalPaid = paidInvoices.reduce((sum: number, i: any) => sum + (Number(i.totalAmount) || 0), 0);
   const pendingInvoices = invoiceList.filter((i: any) => ['ISSUED', 'OVERDUE'].includes(i.status));
@@ -100,7 +100,7 @@ export default function ReportsPage() {
         serverOrders[key] = { name: `${o.createdBy.firstName} ${o.createdBy.lastName}`, count: 0, revenue: 0 };
       }
       serverOrders[key].count++;
-      serverOrders[key].revenue += o.totalAmount || 0;
+      serverOrders[key].revenue += Number(o.totalAmount) || 0;
     }
   });
   const serverChartData = Object.values(serverOrders).sort((a, b) => b.count - a.count);

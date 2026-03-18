@@ -76,7 +76,7 @@ class DashboardViewModel @Inject constructor(
                 uiState = uiState.copy(userRole = role.uppercase())
 
                 when (role.uppercase()) {
-                    "MANAGER", "DAF" -> fetchManagerStats(role.uppercase())
+                    "MANAGER", "DAF", "OWNER" -> fetchManagerStats(role.uppercase())
                     "COOK" -> fetchCookStats()
                     "CLEANER" -> fetchCleanerStats()
                     "SERVER" -> fetchServerStats()
@@ -124,7 +124,7 @@ class DashboardViewModel @Inject constructor(
 
         var monthlyRevenue = 0.0
         var stockMovementsCount = 0
-        if (role == "DAF") {
+        if (role in listOf("DAF", "OWNER")) {
             try {
                 val stockMovements = api.getStockMovements(establishmentId)
                 stockMovementsCount = stockMovements.data.size

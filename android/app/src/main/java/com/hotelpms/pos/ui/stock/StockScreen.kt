@@ -54,7 +54,7 @@ fun StockScreen(
             TopAppBar(
                 title = { Text("Stock") },
                 actions = {
-                    if (state.userRole.uppercase() in listOf("MANAGER", "DAF")) {
+                    if (state.userRole.uppercase() in listOf("MANAGER", "DAF", "OWNER")) {
                         IconButton(onClick = { showArticleDialog = true }) {
                             Icon(Icons.Default.AddBox, contentDescription = "Nouvel article")
                         }

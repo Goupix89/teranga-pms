@@ -1204,6 +1204,8 @@ export default function DashboardPage() {
       return <ManagerDashboard establishmentId={currentEstablishmentId} />;
     case 'DAF':
       return <DafDashboard establishmentId={currentEstablishmentId} />;
+    case 'OWNER':
+      return <DafDashboard establishmentId={currentEstablishmentId} />;
     default:
       return <SuperadminDashboard establishmentId={currentEstablishmentId} />;
   }

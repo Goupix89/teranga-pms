@@ -28,6 +28,7 @@ enum UserStatus {
 }
 
 enum EstablishmentRole {
+  OWNER
   DAF
   MANAGER
   SERVER
