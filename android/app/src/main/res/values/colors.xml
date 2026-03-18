@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Benin-inspired palette -->
+    <color name="primary">#C0392B</color>
+    <color name="primary_dark">#962D22</color>
+    <color name="primary_light">#E57373</color>
+    <color name="primary_container">#FDDEDE</color>
+
+    <color name="accent">#F1C40F</color>
+    <color name="accent_dark">#C29D0A</color>
+    <color name="accent_light">#F7DC6F</color>
+    <color name="accent_container">#FFF9E0</color>
+
+    <color name="secondary">#27AE60</color>
+    <color name="secondary_dark">#1E8449</color>
+    <color name="secondary_light">#82E0AA</color>
+    <color name="secondary_container">#D5F5E3</color>
+
+    <color name="bronze">#8D6E63</color>
+    <color name="bronze_dark">#5D4037</color>
+    <color name="bronze_light">#BCAAA4</color>
+
+    <color name="background">#FFF8E1</color>
+    <color name="surface">#FFFDE7</color>
+    <color name="surface_variant">#F5F0E1</color>
+
+    <color name="on_primary">#FFFFFF</color>
+    <color name="on_secondary">#FFFFFF</color>
+    <color name="on_background">#3E2723</color>
+    <color name="on_surface">#3E2723</color>
+    <color name="on_surface_variant">#5D4037</color>
+
+    <color name="error">#D32F2F</color>
+    <color name="outline">#D7CCC8</color>
+
+    <!-- Status colors -->
+    <color name="status_available">#27AE60</color>
+    <color name="status_occupied">#C0392B</color>
+    <color name="status_cleaning">#F1C40F</color>
+    <color name="status_maintenance">#8D6E63</color>
+</resources>

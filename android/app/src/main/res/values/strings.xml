@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Teranga PMS</string>
+
+    <!-- Auth -->
+    <string name="login_title">Connexion</string>
+    <string name="login_subtitle">Connectez-vous pour accéder à Teranga PMS</string>
+    <string name="email_label">Email</string>
+    <string name="password_label">Mot de passe</string>
+    <string name="login_button">Se connecter</string>
+    <string name="logging_in">Connexion en cours…</string>
+    <string name="logout">Déconnexion</string>
+
+    <!-- Navigation -->
+    <string name="nav_dashboard">Tableau de bord</string>
+    <string name="nav_orders">Commandes</string>
+    <string name="nav_kitchen">Cuisine</string>
+    <string name="nav_rooms">Chambres</string>
+    <string name="nav_reservations">Réservations</string>
+    <string name="nav_cleaning">Ménage</string>
+    <string name="nav_stock">Stock</string>
+    <string name="nav_approvals">Approbations</string>
+    <string name="nav_pos">Point de vente</string>
+
+    <!-- Common -->
+    <string name="loading">Chargement…</string>
+    <string name="error">Erreur</string>
+    <string name="retry">Réessayer</string>
+    <string name="cancel">Annuler</string>
+    <string name="confirm">Confirmer</string>
+    <string name="save">Enregistrer</string>
+    <string name="delete">Supprimer</string>
+    <string name="search">Rechercher…</string>
+    <string name="empty_list">Aucun élément</string>
+    <string name="currency_suffix">FCFA</string>
+
+    <!-- Orders -->
+    <string name="order_new">Nouvelle commande</string>
+    <string name="order_pending">En attente</string>
+    <string name="order_in_progress">En préparation</string>
+    <string name="order_ready">Prête</string>
+    <string name="order_served">Servie</string>
+    <string name="order_cancelled">Annulée</string>
+
+    <!-- Kitchen -->
+    <string name="kitchen_title">Cuisine</string>
+    <string name="kitchen_start">Commencer</string>
+    <string name="kitchen_ready">Prête !</string>
+
+    <!-- Cleaning -->
+    <string name="cleaning_clock_in">Pointer entrée</string>
+    <string name="cleaning_clock_out">Pointer sortie</string>
+    <string name="cleaning_rooms_to_clean">Chambres à nettoyer</string>
+
+    <!-- Approvals -->
+    <string name="approval_pending">En attente</string>
+    <string name="approval_approved">Approuvée</string>
+    <string name="approval_rejected">Rejetée</string>
+    <string name="approval_approve">Approuver</string>
+    <string name="approval_reject">Rejeter</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard_rooms">Chambres</string>
+    <string name="dashboard_orders">Commandes</string>
+    <string name="dashboard_revenue">Revenus</string>
+    <string name="dashboard_cleaning">Ménage</string>
+</resources>
