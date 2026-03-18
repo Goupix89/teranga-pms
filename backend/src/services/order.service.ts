@@ -45,7 +45,6 @@ export class OrderService {
           },
           createdBy: { select: { id: true, firstName: true, lastName: true } },
         },
-        orderBy: { createdAt: 'desc' },
         ...toSkipTake(params),
       }),
       db.order.count({ where }),

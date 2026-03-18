@@ -12,7 +12,7 @@ const RESERVED_SLUGS = new Set([
 ]);
 
 const stripe = new Stripe(config.stripe.secretKey, {
-  apiVersion: '2024-11-20.acacia',
+  apiVersion: '2025-02-24.acacia',
 });
 
 export class RegistrationService {

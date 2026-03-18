@@ -77,7 +77,7 @@ export class AuthService {
     };
 
     const accessToken = jwt.sign(payload, config.jwt.accessSecret, {
-      expiresIn: config.jwt.accessExpiry,
+      expiresIn: config.jwt.accessExpiry as unknown as number,
     });
 
     // Generate refresh token (opaque, stored hashed in DB)
@@ -177,7 +177,7 @@ export class AuthService {
     };
 
     const accessToken = jwt.sign(payload, config.jwt.accessSecret, {
-      expiresIn: config.jwt.accessExpiry,
+      expiresIn: config.jwt.accessExpiry as unknown as number,
     });
 
     // Update last active
