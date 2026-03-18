@@ -1,5 +1,5 @@
 import { Prisma, UserRole, UserStatus, EstablishmentRole } from '@prisma/client';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { prisma, createTenantClient } from '../utils/prisma';
 import { NotFoundError, ValidationError, ForbiddenError } from '../utils/errors';
 import { paginate, toSkipTake } from '../utils/helpers';
@@ -415,12 +415,16 @@ export const supplierService = new SupplierService();
 // =============================================================================
 
 export class ArticleService {
-  async list(tenantId: string, params: PaginationParams, filters: { categoryId?: string; search?: string; lowStock?: boolean } = {}) {
+  async list(tenantId: string, params: PaginationParams, filters: { categoryId?: string; search?: string; lowStock?: boolean; includeUnapproved?: boolean; menuOnly?: boolean } = {}) {
     const db = createTenantClient(tenantId);
 
     const where: any = {
       isActive: true,
+      ...(filters.includeUnapproved ? {} : { isApproved: true }),
       ...(filters.categoryId && { categoryId: filters.categoryId }),
+      ...(filters.menuOnly && {
+        category: { name: { in: ['Restaurant', 'Boissons'] } },
+      }),
       ...(filters.search && {
         OR: [
           { name: { contains: filters.search, mode: 'insensitive' } },
@@ -478,8 +482,9 @@ export class ArticleService {
 
   async create(tenantId: string, data: {
     categoryId?: string; name: string; sku?: string;
-    description?: string; unitPrice: number; costPrice?: number;
+    description?: string; imageUrl?: string; unitPrice: number; costPrice?: number;
     currentStock?: number; minimumStock?: number; unit?: string;
+    isApproved?: boolean; createdById?: string;
   }) {
     return prisma.article.create({
       data: { tenantId, ...data },

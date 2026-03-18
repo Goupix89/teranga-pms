@@ -20,7 +20,8 @@ interface PmsApiService {
     @GET("api/articles")
     suspend fun getArticles(
         @Query("page") page: Int = 1,
-        @Query("limit") limit: Int = 200
+        @Query("limit") limit: Int = 200,
+        @Query("menuOnly") menuOnly: Boolean = false
     ): Response<ArticlesResponse>
 
     // POS Transactions
@@ -67,7 +68,11 @@ interface PmsApiService {
     suspend fun getKitchenOrders(@Path("establishmentId") establishmentId: String): Response<List<Order>>
 
     @POST("api/orders")
-    suspend fun createOrder(@Body body: CreateOrderRequest): GenericResponse
+    suspend fun createOrder(@Body body: CreateOrderRequest): Response<GenericResponse>
+
+    // Invoices - QR code
+    @GET("api/invoices/{id}/qrcode")
+    suspend fun getInvoiceQrCode(@Path("id") id: String): Response<QrCodeResponse>
 
     @PATCH("api/orders/{id}/status")
     suspend fun updateOrderStatus(@Path("id") id: String, @Body body: OrderStatusRequest): GenericResponse

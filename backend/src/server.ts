@@ -5,6 +5,9 @@ import compression from 'compression';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 
 import { config } from './config';
 import { logger } from './utils/logger';
@@ -133,6 +136,44 @@ app.get('/health', (_req, res) => {
     uptime: process.uptime(),
     environment: config.nodeEnv,
   });
+});
+
+// =============================================================================
+// FILE UPLOADS
+// =============================================================================
+
+const uploadsDir = path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+app.use('/uploads', express.static(uploadsDir));
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, uploadsDir),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      const name = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
+      cb(null, name);
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['.jpg', '.jpeg', '.png', '.webp'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Format non supporté. Utilisez JPG, PNG ou WebP.'));
+    }
+  },
+});
+
+app.post('/api/upload', upload.single('image'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, error: 'Aucun fichier envoyé' });
+  }
+  const imageUrl = `/uploads/${req.file.filename}`;
+  res.json({ success: true, data: { imageUrl } });
 });
 
 // =============================================================================

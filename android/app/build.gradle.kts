@@ -79,6 +79,9 @@ dependencies {
     kapt("com.google.dagger:hilt-compiler:2.50")
     implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
 
+    // Image loading
+    implementation("io.coil-kt:coil-compose:2.6.0")
+
     // WorkManager (sync)
     implementation("androidx.work:work-runtime-ktx:2.9.0")
 

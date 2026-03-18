@@ -1,5 +1,5 @@
 import { PrismaClient, UserRole } from '@prisma/client';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
@@ -275,10 +275,10 @@ async function main() {
     create: { tenantId: tenant.id, name: 'Boissons' },
   });
 
-  const catNourriture = await prisma.articleCategory.upsert({
-    where: { tenantId_name: { tenantId: tenant.id, name: 'Nourriture' } },
+  const catRestaurant = await prisma.articleCategory.upsert({
+    where: { tenantId_name: { tenantId: tenant.id, name: 'Restaurant' } },
     update: {},
-    create: { tenantId: tenant.id, name: 'Nourriture' },
+    create: { tenantId: tenant.id, name: 'Restaurant' },
   });
 
   const catFournitures = await prisma.articleCategory.upsert({
@@ -289,14 +289,23 @@ async function main() {
 
   console.log(`✅ Categories created`);
 
-  // Create articles
+  // Create articles (menu items + supplies)
   const articles = [
-    { name: 'Eau minérale 1.5L', sku: 'BOI-001', unitPrice: 500, costPrice: 300, currentStock: 200, minimumStock: 50, unit: 'bouteille', categoryId: catBoissons.id },
-    { name: 'Coca-Cola 33cl', sku: 'BOI-002', unitPrice: 800, costPrice: 500, currentStock: 150, minimumStock: 30, unit: 'canette', categoryId: catBoissons.id },
-    { name: 'Bière Flag 65cl', sku: 'BOI-003', unitPrice: 1000, costPrice: 600, currentStock: 100, minimumStock: 20, unit: 'bouteille', categoryId: catBoissons.id },
-    { name: 'Jus d\'orange 1L', sku: 'BOI-004', unitPrice: 1500, costPrice: 900, currentStock: 50, minimumStock: 15, unit: 'bouteille', categoryId: catBoissons.id },
-    { name: 'Riz local 5kg', sku: 'NOU-001', unitPrice: 5000, costPrice: 3500, currentStock: 30, minimumStock: 10, unit: 'sac', categoryId: catNourriture.id },
-    { name: 'Poulet entier', sku: 'NOU-002', unitPrice: 4000, costPrice: 2800, currentStock: 20, minimumStock: 5, unit: 'pièce', categoryId: catNourriture.id },
+    // Boissons
+    { name: 'Eau minérale 1.5L', sku: 'BOI-001', unitPrice: 500, costPrice: 300, currentStock: 200, minimumStock: 50, unit: 'bouteille', categoryId: catBoissons.id, description: 'Eau minérale naturelle, servie fraîche' },
+    { name: 'Coca-Cola 33cl', sku: 'BOI-002', unitPrice: 800, costPrice: 500, currentStock: 150, minimumStock: 30, unit: 'canette', categoryId: catBoissons.id, description: 'Canette de Coca-Cola bien glacée' },
+    { name: 'Bière Flag 65cl', sku: 'BOI-003', unitPrice: 1000, costPrice: 600, currentStock: 100, minimumStock: 20, unit: 'bouteille', categoryId: catBoissons.id, description: 'Bière locale togolaise, blonde légère' },
+    { name: 'Jus d\'orange 1L', sku: 'BOI-004', unitPrice: 1500, costPrice: 900, currentStock: 50, minimumStock: 15, unit: 'bouteille', categoryId: catBoissons.id, description: 'Jus d\'orange pressé, 100% naturel' },
+    { name: 'Bissap', sku: 'BOI-005', unitPrice: 600, costPrice: 200, currentStock: 80, minimumStock: 20, unit: 'verre', categoryId: catBoissons.id, description: 'Jus d\'hibiscus frais maison, sucré' },
+    { name: 'Gingembre', sku: 'BOI-006', unitPrice: 600, costPrice: 200, currentStock: 80, minimumStock: 20, unit: 'verre', categoryId: catBoissons.id, description: 'Jus de gingembre frais pimenté' },
+    // Restaurant
+    { name: 'Riz sauce arachide', sku: 'RES-001', unitPrice: 3500, costPrice: 1800, currentStock: 30, minimumStock: 10, unit: 'plat', categoryId: catRestaurant.id, description: 'Riz blanc accompagné de sauce arachide et poulet' },
+    { name: 'Fufu & sauce graine', sku: 'RES-002', unitPrice: 4000, costPrice: 2000, currentStock: 25, minimumStock: 8, unit: 'plat', categoryId: catRestaurant.id, description: 'Fufu traditionnel avec sauce graine de palme et poisson' },
+    { name: 'Poulet braisé', sku: 'RES-003', unitPrice: 5000, costPrice: 2800, currentStock: 20, minimumStock: 5, unit: 'plat', categoryId: catRestaurant.id, description: 'Demi-poulet braisé aux épices, frites et salade' },
+    { name: 'Poisson grillé', sku: 'RES-004', unitPrice: 6000, costPrice: 3500, currentStock: 15, minimumStock: 5, unit: 'plat', categoryId: catRestaurant.id, description: 'Tilapia grillé entier, piment et atchèkè' },
+    { name: 'Salade composée', sku: 'RES-005', unitPrice: 2500, costPrice: 1200, currentStock: 20, minimumStock: 5, unit: 'plat', categoryId: catRestaurant.id, description: 'Salade fraîche avec tomates, concombres et vinaigrette' },
+    { name: 'Omelette garnie', sku: 'RES-006', unitPrice: 2000, costPrice: 800, currentStock: 30, minimumStock: 10, unit: 'plat', categoryId: catRestaurant.id, description: 'Omelette aux légumes frais, fromage et pain grillé' },
+    // Fournitures
     { name: 'Savon hôtel', sku: 'FOU-001', unitPrice: 200, costPrice: 100, currentStock: 500, minimumStock: 100, unit: 'pièce', categoryId: catFournitures.id },
     { name: 'Serviette blanche', sku: 'FOU-002', unitPrice: 3000, costPrice: 2000, currentStock: 80, minimumStock: 20, unit: 'pièce', categoryId: catFournitures.id },
   ];
@@ -309,7 +318,7 @@ async function main() {
     });
   }
 
-  console.log(`✅ ${articles.length} articles created`);
+  console.log(`✅ ${articles.length} articles (menu items) created`);
 
   // Create suppliers
   const suppliers = [

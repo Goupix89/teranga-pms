@@ -261,6 +261,8 @@ export interface Order {
   tableNumber?: string | null;
   status: OrderStatus;
   totalAmount: number;
+  paymentMethod?: PaymentMethod | null;
+  invoiceId?: string | null;
   notes?: string | null;
   readyAt?: string | null;
   servedAt?: string | null;

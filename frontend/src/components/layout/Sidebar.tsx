@@ -24,19 +24,19 @@ type NavItem = {
 const navigation: NavItem[] = [
   { name: 'Tableau de bord', href: '/dashboard', icon: LayoutDashboard, estRoles: ['DAF', 'MANAGER', 'SERVER', 'POS', 'COOK', 'CLEANER'] },
   { name: 'Établissements', href: '/dashboard/establishments', icon: Building2, superadminOnly: true },
-  { name: 'Chambres', href: '/dashboard/rooms', icon: BedDouble, estRoles: ['DAF', 'MANAGER', 'SERVER', 'CLEANER'] },
-  { name: 'Réservations', href: '/dashboard/reservations', icon: CalendarCheck, estRoles: ['DAF', 'MANAGER', 'SERVER'] },
+  { name: 'Chambres', href: '/dashboard/rooms', icon: BedDouble, estRoles: ['DAF', 'MANAGER', 'CLEANER'] },
+  { name: 'Réservations', href: '/dashboard/reservations', icon: CalendarCheck, estRoles: ['DAF', 'MANAGER'] },
   { name: 'Commandes', href: '/dashboard/orders', icon: UtensilsCrossed, estRoles: ['DAF', 'MANAGER', 'SERVER'] },
   { name: 'Cuisine', href: '/dashboard/kitchen', icon: UtensilsCrossed, estRoles: ['DAF', 'MANAGER', 'COOK'] },
   { name: 'Factures', href: '/dashboard/invoices', icon: Receipt, estRoles: ['DAF', 'MANAGER', 'SERVER'] },
   { name: 'Paiements', href: '/dashboard/payments', icon: CreditCard, estRoles: ['DAF', 'MANAGER', 'SERVER', 'POS'] },
-  { name: 'Stock & Inventaire', href: '/dashboard/stock', icon: Package, estRoles: ['DAF', 'MANAGER'] },
+  { name: 'Menu & Articles', href: '/dashboard/stock', icon: Package, estRoles: ['DAF', 'MANAGER'] },
   { name: 'Alertes Stock', href: '/dashboard/stock-alerts', icon: AlertTriangle, estRoles: ['DAF', 'MANAGER'] },
   { name: 'Fournisseurs', href: '/dashboard/suppliers', icon: Truck, estRoles: ['DAF'] },
   { name: 'Ménage', href: '/dashboard/cleaning', icon: SprayCan, estRoles: ['DAF', 'MANAGER', 'CLEANER'] },
   { name: 'Approbations', href: '/dashboard/approvals', icon: ClipboardCheck, estRoles: ['DAF'] },
   { name: 'Utilisateurs', href: '/dashboard/users', icon: Users, estRoles: ['DAF', 'MANAGER'] },
-  { name: 'Rapports', href: '/dashboard/reports', icon: BarChart3, estRoles: ['DAF'] },
+  { name: 'Rapports', href: '/dashboard/reports', icon: BarChart3, estRoles: ['DAF', 'MANAGER'] },
   { name: 'Paramètres', href: '/dashboard/settings', icon: Settings, superadminOnly: true },
 ];
 

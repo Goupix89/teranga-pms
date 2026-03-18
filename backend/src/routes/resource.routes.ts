@@ -29,6 +29,10 @@ import { approvalService } from '../services/approval.service';
 import { cleaningService } from '../services/cleaning.service';
 import { stockAlertService } from '../services/stock-alert.service';
 import { memberService } from '../services/member.service';
+// QR code and prisma for invoice QR endpoint
+const QRCode = require('qrcode');
+import { PrismaClient } from '@prisma/client';
+const prisma = new PrismaClient();
 
 // Helper to wrap async route handlers
 const asyncHandler = (fn: (req: Request, res: Response, next: NextFunction) => Promise<any>) =>
@@ -103,8 +107,14 @@ export const establishmentRouter = Router();
 establishmentRouter.get('/', authenticate, requireAnyEstablishmentRole,
   asyncHandler(async (req, res) => {
     const params = parsePagination(req);
-    const data = await establishmentService.list(req.user!.tenantId, params, req.user!.establishmentIds);
-    res.json({ success: true, ...data });
+    const result = await establishmentService.list(req.user!.tenantId, params, req.user!.establishmentIds);
+    // Inject the current user's establishment role into each establishment
+    const memberships = req.user?.memberships || [];
+    const data = (result.data || []).map((est: any) => {
+      const membership = memberships.find((m) => m.establishmentId === est.id);
+      return { ...est, currentUserRole: membership?.role || null };
+    });
+    res.json({ success: true, ...result, data });
   })
 );
 
@@ -352,9 +362,9 @@ export const orderRouter = Router();
 orderRouter.get('/', authenticate, requireDAFOrManagerOrServer,
   asyncHandler(async (req, res) => {
     const params = parsePagination(req);
-    const { establishmentId, status, from, to } = req.query as any;
+    const { establishmentId, status, createdById, from, to } = req.query as any;
     const data = await orderService.list(req.user!.tenantId, params, {
-      establishmentId, status, from, to,
+      establishmentId, status, createdById, from, to,
     });
     res.json({ success: true, ...data });
   })
@@ -451,6 +461,60 @@ invoiceRouter.post('/:id/cancel', authenticate, requireDAF,
   })
 );
 
+// QR code for invoice payment
+invoiceRouter.get('/:id/qrcode', authenticate,
+  asyncHandler(async (req, res) => {
+    const invoice = await invoiceService.getById(req.user!.tenantId, req.params.id);
+    if (!invoice) {
+      res.status(404).json({ success: false, error: 'Facture introuvable' });
+      return;
+    }
+
+    // Find the order linked to this invoice to get paymentMethod
+    const order = await prisma.order.findFirst({
+      where: { invoiceId: invoice.id, tenantId: req.user!.tenantId },
+      select: { paymentMethod: true, orderNumber: true, tableNumber: true },
+    });
+
+    const paymentMethod = order?.paymentMethod || 'MOBILE_MONEY';
+
+    // Build QR code payload
+    const qrPayload = {
+      type: 'TERANGA_PMS_PAYMENT',
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      amount: Number(invoice.totalAmount),
+      currency: invoice.currency || 'XOF',
+      paymentMethod,
+      orderNumber: order?.orderNumber,
+      tableNumber: order?.tableNumber,
+      status: invoice.status,
+    };
+
+    const qrDataUrl = await QRCode.toDataURL(JSON.stringify(qrPayload), {
+      width: 400,
+      margin: 2,
+      color: { dark: '#3E2723', light: '#FFF8E1' },
+    });
+
+    res.json({
+      success: true,
+      data: {
+        qrCode: qrDataUrl,
+        invoice: {
+          id: invoice.id,
+          invoiceNumber: invoice.invoiceNumber,
+          totalAmount: Number(invoice.totalAmount),
+          status: invoice.status,
+          currency: invoice.currency || 'XOF',
+        },
+        paymentMethod,
+        paymentLabel: paymentMethod === 'MOOV_MONEY' ? 'Flooz' : paymentMethod === 'MIXX_BY_YAS' ? 'Yas' : paymentMethod,
+      },
+    });
+  })
+);
+
 // =============================================================================
 // PAYMENTS
 // =============================================================================
@@ -478,8 +542,16 @@ export const articleRouter = Router();
 articleRouter.get('/', authenticate, requireAnyEstablishmentRole,
   asyncHandler(async (req, res) => {
     const params = parsePagination(req);
-    const { categoryId, search, lowStock } = req.query as any;
-    const data = await articleService.list(req.user!.tenantId, params, { categoryId, search, lowStock: lowStock === 'true' });
+    const { categoryId, search, lowStock, menuOnly } = req.query as any;
+    // DAF/Manager can see unapproved articles
+    const isDAFOrManager = req.user?.role === 'SUPERADMIN' || req.user?.memberships?.some(
+      (m) => ['DAF', 'MANAGER'].includes(m.role)
+    );
+    const data = await articleService.list(req.user!.tenantId, params, {
+      categoryId, search, lowStock: lowStock === 'true',
+      includeUnapproved: !!isDAFOrManager,
+      menuOnly: menuOnly === 'true',
+    });
     res.json({ success: true, ...data });
   })
 );
@@ -498,11 +570,49 @@ articleRouter.get('/:id', authenticate, requireAnyEstablishmentRole,
   })
 );
 
-// DAF and MANAGER can create articles
+// DAF and MANAGER can create articles — Manager articles require DAF approval
 articleRouter.post('/', authenticate, requireDAFOrManager, validate(v.createArticleSchema),
   asyncHandler(async (req, res) => {
-    const data = await articleService.create(req.user!.tenantId, req.body);
-    res.status(201).json({ success: true, data });
+    const userRole = req.user?.role;
+    const { establishmentId: estId, ...articleData } = req.body;
+    const resolvedEstId = estId || req.query.establishmentId as string || req.user?.establishmentIds?.[0] || '';
+
+    // Determine user's establishment role
+    let estRole: string | null = null;
+    if (userRole === 'SUPERADMIN') {
+      estRole = 'DAF';
+    } else {
+      const membership = req.user?.memberships?.find(
+        (m) => resolvedEstId ? m.establishmentId === resolvedEstId : true
+      );
+      estRole = membership?.role || null;
+    }
+
+    if (estRole === 'MANAGER') {
+      // Manager creates article as unapproved + creates approval request
+      const article = await articleService.create(req.user!.tenantId, {
+        ...articleData,
+        isApproved: false,
+        createdById: req.user!.id,
+      });
+      // Create approval request for DAF
+      await approvalService.create(req.user!.tenantId, {
+        establishmentId: resolvedEstId,
+        type: 'ARTICLE_CREATION',
+        requestedById: req.user!.id,
+        payload: { articleId: article.id, name: article.name, unitPrice: Number(article.unitPrice), categoryId: article.categoryId },
+        targetId: article.id,
+      });
+      res.status(201).json({ success: true, data: article, requiresApproval: true });
+    } else {
+      // DAF creates article directly as approved
+      const data = await articleService.create(req.user!.tenantId, {
+        ...articleData,
+        isApproved: true,
+        createdById: req.user!.id,
+      });
+      res.status(201).json({ success: true, data });
+    }
   })
 );
 

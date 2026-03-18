@@ -45,6 +45,7 @@ export class OrderService {
           },
           createdBy: { select: { id: true, firstName: true, lastName: true } },
         },
+        orderBy: { createdAt: 'desc' },
         ...toSkipTake(params),
       }),
       db.order.count({ where }),
@@ -87,6 +88,7 @@ export class OrderService {
       tableNumber?: string;
       items: Array<{ articleId: string; quantity: number }>;
       notes?: string;
+      paymentMethod?: string;
     }
   ) {
     if (!data.items || data.items.length === 0) {
@@ -148,6 +150,7 @@ export class OrderService {
           createdById: userId,
           orderNumber,
           tableNumber: data.tableNumber,
+          paymentMethod: data.paymentMethod as any,
           notes: data.notes,
           totalAmount,
           items: {

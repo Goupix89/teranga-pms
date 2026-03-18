@@ -20,7 +20,12 @@ export class ApprovalService {
     const db = createTenantClient(tenantId);
 
     const where: any = {
-      ...(filters.establishmentId && { establishmentId: filters.establishmentId }),
+      ...(filters.establishmentId && {
+        OR: [
+          { establishmentId: filters.establishmentId },
+          { establishmentId: '' }, // Include approvals without establishment (e.g. article creation)
+        ],
+      }),
       ...(filters.status && { status: filters.status }),
       ...(filters.type && { type: filters.type }),
     };
@@ -161,6 +166,14 @@ export class ApprovalService {
         });
       }
 
+      // Approve article creation — activate the article
+      if (request.type === 'ARTICLE_CREATION' && request.targetId) {
+        await tx.article.update({
+          where: { id: request.targetId },
+          data: { isApproved: true, isActive: true },
+        });
+      }
+
       return approved;
     });
   }
@@ -175,7 +188,7 @@ export class ApprovalService {
 
     if (!request) throw new NotFoundError('Demande d\'approbation');
 
-    return prisma.approvalRequest.update({
+    const rejected = await prisma.approvalRequest.update({
       where: { id },
       data: {
         status: 'REJECTED',
@@ -188,6 +201,16 @@ export class ApprovalService {
         reviewedBy: { select: { id: true, firstName: true, lastName: true } },
       },
     });
+
+    // Deactivate rejected article
+    if (request.type === 'ARTICLE_CREATION' && request.targetId) {
+      await prisma.article.update({
+        where: { id: request.targetId },
+        data: { isActive: false },
+      });
+    }
+
+    return rejected;
   }
 
   /**

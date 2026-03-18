@@ -236,7 +236,18 @@ fun MainScaffold(
             modifier = Modifier.padding(innerPadding)
         ) {
             composable("dashboard") {
-                DashboardScreen()
+                DashboardScreen(
+                    onNavigateToMenu = {
+                        innerNavController.navigate("orders") {
+                            popUpTo(innerNavController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    userRole = role
+                )
             }
 
             composable("orders") {

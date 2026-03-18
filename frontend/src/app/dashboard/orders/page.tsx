@@ -4,11 +4,11 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch } from '@/lib/api';
 import { PageHeader, StatusBadge, Pagination, Modal, SearchInput, EmptyState, LoadingPage } from '@/components/ui';
-import { UtensilsCrossed, Plus, Loader2, BarChart3 } from 'lucide-react';
+import { UtensilsCrossed, Plus, Loader2, BarChart3, QrCode, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDateTime, formatCurrency, statusLabels } from '@/lib/utils';
 import { useAuthStore } from '@/hooks/useAuthStore';
-import { Order, OrderStatus } from '@/types';
+import { Order, OrderStatus, PaymentMethod } from '@/types';
 
 export default function OrdersPage() {
   const queryClient = useQueryClient();
@@ -20,19 +20,30 @@ export default function OrdersPage() {
 
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState('');
+  const [serverFilter, setServerFilter] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [showStats, setShowStats] = useState(false);
 
-  const [form, setForm] = useState({ establishmentId: '', tableNumber: '', items: [{ articleId: '', quantity: 1 }] as Array<{ articleId: string; quantity: number }>, notes: '' });
+  const isDAFOrManager = isSuperAdmin || ['DAF', 'MANAGER'].includes(currentEstRole || '');
+
+  const [form, setForm] = useState({ establishmentId: '', tableNumber: '', paymentMethod: 'MOOV_MONEY' as PaymentMethod, items: [{ articleId: '', quantity: 1 }] as Array<{ articleId: string; quantity: number }>, notes: '' });
+  const [qrModal, setQrModal] = useState<{ open: boolean; invoiceId?: string; qrCode?: string; invoiceNumber?: string; totalAmount?: number; paymentLabel?: string; currency?: string }>({ open: false });
+
+  // Fetch users (servers) for filter — only for DAF/Manager
+  const { data: usersData } = useQuery({
+    queryKey: ['users-servers'],
+    queryFn: () => apiGet<any>('/users?limit=100'),
+    enabled: isDAFOrManager,
+  });
 
   const { data, isLoading } = useQuery({
-    queryKey: ['orders', page, statusFilter, currentEstId],
-    queryFn: () => apiGet<any>(`/orders?page=${page}&limit=20${statusFilter ? `&status=${statusFilter}` : ''}${currentEstId ? `&establishmentId=${currentEstId}` : ''}`),
+    queryKey: ['orders', page, statusFilter, serverFilter, currentEstId],
+    queryFn: () => apiGet<any>(`/orders?page=${page}&limit=20${statusFilter ? `&status=${statusFilter}` : ''}${serverFilter ? `&createdById=${serverFilter}` : ''}${currentEstId ? `&establishmentId=${currentEstId}` : ''}`),
   });
 
   const { data: articlesData } = useQuery({
-    queryKey: ['articles-list'],
-    queryFn: () => apiGet<any>('/articles?limit=200'),
+    queryKey: ['articles-menu'],
+    queryFn: () => apiGet<any>('/articles?limit=200&menuOnly=true'),
   });
 
   const { data: statsData } = useQuery({
@@ -42,13 +53,32 @@ export default function OrdersPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (body: any) => apiPost('/orders', body),
-    onSuccess: () => {
+    mutationFn: (body: any) => apiPost<any>('/orders', body),
+    onSuccess: async (response: any) => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       queryClient.invalidateQueries({ queryKey: ['order-stats'] });
       setShowModal(false);
+      const invoiceId = response?.data?.invoiceId;
+      if (invoiceId) {
+        try {
+          const qrRes = await apiGet<any>(`/invoices/${invoiceId}/qrcode`);
+          if (qrRes?.data) {
+            setQrModal({
+              open: true,
+              invoiceId,
+              qrCode: qrRes.data.qrCode,
+              invoiceNumber: qrRes.data.invoice?.invoiceNumber,
+              totalAmount: qrRes.data.invoice?.totalAmount,
+              paymentLabel: qrRes.data.paymentLabel,
+              currency: qrRes.data.invoice?.currency || 'XOF',
+            });
+          }
+        } catch {
+          toast.success('Commande créée (QR code indisponible)');
+        }
+      }
       resetForm();
-      toast.success('Commande créée');
+      toast.success('Commande créée — facture générée');
     },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
   });
@@ -63,7 +93,7 @@ export default function OrdersPage() {
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
   });
 
-  const resetForm = () => setForm({ establishmentId: currentEstId || '', tableNumber: '', items: [{ articleId: '', quantity: 1 }], notes: '' });
+  const resetForm = () => setForm({ establishmentId: currentEstId || '', tableNumber: '', paymentMethod: 'MOOV_MONEY', items: [{ articleId: '', quantity: 1 }], notes: '' });
 
   const addItem = () => setForm((prev) => ({ ...prev, items: [...prev.items, { articleId: '', quantity: 1 }] }));
   const removeItem = (idx: number) => setForm((prev) => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
@@ -138,7 +168,7 @@ export default function OrdersPage() {
       )}
 
       {/* Filters */}
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3">
         <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className="input w-48">
           <option value="">Tous les statuts</option>
           <option value="PENDING">En attente</option>
@@ -147,6 +177,14 @@ export default function OrdersPage() {
           <option value="SERVED">Servie</option>
           <option value="CANCELLED">Annulée</option>
         </select>
+        {isDAFOrManager && (
+          <select value={serverFilter} onChange={(e) => { setServerFilter(e.target.value); setPage(1); }} className="input w-56">
+            <option value="">Tous les serveurs</option>
+            {(usersData?.data || []).map((u: any) => (
+              <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {orders.length === 0 ? (
@@ -162,6 +200,7 @@ export default function OrdersPage() {
                   <th>Articles</th>
                   <th>Total</th>
                   <th>Statut</th>
+                  <th>Paiement</th>
                   <th>Créée par</th>
                   <th>Date</th>
                   <th></th>
@@ -179,6 +218,39 @@ export default function OrdersPage() {
                     </td>
                     <td className="font-medium">{formatCurrency(order.totalAmount)}</td>
                     <td><StatusBadge status={order.status} /></td>
+                    <td className="text-sm">
+                      <div className="flex items-center gap-1">
+                        <span className="text-gray-600">
+                          {order.paymentMethod === 'MOOV_MONEY' ? 'Flooz' : order.paymentMethod === 'MIXX_BY_YAS' ? 'Yas' : order.paymentMethod || '-'}
+                        </span>
+                        {order.invoiceId && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                const qrRes = await apiGet<any>(`/invoices/${order.invoiceId}/qrcode`);
+                                if (qrRes?.data) {
+                                  setQrModal({
+                                    open: true,
+                                    invoiceId: order.invoiceId!,
+                                    qrCode: qrRes.data.qrCode,
+                                    invoiceNumber: qrRes.data.invoice?.invoiceNumber,
+                                    totalAmount: qrRes.data.invoice?.totalAmount,
+                                    paymentLabel: qrRes.data.paymentLabel,
+                                    currency: qrRes.data.invoice?.currency || 'XOF',
+                                  });
+                                }
+                              } catch {
+                                toast.error('QR code indisponible');
+                              }
+                            }}
+                            className="btn-ghost p-1 text-primary-600 hover:text-primary-700"
+                            title="Afficher QR code de paiement"
+                          >
+                            <QrCode className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
                     <td className="text-gray-500 text-sm">{order.createdBy ? `${order.createdBy.firstName} ${order.createdBy.lastName}` : '-'}</td>
                     <td className="text-gray-400 text-xs">{formatDateTime(order.createdAt)}</td>
                     <td>
@@ -210,6 +282,28 @@ export default function OrdersPage() {
         </div>
       )}
 
+      {/* QR Code payment modal */}
+      <Modal open={qrModal.open} onClose={() => setQrModal({ open: false })} title="QR Code de paiement" size="md">
+        <div className="flex flex-col items-center space-y-4 py-4">
+          <div className="text-center space-y-1">
+            <p className="text-lg font-semibold text-gray-900">Facture {qrModal.invoiceNumber}</p>
+            <p className="text-2xl font-bold text-primary-700">{formatCurrency(qrModal.totalAmount || 0)} {qrModal.currency}</p>
+            <p className="text-sm text-gray-500">Paiement par <span className="font-medium text-gray-700">{qrModal.paymentLabel}</span></p>
+          </div>
+          {qrModal.qrCode && (
+            <div className="bg-white p-4 rounded-xl shadow-lg border-2 border-primary-100">
+              <img src={qrModal.qrCode} alt="QR Code de paiement" className="w-64 h-64" />
+            </div>
+          )}
+          <p className="text-xs text-gray-400 text-center max-w-xs">
+            Le client doit scanner ce QR code avec son application {qrModal.paymentLabel} pour effectuer le paiement.
+          </p>
+          <button onClick={() => setQrModal({ open: false })} className="btn-primary w-full max-w-xs">
+            Fermer
+          </button>
+        </div>
+      </Modal>
+
       {/* Create order modal */}
       <Modal open={showModal} onClose={() => setShowModal(false)} title="Nouvelle commande" size="lg">
         <form onSubmit={(e) => {
@@ -217,15 +311,27 @@ export default function OrdersPage() {
           const body = {
             establishmentId: form.establishmentId || currentEstId,
             tableNumber: form.tableNumber || undefined,
+            paymentMethod: form.paymentMethod,
             items: form.items.filter((i) => i.articleId),
             notes: form.notes || undefined,
           };
           createMutation.mutate(body);
         }} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div>
               <label className="label">N° Table (optionnel)</label>
               <input value={form.tableNumber} onChange={(e) => setForm({ ...form, tableNumber: e.target.value })} className="input" placeholder="Ex: T1, 12..." />
+            </div>
+            <div>
+              <label className="label">Moyen de paiement</label>
+              <select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value as PaymentMethod })} className="input">
+                <option value="MOOV_MONEY">Flooz (Moov Money)</option>
+                <option value="MIXX_BY_YAS">Yas (MTN)</option>
+                <option value="CASH">Espèces</option>
+                <option value="CARD">Carte bancaire</option>
+                <option value="MOBILE_MONEY">Mobile Money</option>
+                <option value="BANK_TRANSFER">Virement</option>
+              </select>
             </div>
             <div>
               <label className="label">Notes (optionnel)</label>

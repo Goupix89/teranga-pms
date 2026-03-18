@@ -44,6 +44,9 @@ data class Article(
     val unitPrice: Double,
     val currentStock: Int,
     val unit: String,
+    val description: String? = null,
+    val imageUrl: String? = null,
+    val isApproved: Boolean = true,
     val category: CategoryRef?
 )
 
@@ -163,6 +166,8 @@ data class Order(
     val tableNumber: String? = null,
     val status: String,
     val totalAmount: Double,
+    val paymentMethod: String? = null,
+    val invoiceId: String? = null,
     val items: List<OrderItem>? = null,
     val createdBy: UserSummary? = null,
     val createdAt: String? = null
@@ -200,7 +205,28 @@ data class OrderStatusRequest(
 data class CreateOrderRequest(
     val establishmentId: String,
     val tableNumber: String,
+    val paymentMethod: String? = null,
     val items: List<CreateOrderItem>
+)
+
+data class QrCodeResponse(
+    val success: Boolean,
+    val data: QrCodeData? = null
+)
+
+data class QrCodeData(
+    val qrCode: String,
+    val invoice: QrInvoiceInfo? = null,
+    val paymentMethod: String? = null,
+    val paymentLabel: String? = null
+)
+
+data class QrInvoiceInfo(
+    val id: String,
+    val invoiceNumber: String,
+    val totalAmount: Double,
+    val status: String,
+    val currency: String? = "XOF"
 )
 
 data class CreateOrderItem(
@@ -341,6 +367,8 @@ data class CachedArticle(
     val currentStock: Int,
     val unit: String,
     val categoryName: String?,
+    val description: String? = null,
+    val imageUrl: String? = null,
     val cachedAt: Long = System.currentTimeMillis()
 )
 

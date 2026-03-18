@@ -236,16 +236,17 @@ export const externalBookingSchema = z.object({
 // =============================================================================
 
 export const createArticleSchema = z.object({
-  categoryId: z.string().uuid().optional(),
-  name: z.string().min(1).max(200),
-  sku: z.string().max(50).optional(),
-  description: z.string().max(500).optional(),
-  unitPrice: z.number().min(0),
-  costPrice: z.number().min(0).default(0),
-  currentStock: z.number().int().min(0).default(0),
-  minimumStock: z.number().int().min(0).default(0),
+  categoryId: z.union([z.string().uuid('Catégorie invalide'), z.literal('')]).optional().transform(v => v === '' ? undefined : v),
+  name: z.string({ required_error: 'Le nom est requis' }).min(1, 'Le nom est requis').max(200, 'Nom trop long (max 200 caractères)'),
+  sku: z.string().max(50, 'SKU trop long (max 50)').optional().transform(v => v === '' ? undefined : v),
+  description: z.string().max(500, 'Description trop longue (max 500 caractères)').optional().transform(v => v === '' ? undefined : v),
+  unitPrice: z.number({ required_error: 'Le prix de vente est requis', invalid_type_error: 'Le prix doit être un nombre' }).min(0, 'Le prix ne peut pas être négatif'),
+  costPrice: z.number({ invalid_type_error: 'Le prix d\'achat doit être un nombre' }).min(0, 'Le prix d\'achat ne peut pas être négatif').default(0),
+  currentStock: z.number({ invalid_type_error: 'Le stock doit être un nombre entier' }).int('Le stock doit être un nombre entier').min(0, 'Le stock ne peut pas être négatif').default(0),
+  minimumStock: z.number({ invalid_type_error: 'Le stock minimum doit être un nombre entier' }).int('Le stock minimum doit être un nombre entier').min(0, 'Le stock minimum ne peut pas être négatif').default(0),
   unit: z.string().max(20).default('pièce'),
-  imageUrl: z.string().url().max(500).optional(),
+  imageUrl: z.string().max(500, 'URL trop longue').optional().transform(v => v === '' ? undefined : v),
+  establishmentId: z.string().uuid().optional(),
 });
 
 export const updateArticleSchema = createArticleSchema.partial().extend({
@@ -328,6 +329,7 @@ export const registerTenantSchema = z.object({
 export const createOrderSchema = z.object({
   establishmentId: z.string().uuid(),
   tableNumber: z.string().max(20).optional(),
+  paymentMethod: z.enum(['CASH', 'CARD', 'BANK_TRANSFER', 'MOBILE_MONEY', 'MOOV_MONEY', 'MIXX_BY_YAS', 'OTHER']).optional(),
   items: z.array(z.object({
     articleId: z.string().uuid(),
     quantity: z.number().int().positive().max(999),
@@ -345,7 +347,7 @@ export const updateOrderStatusSchema = z.object({
 
 export const createApprovalSchema = z.object({
   establishmentId: z.string().uuid(),
-  type: z.enum(['EMPLOYEE_CREATION', 'RESERVATION_MODIFICATION', 'ROOM_CREATION', 'STOCK_MOVEMENT']),
+  type: z.enum(['EMPLOYEE_CREATION', 'RESERVATION_MODIFICATION', 'ROOM_CREATION', 'STOCK_MOVEMENT', 'ARTICLE_CREATION']),
   payload: z.record(z.unknown()),
   targetId: z.string().uuid().optional(),
 });

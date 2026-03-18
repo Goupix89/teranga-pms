@@ -1,5 +1,5 @@
 import Stripe from 'stripe';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { config } from '../config';
 import { prisma } from '../utils/prisma';
 import { ConflictError, AppError, NotFoundError } from '../utils/errors';

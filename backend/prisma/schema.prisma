@@ -125,6 +125,7 @@ enum ApprovalType {
   RESERVATION_MODIFICATION
   ROOM_CREATION
   STOCK_MOVEMENT
+  ARTICLE_CREATION
 }
 
 enum ApprovalStatus {
@@ -220,6 +221,7 @@ model User {
   approvalReviews     ApprovalRequest[]     @relation("ApprovalReviewer")
   stockAlerts         StockAlert[]
   cleaningSessions    CleaningSession[]
+  articlesCreated     Article[]             @relation("ArticleCreator")
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -365,10 +367,11 @@ model Order {
   createdById     String      @map("created_by_id")
   orderNumber     String      @map("order_number")
   tableNumber     String?     @map("table_number")
-  status          OrderStatus @default(PENDING)
+  status          OrderStatus    @default(PENDING)
+  paymentMethod   PaymentMethod? @map("payment_method")
   notes           String?
-  totalAmount     Decimal     @default(0) @map("total_amount") @db.Decimal(10, 2)
-  invoiceId       String?     @map("invoice_id")
+  totalAmount     Decimal        @default(0) @map("total_amount") @db.Decimal(10, 2)
+  invoiceId       String?        @map("invoice_id")
   readyAt         DateTime?   @map("ready_at")
   servedAt        DateTime?   @map("served_at")
   createdAt       DateTime    @default(now()) @map("created_at")
@@ -503,11 +506,14 @@ model Article {
   minimumStock Int     @default(0) @map("minimum_stock")
   unit         String  @default("pièce")
   isActive     Boolean @default(true) @map("is_active")
+  isApproved   Boolean @default(true) @map("is_approved")
+  createdById  String? @map("created_by_id")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   tenant         Tenant            @relation(fields: [tenantId], references: [id])
   category       ArticleCategory?  @relation(fields: [categoryId], references: [id])
+  createdBy      User?             @relation("ArticleCreator", fields: [createdById], references: [id])
   stockMovements StockMovement[]
   invoiceItems   InvoiceItem[]
   orderItems     OrderItem[]

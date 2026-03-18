@@ -453,9 +453,28 @@ function ServerDashboard({
 }) {
   const { data: orderStats } = useOrderStats(establishmentId);
   const { data: myOrderStats } = useOrderStats(establishmentId, userId);
+  const { data: rooms } = useRoomsStats();
 
   const stats = orderStats?.data || {};
   const myStats = myOrderStats?.data || {};
+  const roomsData = rooms?.data || [];
+  const available = roomsData.filter((r: any) => r.status === 'AVAILABLE').length;
+  const occupied = roomsData.filter((r: any) => r.status === 'OCCUPIED').length;
+  const totalRooms = roomsData.length;
+
+  const statusColor = (s: string) =>
+    s === 'AVAILABLE' ? 'bg-sage-100 text-sage-700' :
+    s === 'OCCUPIED' ? 'bg-primary-100 text-primary-700' :
+    s === 'MAINTENANCE' ? 'bg-amber-100 text-amber-700' :
+    s === 'CLEANING' ? 'bg-blue-100 text-blue-700' :
+    'bg-wood-100 text-wood-600';
+
+  const statusLabel = (s: string) =>
+    s === 'AVAILABLE' ? 'Libre' :
+    s === 'OCCUPIED' ? 'Occupée' :
+    s === 'MAINTENANCE' ? 'Maintenance' :
+    s === 'CLEANING' ? 'Nettoyage' :
+    s === 'OUT_OF_ORDER' ? 'Hors service' : s;
 
   return (
     <div className="space-y-8">
@@ -464,6 +483,31 @@ function ServerDashboard({
         subtitle="Vos commandes et activités"
       />
       <div className="divider-teranga" />
+
+      {/* Room status overview */}
+      <div>
+        <h2 className="font-display text-lg font-bold text-wood-800 mb-4">
+          <BedDouble className="inline h-5 w-5 mr-2 text-accent-500" />
+          État des chambres
+        </h2>
+        <div className="grid gap-3 sm:grid-cols-3 mb-4">
+          <StatCard title="Libres" value={available} icon={BedDouble} color="sage" />
+          <StatCard title="Occupées" value={occupied} icon={BedDouble} color="primary" />
+          <StatCard title="Total" value={totalRooms} icon={BedDouble} color="accent" />
+        </div>
+        <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-2">
+          {roomsData.map((r: any) => (
+            <div
+              key={r.id}
+              className={`rounded-lg px-2 py-2 text-center text-xs font-bold ${statusColor(r.status)}`}
+              title={`${r.number} — ${statusLabel(r.status)}`}
+            >
+              <div className="text-sm">{r.number}</div>
+              <div className="text-[10px] font-medium opacity-80">{statusLabel(r.status)}</div>
+            </div>
+          ))}
+        </div>
+      </div>
 
       <div>
         <h2 className="font-display text-lg font-bold text-wood-800 mb-4">
@@ -806,13 +850,24 @@ function ManagerDashboard({ establishmentId }: { establishmentId: string | null 
 // DAF Dashboard
 // =============================================================================
 
+function usePendingApprovals(establishmentId: string | null) {
+  return useQuery({
+    queryKey: ['pending-approvals-count', establishmentId],
+    queryFn: () => apiGet<any>(`/approvals/pending-count/${establishmentId}`),
+    enabled: !!establishmentId,
+    refetchInterval: 30000, // Refresh every 30s
+  });
+}
+
 function DafDashboard({ establishmentId }: { establishmentId: string | null }) {
   const { data: lowStock } = useLowStock();
   const { data: rooms } = useRoomsStats();
   const { data: invoices } = useRecentInvoices();
+  const { data: pendingApprovals } = usePendingApprovals(establishmentId);
   const lowStockItems = (lowStock as any)?.data || [];
   const recentInvoices = invoices?.data || [];
   const roomsData = rooms?.data || [];
+  const pendingCount = pendingApprovals?.data?.count || 0;
 
   // Room status breakdown
   const statusCounts: Record<string, number> = {};
@@ -831,6 +886,35 @@ function DafDashboard({ establishmentId }: { establishmentId: string | null }) {
         subtitle="Direction Administrative et Financière"
       />
       <div className="divider-teranga" />
+
+      {/* Pending approvals alert */}
+      {pendingCount > 0 && (
+        <Link href="/dashboard/approvals" className="block">
+          <div className="card border-2 border-accent-400 bg-accent-50 p-5 hover:bg-accent-100 transition-colors cursor-pointer">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="relative">
+                  <div className="rounded-xl bg-accent-200 p-3">
+                    <ClipboardList className="h-6 w-6 text-accent-800" />
+                  </div>
+                  <span className="absolute -top-2 -right-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white animate-pulse">
+                    {pendingCount}
+                  </span>
+                </div>
+                <div>
+                  <p className="text-lg font-bold text-accent-900">
+                    {pendingCount} approbation{pendingCount > 1 ? 's' : ''} en attente
+                  </p>
+                  <p className="text-sm text-accent-700">
+                    Cliquez pour traiter les demandes en attente
+                  </p>
+                </div>
+              </div>
+              <div className="text-accent-600 font-bold text-sm">Voir &rarr;</div>
+            </div>
+          </div>
+        </Link>
+      )}
 
       {/* Room & reservation stats */}
       <RoomsStatsSection />

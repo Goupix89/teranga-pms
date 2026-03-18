@@ -72,6 +72,7 @@ export default function ApprovalsPage() {
     RESERVATION_MODIFICATION: 'Modification réservation',
     ROOM_CREATION: 'Création de chambre',
     STOCK_MOVEMENT: 'Mouvement de stock',
+    ARTICLE_CREATION: 'Création article menu',
   };
 
   const formatPayload = (approval: ApprovalRequest): string => {
@@ -94,6 +95,12 @@ export default function ApprovalsPage() {
       if (p.articleName || p.articleId) parts.push(`Article: ${p.articleName || p.articleId}`);
       if (p.quantity != null) parts.push(`Quantité: ${p.quantity}`);
       if (p.type) parts.push(`Type: ${p.type}`);
+      return parts.length > 0 ? parts.join(' — ') : JSON.stringify(p);
+    }
+    if (approval.type === 'ARTICLE_CREATION') {
+      const parts = [];
+      if (p.name) parts.push(p.name);
+      if (p.unitPrice != null) parts.push(`Prix: ${p.unitPrice} FCFA`);
       return parts.length > 0 ? parts.join(' — ') : JSON.stringify(p);
     }
     return JSON.stringify(p);
@@ -140,6 +147,7 @@ export default function ApprovalsPage() {
           <option value="RESERVATION_MODIFICATION">Modification réservation</option>
           <option value="ROOM_CREATION">Création de chambre</option>
           <option value="STOCK_MOVEMENT">Mouvement de stock</option>
+          <option value="ARTICLE_CREATION">Création article menu</option>
         </select>
       </div>
 

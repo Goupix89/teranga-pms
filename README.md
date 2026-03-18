@@ -1,29 +1,40 @@
-# Hotel PMS — Plateforme SaaS de Gestion Hôtelière
+# Teranga PMS — Plateforme SaaS de Gestion Hôtelière
 
-Plateforme complète multi-tenant de gestion hôtelière (Property Management System) avec module web et application mobile Android POS.
+Plateforme complète multi-tenant de gestion hôtelière (Property Management System) avec interface web, application mobile Android, et flux de paiement mobile (Flooz / Yas) par QR code.
 
 ## Architecture
 
 ```
 hotel-pms/
-├── backend/          # API REST — Node.js/Express + TypeScript + Prisma + PostgreSQL
-├── frontend/         # Interface Web — Next.js 14 (App Router) + TypeScript + Tailwind CSS
-├── android/          # App POS — Kotlin + Jetpack Compose
-└── docker-compose.yml
+├── backend/           # API REST — Node.js/Express + TypeScript + Prisma + PostgreSQL
+├── frontend/          # Interface Web — Next.js 14 (App Router) + TypeScript + Tailwind CSS
+├── android/           # App Mobile — Kotlin + Jetpack Compose + Hilt + Room DB
+├── docs/              # Documentation (RBAC, Guide utilisateur)
+└── docker-compose.yml # PostgreSQL, Redis, API, Frontend
 ```
 
 ## Stack Technique
 
 | Couche | Technologie |
 |--------|-------------|
-| Frontend Web | Next.js 14+, TypeScript, Tailwind CSS, React Query, Zustand |
+| Frontend Web | Next.js 14+, TypeScript, Tailwind CSS, React Query, Zustand, Recharts |
 | Backend API | Node.js, Express, TypeScript, Zod |
 | ORM / DB | Prisma + PostgreSQL 15+ |
-| Cache | Redis |
-| Auth | JWT (access + refresh tokens), bcrypt, RBAC |
-| Paiement | Stripe (Checkout Sessions, Webhooks) |
-| Mobile POS | Kotlin, Jetpack Compose, Room DB, Retrofit, Hilt |
+| Cache | Redis 7 |
+| Auth | JWT (access + refresh tokens), bcryptjs, RBAC 2 niveaux |
+| Paiement | Stripe (abonnements), Flooz/Yas via QR code (commandes) |
+| QR Code | `qrcode` npm (génération data URL côté serveur) |
+| Upload | Multer (images articles, max 5 Mo, JPG/PNG/WebP) |
+| Mobile | Kotlin, Jetpack Compose, Room DB, Retrofit, Hilt DI |
 | DevOps | Docker, Docker Compose |
+
+## Design System
+
+### Web — Teranga (Sénégal)
+- Terracotta `#C4704A`, Gold `#D4A843`, Sage `#7A9B76`
+
+### Mobile — Bénin
+- Rouge Dahomey `#C0392B`, Or Béninois `#F1C40F`, Vert Béninois `#27AE60`, Bronze Abomey `#8D6E63`
 
 ## Modules Fonctionnels
 
@@ -33,12 +44,52 @@ hotel-pms/
 4. **Établissements** — Multi-établissement par tenant, rôles dédiés (DAF, Manager, Serveur, POS, Cuisinier, Ménage)
 5. **Chambres** — CRUD, gestion des statuts, filtres avancés
 6. **Réservations** — CRUD, check-in/check-out, anti-double-booking transactionnel
-7. **Factures** — Lifecycle complet (brouillon → émise → payée), numérotation auto
-8. **Paiements** — Multi-méthodes, idempotence POS via UUID
-9. **Stock & Inventaire** — Articles, catégories, mouvements, alertes stock bas
-10. **Fournisseurs** — CRUD complet
-11. **Intégrations** — API disponibilité (JSON/iCal), Channel Manager, POS Android
-12. **Inscription & Abonnements** — Inscription self-service avec paiement Stripe, plans Basic/Pro/Enterprise, gestion du cycle de vie abonnement via webhooks
+7. **Factures** — Lifecycle complet (brouillon → émise → payée), numérotation auto `FAC-YYYYMMDD-NNNN`
+8. **Paiements** — Multi-méthodes (Espèces, Carte, Mobile Money, Flooz, Yas, Virement), idempotence POS via UUID
+9. **Commandes** — Création avec moyen de paiement, auto-génération facture, QR code pour paiement client
+10. **Menu & Articles** — Catégories Restaurant/Boissons, upload d'images, workflow d'approbation DAF, stock optionnel pour plats préparés
+11. **Cuisine** — Vue temps réel des commandes pour les cuisiniers, notification serveur quand prêt
+12. **Stock & Inventaire** — Mouvements, alertes stock bas, approbation DAF pour écarts
+13. **Fournisseurs** — CRUD complet
+14. **Ménage** — Pointage début/fin (clock-in/clock-out), chambre indisponible pendant nettoyage
+15. **Rapports** — Taux d'occupation, revenus, performance par serveur, export CSV, graphiques
+16. **Intégrations** — API disponibilité (JSON/iCal), Channel Manager, POS Android
+17. **Inscription & Abonnements** — Inscription self-service avec paiement Stripe, plans Basic/Pro/Enterprise
+
+## Flux de Paiement (Commandes)
+
+```
+Serveur crée une commande (web ou mobile)
+  → Sélectionne le moyen de paiement (Flooz ou Yas)
+  → Facture auto-générée (FAC-YYYYMMDD-NNNN)
+  → QR code affiché (web ou mobile)
+  → Client scanne le QR code avec son app Flooz/Yas
+  → Paiement effectué
+```
+
+### Moyens de paiement supportés
+
+| Code | Label | Usage |
+|------|-------|-------|
+| `MOOV_MONEY` | Flooz | Paiement mobile Moov Africa |
+| `MIXX_BY_YAS` | Yas | Paiement mobile MTN |
+| `CASH` | Espèces | Paiement en liquide |
+| `CARD` | Carte bancaire | Paiement par carte |
+| `MOBILE_MONEY` | Mobile Money | Paiement mobile générique |
+| `BANK_TRANSFER` | Virement | Virement bancaire |
+
+## Workflow d'approbation des articles
+
+```
+Manager crée un article (nom, catégorie, prix, image, description)
+  → Article créé avec statut "En attente d'approbation"
+  → Demande d'approbation envoyée au DAF
+  → DAF voit le badge sur son dashboard + dans la page Approbations
+  → DAF approuve → Article actif et visible par les serveurs
+  → DAF rejette → Article reste inactif
+```
+
+Le DAF peut créer des articles directement sans approbation.
 
 ## Démarrage Rapide
 
@@ -46,7 +97,7 @@ hotel-pms/
 
 - Docker et Docker Compose
 - Node.js 20+ (si dev sans Docker)
-- Android Studio (pour l'app POS)
+- Android Studio (pour l'app mobile)
 
 ### Avec Docker (recommandé)
 
@@ -56,13 +107,13 @@ cd hotel-pms
 docker compose up -d
 
 # Exécuter les migrations et le seed
-docker exec -it hotel-pms-api npx prisma migrate dev
-docker exec hotel-pms-api npx tsx prisma/seed.ts
+docker compose exec backend npx prisma db push
+docker compose exec backend npx tsx prisma/seed.ts
 
 # L'application est accessible sur :
 # Frontend : http://localhost:3001
 # API :      http://localhost:4000
-# API Doc :  http://localhost:4000/health
+# Health :   http://localhost:4000/health
 ```
 
 ### Configuration Stripe (abonnements)
@@ -96,7 +147,7 @@ cd backend
 cp .env.example .env
 # Éditer .env avec vos paramètres
 npm install
-npx prisma migrate dev
+npx prisma db push
 npx tsx prisma/seed.ts
 npm run dev
 
@@ -119,14 +170,14 @@ npm run dev
 | Rôle | Email | Mot de passe |
 |------|-------|-------------|
 | Super Admin | superadmin@hoteldemo.com | Admin123! |
-| DAF (admin étab.) | daf@hoteldemo.com | Daf12345! |
+| DAF | daf@hoteldemo.com | Daf12345! |
 | Manager | manager@hoteldemo.com | Manager123! |
 | Serveur | serveur@hoteldemo.com | Serveur123! |
 | POS | pos@hoteldemo.com | Pos12345! |
 | Cuisinier | cuisinier@hoteldemo.com | Cook1234! |
 | Ménage | menage@hoteldemo.com | Menage123! |
 
-## Rôles et permissions (RBAC)
+## Rôles et Permissions (RBAC)
 
 Le système utilise un **RBAC à 2 niveaux** :
 
@@ -135,90 +186,87 @@ Le système utilise un **RBAC à 2 niveaux** :
 | Rôle | Description |
 |------|-------------|
 | **SUPERADMIN** | Administrateur plateforme, accès total, bypass toutes les vérifications |
-| **EMPLOYEE** | Utilisateur standard, ses droits dépendent de ses rôles par établissement |
+| **EMPLOYEE** | Utilisateur standard, droits déterminés par ses rôles par établissement |
 
 ### Niveau 2 — Rôle Établissement (EstablishmentRole)
 
-Chaque utilisateur EMPLOYEE est assigné à un ou plusieurs établissements via un `EstablishmentMember` portant un rôle :
-
 | Rôle | Description |
 |------|-------------|
-| **DAF** | Directeur Administratif et Financier — administrateur de l'établissement. Valide les créations d'employés, gère finances/stock/rapports, crée les produits et fixe les prix, dashboard avec graphiques (occupation, fréquentation, stock, revenus), vue performance utilisateurs |
-| **MANAGER** | Vue stock + alertes DAF en cas de pénurie, crée réservations (modifications sous validation DAF), crée employés par rôle (sous validation DAF) |
-| **SERVER** | Serveur — application mobile pour prise de commandes, crée des commandes payables via QR code (Moov Money / Mixx by Yas → USSD marchand), stats commandes jour/semaine/mois |
-| **POS** | Point de vente — regroupe toutes les facturations, paiements carte/Momo depuis l'application mobile |
-| **COOK** | Cuisinier — interface temps réel des commandes, signale les serveurs quand une commande est prête |
+| **DAF** | Directeur Administratif et Financier — administrateur de l'établissement. Valide les créations d'articles/employés, gère finances/stock/rapports. Badge d'approbation en temps réel sur le dashboard |
+| **MANAGER** | Gestion quotidienne — crée les articles du menu (soumis à approbation DAF), crée employés (sous validation DAF), rapports d'activité, gestion stock |
+| **SERVER** | Serveur — prise de commandes via le menu (Restaurant/Boissons), affichage QR code pour paiement client, stats personnelles. N'a pas accès aux réservations ni aux chambres directement |
+| **POS** | Point de vente — facturations, paiements carte/Mobile Money |
+| **COOK** | Cuisinier — interface temps réel des commandes en cuisine, signale quand une commande est prête |
 | **CLEANER** | Ménage — pointage début/fin de ménage, chambre indisponible pendant le nettoyage |
 
 ### Matrice des permissions
 
 | Fonctionnalité | SuperAdmin | DAF | Manager | Serveur | POS | Cuisinier | Ménage |
 |----------------|:----------:|:---:|:-------:|:-------:|:---:|:---------:|:------:|
-| Paramètres plateforme | ✅ | | | | | | |
-| Créer/supprimer établissements | ✅ | | | | | | |
-| Modifier établissement | ✅ | ✅ | | | | | |
-| Gérer utilisateurs | ✅ | ✅ | ✅ ¹ | | | | |
-| Approuver employés | ✅ | ✅ | | | | | |
-| Rapports & Dashboard | ✅ | ✅ | | | | | |
-| Fournisseurs | ✅ | ✅ | | | | | |
-| Approbations | ✅ | ✅ | | | | | |
-| Articles & Prix | ✅ | ✅ | | | | | |
-| Stock & Inventaire | ✅ | ✅ | ✅ | | | | |
-| Alertes stock | ✅ | ✅ | ✅ | | | | |
-| Factures & Paiements | ✅ | ✅ | ✅ | ✅ | ✅ | | |
-| Commandes | ✅ | ✅ | ✅ | ✅ | | | |
-| Cuisine (temps réel) | ✅ | ✅ | ✅ | | | ✅ | |
-| Chambres | ✅ | ✅ | ✅ | ✅ | | | ✅ |
-| Réservations | ✅ | ✅ | ✅ | ✅ | | | |
-| Ménage & Pointage | ✅ | ✅ | ✅ | | | | ✅ |
-| Tableau de bord | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Paramètres plateforme | X | | | | | | |
+| Créer/supprimer établissements | X | | | | | | |
+| Modifier établissement | X | X | | | | | |
+| Gérer utilisateurs | X | X | X ^1 | | | | |
+| Approuver demandes | X | X | | | | | |
+| Rapports & Export CSV | X | X | X | | | | |
+| Fournisseurs | X | X | | | | | |
+| Menu & Articles (créer) | X | X | X ^2 | | | | |
+| Stock & Inventaire | X | X | X | | | | |
+| Alertes stock | X | X | X | | | | |
+| Factures & Paiements | X | X | X | X | X | | |
+| Commandes + QR code | X | X | X | X | | | |
+| Filtrer commandes par serveur | X | X | X | | | | |
+| Cuisine (temps réel) | X | X | X | | | X | |
+| Chambres | X | X | X | | | | X |
+| Réservations | X | X | X | | | | |
+| Ménage & Pointage | X | X | X | | | | X |
+| Tableau de bord | X | X | X | X | X | X | X |
 
-¹ Le manager ne peut créer que des serveurs, cuisiniers et ménage, qui restent en statut **« En attente »** jusqu'à validation par le DAF.
-
-### Isolation par établissement
-
-- **SUPERADMIN** : accès global à tous les établissements du tenant
-- **Autres** : accès limité aux établissements auxquels ils sont assignés via `EstablishmentMember`
+^1 Le Manager ne peut créer que des serveurs, cuisiniers et ménage (soumis à validation DAF).
+^2 Les articles créés par le Manager nécessitent l'approbation du DAF avant d'apparaître au menu.
 
 ## Endpoints API
 
 ### Authentification
-- `POST /api/auth/login` — Connexion (retourne les memberships de l'utilisateur)
+- `POST /api/auth/login` — Connexion (retourne les memberships)
 - `POST /api/auth/refresh` — Renouvellement token
 - `POST /api/auth/logout` — Déconnexion
 - `GET /api/auth/me` — Profil courant
 
 ### Utilisateurs & Membres
-- `/api/users` — Gestion utilisateurs (+ `POST /:id/approve` pour validation DAF)
-- `/api/establishments/:id/members` — Membres d'un établissement (CRUD, rôle par membre)
+- `/api/users` — Gestion utilisateurs (+ `POST /:id/approve`)
+- `/api/establishments/:id/members` — Membres d'un établissement
 
 ### Établissements & Chambres
 - `/api/establishments` — Établissements
-- `/api/rooms` — Chambres (+ `PATCH /:id/status` pour changement de statut)
+- `/api/rooms` — Chambres (+ `PATCH /:id/status`)
 
 ### Réservations & Commandes
 - `/api/reservations` — Réservations (+ check-in, check-out, cancel)
-- `/api/orders` — Commandes restaurant/bar (+ `GET /kitchen/:estId`, `GET /stats/:estId`)
+- `/api/orders` — Commandes (+ `GET /kitchen/:estId`, `GET /stats/:estId`, filtre `?createdById=`)
 
 ### Facturation & Paiements
 - `/api/invoices` — Factures (+ issue, cancel)
+- `GET /api/invoices/:id/qrcode` — QR code de paiement pour une facture
 - `/api/payments` — Paiements
 
-### Stock & Inventaire
-- `/api/articles` — Articles inventaire (+ `/low-stock`)
-- `/api/categories` — Catégories articles
+### Menu & Stock
+- `/api/articles` — Articles du menu (+ `/low-stock`, filtre `?menuOnly=true`)
+- `/api/categories` — Catégories (Restaurant, Boissons, etc.)
 - `/api/stock-movements` — Mouvements de stock (+ approve)
-- `/api/stock-alerts` — Alertes de stock (Manager → DAF)
+- `/api/stock-alerts` — Alertes de stock
 - `/api/suppliers` — Fournisseurs
+- `POST /api/upload` — Upload d'image (multipart/form-data, max 5 Mo)
 
 ### Workflows
-- `/api/approvals` — Demandes d'approbation (création employé, modification réservation)
-- `/api/cleaning` — Sessions de ménage (clock-in/clock-out, sessions actives)
+- `/api/approvals` — Demandes d'approbation (création employé, article, chambre, modification réservation)
+- `GET /api/approvals/pending-count/:establishmentId` — Nombre d'approbations en attente
+- `/api/cleaning` — Sessions de ménage (clock-in/clock-out)
 
 ### Inscription & Abonnements
-- `GET /api/registration/plans` — Liste des plans d'abonnement (public)
-- `POST /api/registration/register` — Inscription nouveau tenant + redirection Stripe Checkout
-- `POST /api/webhooks/stripe` — Webhook Stripe (activation/désactivation automatique)
+- `GET /api/registration/plans` — Liste des plans (public)
+- `POST /api/registration/register` — Inscription + Stripe Checkout
+- `POST /api/webhooks/stripe` — Webhook Stripe
 
 ### Intégrations
 - `GET /api/availability.json` — Disponibilité chambres (JSON)
@@ -226,39 +274,47 @@ Chaque utilisateur EMPLOYEE est assigné à un ou plusieurs établissements via 
 - `POST /api/external-bookings` — Réservations Channel Manager (API Key)
 - `POST /api/pos/transactions` — Transactions POS Android
 
-## App Android POS
+## App Mobile Android
 
-L'application mobile est conçue pour les tablettes en mode paysage.
+Application native pour les rôles de terrain (Serveur, Cuisinier, POS, Ménage, Manager, DAF).
 
 ### Fonctionnalités
-- **Offline-first** : Les transactions sont stockées en SQLite puis synchronisées
-- **Sécurité** : Tokens chiffrés avec EncryptedSharedPreferences
-- **Sync automatique** : WorkManager sync en arrière-plan toutes les 15 min
-- **Idempotence** : UUID unique par transaction, pas de double comptabilisation
+- **Dashboard par rôle** : chaque rôle voit un dashboard adapté à ses besoins
+  - Serveur : bouton "Accéder au menu", stats personnelles (commandes, revenus du jour), état des chambres
+  - Cuisinier : commandes en attente, en préparation, prêtes
+  - Ménage : chambres à nettoyer, sessions du jour, durée moyenne
+  - Manager/DAF : vue d'ensemble complète avec graphiques financiers
+- **Menu Restaurant** : onglets Restaurant/Boissons, cartes avec image, prix, description
+- **Commandes** : sélection directe sur le menu, QR code de paiement automatique
+- **Cuisine** : vue temps réel des commandes en cours
+- **Ménage** : pointage clock-in/clock-out
+- **Offline-first** : transactions stockées en Room DB puis synchronisées
+- **Sécurité** : tokens chiffrés avec EncryptedSharedPreferences
+- **Sync automatique** : WorkManager toutes les 15 min
+- **Thème Bénin** : Rouge Dahomey, Or Béninois, Vert Béninois, Bronze Abomey
 
 ### Build
 ```bash
 cd android
 # Ouvrir dans Android Studio
-# Build > Make Project
-# Run sur un émulateur ou appareil physique
+# Sync Gradle > Build > Run
 ```
 
 ## Sécurité
 
-23 risques de sécurité identifiés et traités — voir le document d'architecture pour le détail complet.
-
-**Mesures principales :**
 - Isolation multi-tenant via Prisma middleware + RLS PostgreSQL
 - JWT signé HS256, durée courte (15 min), refresh en cookie HttpOnly
+- Refresh token également accepté dans le body (mobile)
 - Validation Zod sur tous les endpoints (whitelist)
-- Rate limiting par IP et par tenant
+- Rate limiting par IP et par tenant (production)
 - Anti-double-booking en transaction Serializable
 - Idempotence POS par UUID unique
 - Recalcul serveur des montants (anti-manipulation)
-- Bcrypt 12 rounds, timing-attack safe
+- bcryptjs 12 rounds, timing-attack safe
 - Headers de sécurité (Helmet)
+- CORS configurable par domaine
 - Logging structuré pour audit
+- Upload images limité (5 Mo, formats JPG/PNG/WebP uniquement)
 
 ## Licence
 

@@ -65,6 +65,7 @@ services:
     volumes:
       - ./backend/src:/app/src
       - ./backend/prisma:/app/prisma
+      - uploads_data:/app/uploads
 
   # Frontend (Next.js)
   frontend:
@@ -85,3 +86,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  uploads_data:
