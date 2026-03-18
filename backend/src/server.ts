@@ -53,9 +53,14 @@ app.use(cors({
     if (!origin) return callback(null, true); // Allow non-browser requests
 
     const allowed = config.cors.allowedOrigins;
-    if (allowed.includes(origin) || /^https:\/\/[a-z0-9-]+\.hotelpms\.com$/.test(origin)) {
+    if (
+      allowed.includes(origin) ||
+      /^https:\/\/[a-z0-9-]+\.hotelpms\.com$/.test(origin) ||
+      /^https:\/\/[a-z0-9-]+\.jdidit\.cloud$/.test(origin)
+    ) {
       callback(null, true);
     } else {
+      logger.warn(`CORS rejected origin: ${origin}, allowed: ${allowed.join(', ')}`);
       callback(new Error('CORS non autorisé'));
     }
   },
