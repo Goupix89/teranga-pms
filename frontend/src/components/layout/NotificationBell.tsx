@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import { apiGet, apiPost } from '@/lib/api';
 import { Bell, Check, CheckCheck } from 'lucide-react';
 import { useAuthStore } from '@/hooks/useAuthStore';
@@ -25,7 +26,32 @@ const typeIcons: Record<string, string> = {
   APPROVAL_NEEDED: '📋',
   APPROVAL_RESULT: '📝',
   STOCK_ALERT: '⚠️',
+  CHANNEL_SYNC: '🔄',
 };
+
+/**
+ * Map notification type to the dashboard page that handles it.
+ */
+function getNotificationRoute(n: Notification): string {
+  switch (n.type) {
+    case 'ROOM_CHECKOUT':
+    case 'CLEANING_DONE':
+      return '/dashboard/cleaning';
+    case 'ORDER_NEW':
+      return '/dashboard/kitchen';
+    case 'ORDER_READY':
+      return '/dashboard/orders';
+    case 'APPROVAL_NEEDED':
+    case 'APPROVAL_RESULT':
+      return '/dashboard/approvals';
+    case 'STOCK_ALERT':
+      return '/dashboard/stock-alerts';
+    case 'CHANNEL_SYNC':
+      return '/dashboard/channels';
+    default:
+      return '/dashboard';
+  }
+}
 
 function timeAgo(dateStr: string) {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -40,6 +66,7 @@ function timeAgo(dateStr: string) {
 
 export function NotificationBell({ collapsed }: { collapsed: boolean }) {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const { accessToken } = useAuthStore();
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -93,6 +120,14 @@ export function NotificationBell({ collapsed }: { collapsed: boolean }) {
     mutationFn: () => apiPost('/notifications/read-all'),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
   });
+
+  // Handle notification click: mark as read + navigate to relevant page
+  const handleNotificationClick = (n: Notification) => {
+    if (!n.isRead) markReadMutation.mutate(n.id);
+    const route = getNotificationRoute(n);
+    setOpen(false);
+    router.push(route);
+  };
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -151,9 +186,7 @@ export function NotificationBell({ collapsed }: { collapsed: boolean }) {
               notifications.map((n) => (
                 <button
                   key={n.id}
-                  onClick={() => {
-                    if (!n.isRead) markReadMutation.mutate(n.id);
-                  }}
+                  onClick={() => handleNotificationClick(n)}
                   className={cn(
                     'flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-wood-600/50',
                     !n.isRead && 'bg-accent-500/5'

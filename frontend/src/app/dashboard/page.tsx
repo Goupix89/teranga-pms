@@ -859,7 +859,7 @@ function usePendingApprovals(establishmentId: string | null) {
   });
 }
 
-function DafDashboard({ establishmentId }: { establishmentId: string | null }) {
+function DafDashboard({ establishmentId, roleLabel }: { establishmentId: string | null; roleLabel?: string }) {
   const { data: lowStock } = useLowStock();
   const { data: rooms } = useRoomsStats();
   const { data: invoices } = useRecentInvoices();
@@ -883,7 +883,7 @@ function DafDashboard({ establishmentId }: { establishmentId: string | null }) {
     <div className="space-y-8">
       <PageHeader
         title="Tableau de bord"
-        subtitle="Direction Administrative et Financière"
+        subtitle={roleLabel || "Direction Administrative et Financière"}
       />
       <div className="divider-teranga" />
 
@@ -1205,7 +1205,7 @@ export default function DashboardPage() {
     case 'DAF':
       return <DafDashboard establishmentId={currentEstablishmentId} />;
     case 'OWNER':
-      return <DafDashboard establishmentId={currentEstablishmentId} />;
+      return <DafDashboard establishmentId={currentEstablishmentId} roleLabel="Propriétaire" />;
     default:
       return <SuperadminDashboard establishmentId={currentEstablishmentId} />;
   }

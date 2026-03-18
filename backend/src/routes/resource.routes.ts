@@ -136,7 +136,7 @@ establishmentRouter.post('/', authenticate, requireSuperAdmin, validate(v.create
   })
 );
 
-establishmentRouter.patch('/:id', authenticate, requireDAF, validate(v.updateEstablishmentSchema),
+establishmentRouter.patch('/:id', authenticate, requireOwner, validate(v.updateEstablishmentSchema),
   asyncHandler(async (req, res) => {
     const data = await establishmentService.update(req.user!.tenantId, req.params.id, req.body);
     res.json({ success: true, data });
