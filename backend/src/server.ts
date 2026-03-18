@@ -143,6 +143,15 @@ app.get('/health', (_req, res) => {
   });
 });
 
+app.get('/api/health', (_req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: config.nodeEnv,
+  });
+});
+
 // =============================================================================
 // FILE UPLOADS
 // =============================================================================
