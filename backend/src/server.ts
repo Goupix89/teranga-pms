@@ -18,6 +18,7 @@ import { registerCronJobs } from './jobs/cron';
 // Route imports
 import authRouter from './routes/auth.routes';
 import registrationRouter from './routes/registration.routes';
+import notificationRouter from './routes/notification.routes';
 import { registrationService } from './services/registration.service';
 import {
   userRouter,
@@ -213,6 +214,7 @@ app.use('/api/orders', orderRouter);
 app.use('/api/approvals', approvalRouter);
 app.use('/api/cleaning', cleaningRouter);
 app.use('/api/stock-alerts', stockAlertRouter);
+app.use('/api/notifications', notificationRouter);
 
 // Establishment members (nested under /api/establishments/:establishmentId/members)
 app.use('/api/establishments', memberRouter);

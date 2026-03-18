@@ -212,6 +212,31 @@ export class AuthService {
   }
 
   /**
+   * Change password for authenticated user.
+   */
+  async changePassword(userId: string, oldPassword: string, newPassword: string) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedError('Utilisateur introuvable');
+
+    const valid = await bcrypt.compare(oldPassword, user.passwordHash);
+    if (!valid) throw new UnauthorizedError('Mot de passe actuel incorrect');
+
+    const newHash = await bcrypt.hash(newPassword, config.bcrypt.saltRounds);
+    await prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash: newHash },
+    });
+
+    // Revoke all other sessions
+    await prisma.refreshToken.updateMany({
+      where: { userId, revoked: false },
+      data: { revoked: true },
+    });
+
+    logger.info('Password changed', { userId });
+  }
+
+  /**
    * Hash a password using bcrypt.
    */
   async hashPassword(password: string): Promise<string> {

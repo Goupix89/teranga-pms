@@ -3,6 +3,7 @@ import { prisma, createTenantClient } from '../utils/prisma';
 import { NotFoundError, ValidationError } from '../utils/errors';
 import { paginate, toSkipTake } from '../utils/helpers';
 import { PaginationParams } from '../types';
+import { notificationService } from './notification.service';
 
 export class ApprovalService {
   /**
@@ -58,7 +59,7 @@ export class ApprovalService {
       targetId?: string;
     }
   ) {
-    return prisma.approvalRequest.create({
+    const approval = await prisma.approvalRequest.create({
       data: {
         tenantId,
         establishmentId: data.establishmentId,
@@ -71,6 +72,27 @@ export class ApprovalService {
         requestedBy: { select: { id: true, firstName: true, lastName: true } },
       },
     });
+
+    // Notify DAF/OWNER about the new approval request
+    const typeLabels: Record<string, string> = {
+      EMPLOYEE_CREATION: 'Nouvel employe',
+      RESERVATION_MODIFICATION: 'Modification reservation',
+      ROOM_CREATION: 'Nouvelle chambre',
+      STOCK_MOVEMENT: 'Mouvement de stock',
+      ARTICLE_CREATION: 'Nouvel article',
+    };
+
+    notificationService.notifyRole({
+      tenantId,
+      establishmentId: data.establishmentId,
+      roles: ['DAF', 'OWNER'],
+      type: 'APPROVAL_NEEDED',
+      title: 'Approbation requise',
+      message: `${typeLabels[data.type] || data.type} — demande de ${approval.requestedBy.firstName} ${approval.requestedBy.lastName}.`,
+      data: { approvalId: approval.id, approvalType: data.type },
+    }).catch(() => {});
+
+    return approval;
   }
 
   /**
@@ -174,6 +196,17 @@ export class ApprovalService {
         });
       }
 
+      // Notify the requester about the approval
+      notificationService.notify({
+        tenantId,
+        userId: request.requestedById,
+        establishmentId: request.establishmentId,
+        type: 'APPROVAL_RESULT',
+        title: 'Demande approuvee',
+        message: `Votre demande a ete approuvee.`,
+        data: { approvalId: id, approvalType: request.type, status: 'APPROVED' },
+      }).catch(() => {});
+
       return approved;
     });
   }
@@ -209,6 +242,17 @@ export class ApprovalService {
         data: { isActive: false },
       });
     }
+
+    // Notify the requester about the rejection
+    notificationService.notify({
+      tenantId,
+      userId: request.requestedById,
+      establishmentId: request.establishmentId,
+      type: 'APPROVAL_RESULT',
+      title: 'Demande refusee',
+      message: reason ? `Votre demande a ete refusee : ${reason}` : 'Votre demande a ete refusee.',
+      data: { approvalId: id, approvalType: request.type, status: 'REJECTED', reason },
+    }).catch(() => {});
 
     return rejected;
   }

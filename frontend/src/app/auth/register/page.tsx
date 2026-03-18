@@ -229,7 +229,7 @@ function RegisterContent() {
                           <div>
                             <h3 className="font-semibold text-gray-900">{plan.name}</h3>
                             <p className="mt-1 text-2xl font-bold text-gray-900">
-                              {price} <span className="text-sm font-normal text-gray-500">EUR/{yearly ? 'an' : 'mois'}</span>
+                              {Number(price).toLocaleString('fr-FR')} <span className="text-sm font-normal text-gray-500">FCFA/{yearly ? 'an' : 'mois'}</span>
                             </p>
                           </div>
                           <div className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${
@@ -412,7 +412,7 @@ function RegisterContent() {
                 <div className="rounded-xl border border-gray-200 p-5">
                   <h3 className="text-sm font-medium text-gray-500">Plan sélectionné</h3>
                   <p className="mt-1 text-lg font-semibold text-gray-900">
-                    {currentPlan.name} — {yearly ? currentPlan.yearlyPrice : currentPlan.monthlyPrice} EUR/{yearly ? 'an' : 'mois'}
+                    {currentPlan.name} — {Number(yearly ? currentPlan.yearlyPrice : currentPlan.monthlyPrice).toLocaleString('fr-FR')} FCFA/{yearly ? 'an' : 'mois'}
                   </p>
                 </div>
 

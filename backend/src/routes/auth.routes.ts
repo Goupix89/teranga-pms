@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { authService } from '../services/auth.service';
 import { validate } from '../middlewares/validate.middleware';
 import { authenticate } from '../middlewares/auth.middleware';
-import { loginSchema, refreshSchema } from '../validators';
+import { loginSchema, refreshSchema, changePasswordSchema } from '../validators';
 
 const router = Router();
 
@@ -93,6 +93,19 @@ router.post('/logout-all', authenticate, async (req: Request, res: Response, nex
     res.clearCookie('refreshToken', { path: '/api/auth' });
 
     res.json({ success: true, message: 'Toutes les sessions ont été révoquées' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/auth/change-password
+ */
+router.post('/change-password', authenticate, validate(changePasswordSchema), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+    await authService.changePassword(req.user!.id, oldPassword, newPassword);
+    res.json({ success: true, message: 'Mot de passe modifié avec succès' });
   } catch (err) {
     next(err);
   }

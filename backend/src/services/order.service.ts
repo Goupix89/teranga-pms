@@ -3,6 +3,7 @@ import { prisma, createTenantClient } from '../utils/prisma';
 import { NotFoundError, ValidationError, ForbiddenError } from '../utils/errors';
 import { paginate, toSkipTake } from '../utils/helpers';
 import { PaginationParams } from '../types';
+import { notificationService } from './notification.service';
 
 export class OrderService {
   /**
@@ -197,6 +198,17 @@ export class OrderService {
         data: { invoiceId: invoice.id },
       });
 
+      // Notify cooks about new order
+      notificationService.notifyRole({
+        tenantId,
+        establishmentId: data.establishmentId,
+        roles: ['COOK'],
+        type: 'ORDER_NEW',
+        title: 'Nouvelle commande',
+        message: `Commande ${orderNumber}${data.tableNumber ? ` (Table ${data.tableNumber})` : ''} — ${data.items.length} article(s).`,
+        data: { orderId: order.id, orderNumber, tableNumber: data.tableNumber },
+      }).catch(() => {});
+
       return { ...order, invoiceId: invoice.id };
     });
   }
@@ -267,7 +279,7 @@ export class OrderService {
         updateData.servedAt = new Date();
       }
 
-      return tx.order.update({
+      const updated = await tx.order.update({
         where: { id },
         data: updateData,
         include: {
@@ -279,6 +291,21 @@ export class OrderService {
           createdBy: { select: { id: true, firstName: true, lastName: true } },
         },
       });
+
+      // Notify when order is READY → tell the server who created it
+      if (status === 'READY' && order.createdById) {
+        notificationService.notify({
+          tenantId,
+          userId: order.createdById,
+          establishmentId: order.establishmentId,
+          type: 'ORDER_READY',
+          title: 'Commande prete',
+          message: `La commande ${order.orderNumber} est prete a servir.`,
+          data: { orderId: order.id, orderNumber: order.orderNumber },
+        }).catch(() => {});
+      }
+
+      return updated;
     });
   }
 

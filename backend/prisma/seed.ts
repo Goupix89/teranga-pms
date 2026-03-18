@@ -13,8 +13,8 @@ async function main() {
       slug: 'basic',
       stripePriceIdMonthly: 'price_basic_monthly',
       stripePriceIdYearly: 'price_basic_yearly',
-      monthlyPrice: 29,
-      yearlyPrice: 290,
+      monthlyPrice: 32500,
+      yearlyPrice: 325000,
       features: {
         maxEstablishments: 1,
         maxRooms: 20,
@@ -29,8 +29,8 @@ async function main() {
       slug: 'pro',
       stripePriceIdMonthly: 'price_pro_monthly',
       stripePriceIdYearly: 'price_pro_yearly',
-      monthlyPrice: 79,
-      yearlyPrice: 790,
+      monthlyPrice: 65000,
+      yearlyPrice: 650000,
       features: {
         maxEstablishments: 3,
         maxRooms: 100,
@@ -45,8 +45,8 @@ async function main() {
       slug: 'enterprise',
       stripePriceIdMonthly: 'price_enterprise_monthly',
       stripePriceIdYearly: 'price_enterprise_yearly',
-      monthlyPrice: 199,
-      yearlyPrice: 1990,
+      monthlyPrice: 130000,
+      yearlyPrice: 1300000,
       features: {
         maxEstablishments: -1,
         maxRooms: -1,
@@ -61,7 +61,11 @@ async function main() {
   for (const plan of plans) {
     await prisma.subscriptionPlan.upsert({
       where: { slug: plan.slug },
-      update: {},
+      update: {
+        monthlyPrice: plan.monthlyPrice,
+        yearlyPrice: plan.yearlyPrice,
+        features: plan.features,
+      },
       create: plan,
     });
   }
@@ -286,20 +290,20 @@ async function main() {
   // Create article categories
   const catBoissons = await prisma.articleCategory.upsert({
     where: { tenantId_name: { tenantId: tenant.id, name: 'Boissons' } },
-    update: {},
-    create: { tenantId: tenant.id, name: 'Boissons' },
+    update: { establishmentId: establishment.id },
+    create: { tenantId: tenant.id, establishmentId: establishment.id, name: 'Boissons' },
   });
 
   const catRestaurant = await prisma.articleCategory.upsert({
     where: { tenantId_name: { tenantId: tenant.id, name: 'Restaurant' } },
-    update: {},
-    create: { tenantId: tenant.id, name: 'Restaurant' },
+    update: { establishmentId: establishment.id },
+    create: { tenantId: tenant.id, establishmentId: establishment.id, name: 'Restaurant' },
   });
 
   const catFournitures = await prisma.articleCategory.upsert({
     where: { tenantId_name: { tenantId: tenant.id, name: 'Fournitures' } },
-    update: {},
-    create: { tenantId: tenant.id, name: 'Fournitures' },
+    update: { establishmentId: establishment.id },
+    create: { tenantId: tenant.id, establishmentId: establishment.id, name: 'Fournitures' },
   });
 
   console.log(`✅ Categories created`);
@@ -328,8 +332,8 @@ async function main() {
   for (const article of articles) {
     await prisma.article.upsert({
       where: { tenantId_sku: { tenantId: tenant.id, sku: article.sku } },
-      update: {},
-      create: { tenantId: tenant.id, ...article },
+      update: { establishmentId: establishment.id },
+      create: { tenantId: tenant.id, establishmentId: establishment.id, ...article },
     });
   }
 

@@ -3,6 +3,7 @@ import { prisma, createTenantClient } from '../utils/prisma';
 import { NotFoundError, ValidationError, ForbiddenError } from '../utils/errors';
 import { paginate, toSkipTake } from '../utils/helpers';
 import { PaginationParams } from '../types';
+import { notificationService } from './notification.service';
 
 export class CleaningService {
   /**
@@ -134,7 +135,7 @@ export class CleaningService {
       });
 
       // Complete the session
-      return tx.cleaningSession.update({
+      const completed = await tx.cleaningSession.update({
         where: { id: sessionId },
         data: {
           status: 'COMPLETED',
@@ -146,6 +147,19 @@ export class CleaningService {
           cleaner: { select: { id: true, firstName: true, lastName: true } },
         },
       });
+
+      // Notify MANAGER/OWNER/DAF that cleaning is done
+      notificationService.notifyRole({
+        tenantId,
+        establishmentId: session.establishmentId,
+        roles: ['MANAGER', 'OWNER', 'DAF'],
+        type: 'CLEANING_DONE',
+        title: 'Nettoyage termine',
+        message: `La chambre ${completed.room.number} est maintenant disponible (${durationMinutes} min).`,
+        data: { roomId: session.roomId, roomNumber: completed.room.number, durationMinutes },
+      }).catch(() => {}); // Non-blocking
+
+      return completed;
     });
   }
 

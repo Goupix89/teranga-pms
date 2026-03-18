@@ -22,6 +22,7 @@ import * as v from '../validators';
 import { userService, establishmentService, supplierService, articleService, categoryService } from '../services/crud.service';
 import { roomService } from '../services/room.service';
 import { reservationService } from '../services/reservation.service';
+import { notificationService } from '../services/notification.service';
 import { invoiceService } from '../services/invoice.service';
 import { paymentService } from '../services/payment.service';
 import { stockService } from '../services/stock.service';
@@ -340,6 +341,23 @@ reservationRouter.post('/:id/check-out', authenticate, requireDAFOrManagerOrServ
       const reservation = await reservationService.getById(req.user!.tenantId, req.params.id);
       if (reservation?.roomId) {
         await roomService.updateStatus(req.user!.tenantId, reservation.roomId, 'CLEANING');
+
+        // Notify cleaners
+        const room = reservation.room;
+        const estId = room?.establishment?.name ? reservation.room?.establishment : null;
+        // Get establishmentId from the room
+        const roomData = await prisma.room.findUnique({ where: { id: reservation.roomId }, select: { establishmentId: true, number: true } });
+        if (roomData?.establishmentId) {
+          notificationService.notifyRole({
+            tenantId: req.user!.tenantId,
+            establishmentId: roomData.establishmentId,
+            roles: ['CLEANER'],
+            type: 'ROOM_CHECKOUT',
+            title: 'Chambre a nettoyer',
+            message: `La chambre ${roomData.number} a ete liberee et necessite un nettoyage.`,
+            data: { roomId: reservation.roomId, roomNumber: roomData.number },
+          }).catch(() => {}); // Non-blocking
+        }
       }
     } catch (_e) {
       // Non-blocking: if setting cleaning status fails, checkout still succeeded
@@ -594,15 +612,18 @@ export const articleRouter = Router();
 articleRouter.get('/', authenticate, requireAnyEstablishmentRole,
   asyncHandler(async (req, res) => {
     const params = parsePagination(req);
-    const { categoryId, search, lowStock, menuOnly } = req.query as any;
+    const { categoryId, search, lowStock, menuOnly, establishmentId } = req.query as any;
     // OWNER/DAF/Manager can see unapproved articles
     const isDAFOrManager = req.user?.role === 'SUPERADMIN' || req.user?.memberships?.some(
       (m) => ['OWNER', 'DAF', 'MANAGER'].includes(m.role)
     );
+    // Scope articles to the requested establishment (or user's first establishment)
+    const resolvedEstId = establishmentId || req.user?.establishmentIds?.[0];
     const data = await articleService.list(req.user!.tenantId, params, {
       categoryId, search, lowStock: lowStock === 'true',
       includeUnapproved: !!isDAFOrManager,
       menuOnly: menuOnly === 'true',
+      establishmentId: resolvedEstId,
     });
     res.json({ success: true, ...data });
   })
@@ -644,6 +665,7 @@ articleRouter.post('/', authenticate, requireDAFOrManager, validate(v.createArti
       // Manager and DAF create articles requiring approval (from DAF/OWNER or OWNER respectively)
       const article = await articleService.create(req.user!.tenantId, {
         ...articleData,
+        establishmentId: resolvedEstId || undefined,
         isApproved: false,
         createdById: req.user!.id,
       });
@@ -671,6 +693,7 @@ articleRouter.post('/', authenticate, requireDAFOrManager, validate(v.createArti
       // OWNER (and SUPERADMIN) creates article directly as approved
       const data = await articleService.create(req.user!.tenantId, {
         ...articleData,
+        establishmentId: resolvedEstId || undefined,
         isApproved: true,
         createdById: req.user!.id,
       });
@@ -693,14 +716,17 @@ export const categoryRouter = Router();
 
 categoryRouter.get('/', authenticate, requireAnyEstablishmentRole,
   asyncHandler(async (req, res) => {
-    const data = await categoryService.list(req.user!.tenantId);
+    const { establishmentId } = req.query as any;
+    const resolvedEstId = establishmentId || req.user?.establishmentIds?.[0];
+    const data = await categoryService.list(req.user!.tenantId, resolvedEstId);
     res.json({ success: true, data });
   })
 );
 
 categoryRouter.post('/', authenticate, requireDAF, validate(v.createCategorySchema),
   asyncHandler(async (req, res) => {
-    const data = await categoryService.create(req.user!.tenantId, req.body);
+    const establishmentId = req.body.establishmentId || req.user?.establishmentIds?.[0];
+    const data = await categoryService.create(req.user!.tenantId, { ...req.body, establishmentId });
     res.status(201).json({ success: true, data });
   })
 );

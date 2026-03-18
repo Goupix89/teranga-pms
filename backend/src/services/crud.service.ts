@@ -307,7 +307,7 @@ export class EstablishmentService {
 
   async create(tenantId: string, data: {
     name: string; address: string; city: string; country: string;
-    phone?: string; email?: string; starRating?: number;
+    phone?: string; email?: string; website?: string; starRating?: number;
     timezone?: string; currency?: string;
   }) {
     return prisma.establishment.create({
@@ -317,7 +317,7 @@ export class EstablishmentService {
 
   async update(tenantId: string, id: string, data: Partial<{
     name: string; address: string; city: string; country: string;
-    phone: string; email: string; starRating: number;
+    phone: string; email: string; website: string; starRating: number;
     timezone: string; currency: string;
   }>) {
     const est = await prisma.establishment.findFirst({ where: { id, tenantId } });
@@ -422,12 +422,13 @@ export const supplierService = new SupplierService();
 // =============================================================================
 
 export class ArticleService {
-  async list(tenantId: string, params: PaginationParams, filters: { categoryId?: string; search?: string; lowStock?: boolean; includeUnapproved?: boolean; menuOnly?: boolean } = {}) {
+  async list(tenantId: string, params: PaginationParams, filters: { categoryId?: string; search?: string; lowStock?: boolean; includeUnapproved?: boolean; menuOnly?: boolean; establishmentId?: string } = {}) {
     const db = createTenantClient(tenantId);
 
     const where: any = {
       isActive: true,
       ...(filters.includeUnapproved ? {} : { isApproved: true }),
+      ...(filters.establishmentId && { establishmentId: filters.establishmentId }),
       ...(filters.categoryId && { categoryId: filters.categoryId }),
       ...(filters.menuOnly && {
         category: { name: { in: ['Restaurant', 'Nourriture', 'Boissons'] } },
@@ -498,7 +499,7 @@ export class ArticleService {
     categoryId?: string; name: string; sku?: string;
     description?: string; imageUrl?: string; unitPrice: number; costPrice?: number;
     currentStock?: number; minimumStock?: number; unit?: string;
-    isApproved?: boolean; createdById?: string;
+    isApproved?: boolean; createdById?: string; establishmentId?: string;
   }) {
     const article = await prisma.article.create({
       data: { tenantId, ...data },
@@ -522,10 +523,15 @@ export class ArticleService {
 export const articleService = new ArticleService();
 
 export class CategoryService {
-  async list(tenantId: string) {
+  async list(tenantId: string, establishmentId?: string) {
     const db = createTenantClient(tenantId);
 
+    const where: any = {
+      ...(establishmentId && { establishmentId }),
+    };
+
     return db.articleCategory.findMany({
+      where,
       include: {
         children: true,
         _count: { select: { articles: true } },
@@ -534,7 +540,7 @@ export class CategoryService {
     });
   }
 
-  async create(tenantId: string, data: { name: string; parentId?: string }) {
+  async create(tenantId: string, data: { name: string; parentId?: string; establishmentId?: string }) {
     return prisma.articleCategory.create({
       data: { tenantId, ...data },
     });

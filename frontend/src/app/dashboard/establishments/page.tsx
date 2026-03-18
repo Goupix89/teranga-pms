@@ -10,7 +10,7 @@ export default function EstablishmentsPage() {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: '', address: '', city: '', country: 'Togo', phone: '', email: '', starRating: '', currency: 'XOF' });
+  const [form, setForm] = useState({ name: '', address: '', city: '', country: 'Togo', phone: '', email: '', website: '', starRating: '', currency: 'XOF' });
 
   const { data, isLoading } = useQuery({
     queryKey: ['establishments', page],
@@ -44,6 +44,7 @@ export default function EstablishmentsPage() {
                 {est.starRating && <span className="text-amber-500 text-sm">{'★'.repeat(est.starRating)}</span>}
               </div>
               <p className="text-xs text-gray-400 mt-2">{est.address}</p>
+              {est.website && <a href={est.website} target="_blank" rel="noopener noreferrer" className="text-xs text-primary-600 hover:underline mt-1 block truncate">{est.website}</a>}
               <div className="mt-3 flex items-center gap-4 text-xs text-gray-500">
                 <span>{est._count?.rooms || 0} chambres</span>
                 <span>{est.currency}</span>
@@ -54,7 +55,7 @@ export default function EstablishmentsPage() {
       )}
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Nouvel établissement" size="lg">
-        <form onSubmit={(e) => { e.preventDefault(); createMutation.mutate({ ...form, starRating: form.starRating ? Number(form.starRating) : undefined }); }} className="space-y-4">
+        <form onSubmit={(e) => { e.preventDefault(); createMutation.mutate({ ...form, starRating: form.starRating ? Number(form.starRating) : undefined, website: form.website || undefined }); }} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2"><label className="label">Nom</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input" required /></div>
             <div className="col-span-2"><label className="label">Adresse</label><input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className="input" required /></div>
@@ -62,6 +63,7 @@ export default function EstablishmentsPage() {
             <div><label className="label">Pays</label><input value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} className="input" required /></div>
             <div><label className="label">Téléphone</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="input" /></div>
             <div><label className="label">Email</label><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="input" /></div>
+            <div className="col-span-2"><label className="label">Site web <span className="text-wood-400 text-xs">(optionnel)</span></label><input type="url" value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} className="input" placeholder="https://www.monhotel.com" /></div>
             <div><label className="label">Étoiles</label><input type="number" value={form.starRating} onChange={(e) => setForm({ ...form, starRating: e.target.value })} className="input" min="1" max="5" /></div>
             <div><label className="label">Devise</label><input value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })} className="input" maxLength={3} /></div>
           </div>

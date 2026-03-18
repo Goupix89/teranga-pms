@@ -42,8 +42,8 @@ export default function OrdersPage() {
   });
 
   const { data: articlesData } = useQuery({
-    queryKey: ['articles-menu'],
-    queryFn: () => apiGet<any>('/articles?limit=200&menuOnly=true'),
+    queryKey: ['articles-menu', currentEstId],
+    queryFn: () => apiGet<any>(`/articles?limit=200&menuOnly=true${currentEstId ? `&establishmentId=${currentEstId}` : ''}`),
   });
 
   const { data: statsData } = useQuery({

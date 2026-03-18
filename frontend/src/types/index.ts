@@ -108,6 +108,7 @@ export interface Establishment {
   country: string;
   phone?: string | null;
   email?: string | null;
+  website?: string | null;
   starRating?: number | null;
   timezone: string;
   currency: string;

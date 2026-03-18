@@ -172,6 +172,7 @@ model Tenant {
   approvalRequests ApprovalRequest[]
   stockAlerts      StockAlert[]
   cleaningSessions CleaningSession[]
+  notifications    Notification[]
 
   @@map("tenants")
 }
@@ -223,6 +224,7 @@ model User {
   stockAlerts         StockAlert[]
   cleaningSessions    CleaningSession[]
   articlesCreated     Article[]             @relation("ArticleCreator")
+  notifications       Notification[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -262,6 +264,7 @@ model Establishment {
   country    String
   phone      String?
   email      String?
+  website    String?
   starRating Int?     @map("star_rating") @db.SmallInt
   isActive   Boolean  @default(true) @map("is_active")
   timezone   String   @default("UTC")
@@ -274,6 +277,8 @@ model Establishment {
   rooms            Room[]
   orders           Order[]
   cleaningSessions CleaningSession[]
+  articles         Article[]
+  categories       ArticleCategory[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -478,26 +483,30 @@ model Payment {
 // =============================================================================
 
 model ArticleCategory {
-  id       String  @id @default(uuid())
-  tenantId String  @map("tenant_id")
-  name     String
-  parentId String? @map("parent_id")
+  id              String  @id @default(uuid())
+  tenantId        String  @map("tenant_id")
+  establishmentId String? @map("establishment_id")
+  name            String
+  parentId        String? @map("parent_id")
 
-  tenant   Tenant            @relation(fields: [tenantId], references: [id])
-  parent   ArticleCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
-  children ArticleCategory[] @relation("CategoryHierarchy")
-  articles Article[]
+  tenant        Tenant            @relation(fields: [tenantId], references: [id])
+  establishment Establishment?    @relation(fields: [establishmentId], references: [id])
+  parent        ArticleCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children      ArticleCategory[] @relation("CategoryHierarchy")
+  articles      Article[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
+  @@index([establishmentId])
   @@map("article_categories")
 }
 
 model Article {
-  id           String  @id @default(uuid())
-  tenantId     String  @map("tenant_id")
-  categoryId   String? @map("category_id")
-  name         String
+  id              String  @id @default(uuid())
+  tenantId        String  @map("tenant_id")
+  establishmentId String? @map("establishment_id")
+  categoryId      String? @map("category_id")
+  name            String
   sku          String?
   description  String?
   imageUrl     String?  @map("image_url")
@@ -513,6 +522,7 @@ model Article {
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   tenant         Tenant            @relation(fields: [tenantId], references: [id])
+  establishment  Establishment?    @relation(fields: [establishmentId], references: [id])
   category       ArticleCategory?  @relation(fields: [categoryId], references: [id])
   createdBy      User?             @relation("ArticleCreator", fields: [createdById], references: [id])
   stockMovements StockMovement[]
@@ -522,6 +532,7 @@ model Article {
 
   @@unique([tenantId, sku])
   @@index([tenantId])
+  @@index([establishmentId])
   @@index([tenantId, currentStock])
   @@map("articles")
 }
@@ -645,6 +656,30 @@ model CleaningSession {
   @@index([tenantId, establishmentId, status])
   @@index([roomId, status])
   @@map("cleaning_sessions")
+}
+
+// =============================================================================
+// NOTIFICATIONS
+// =============================================================================
+
+model Notification {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  userId          String   @map("user_id")
+  establishmentId String?  @map("establishment_id")
+  type            String   // ROOM_CHECKOUT, CLEANING_DONE, ORDER_NEW, ORDER_READY, APPROVAL_NEEDED, APPROVAL_RESULT, STOCK_ALERT
+  title           String
+  message         String
+  data            Json?
+  isRead          Boolean  @default(false) @map("is_read")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([userId, isRead])
+  @@index([tenantId, establishmentId])
+  @@map("notifications")
 }
 
 // =============================================================================

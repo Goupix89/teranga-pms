@@ -33,6 +33,14 @@ export const resetPasswordSchema = z.object({
     .regex(/[0-9]/, 'Au moins un chiffre'),
 });
 
+export const changePasswordSchema = z.object({
+  oldPassword: z.string().min(1, 'Mot de passe actuel requis'),
+  newPassword: z.string().min(8, 'Minimum 8 caractères')
+    .regex(/[A-Z]/, 'Au moins une majuscule')
+    .regex(/[a-z]/, 'Au moins une minuscule')
+    .regex(/[0-9]/, 'Au moins un chiffre'),
+});
+
 // =============================================================================
 // Tenant
 // =============================================================================
@@ -90,6 +98,7 @@ export const createEstablishmentSchema = z.object({
   country: z.string().min(2).max(100),
   phone: z.string().optional(),
   email: z.string().email().optional(),
+  website: z.string().url('URL invalide').optional().or(z.literal('')).transform(v => v === '' ? undefined : v),
   starRating: z.number().int().min(1).max(5).optional(),
   timezone: z.string().default('UTC'),
   currency: z.string().length(3).default('XOF'),
@@ -256,6 +265,7 @@ export const updateArticleSchema = createArticleSchema.partial().extend({
 export const createCategorySchema = z.object({
   name: z.string().min(1).max(100),
   parentId: z.string().uuid().optional(),
+  establishmentId: z.string().uuid().optional(),
 });
 
 export const updateCategorySchema = z.object({

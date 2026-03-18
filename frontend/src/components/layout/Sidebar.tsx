@@ -9,9 +9,10 @@ import {
   LayoutDashboard, BedDouble, CalendarCheck, Receipt, CreditCard,
   Package, Truck, Users, Building2, Settings, LogOut, ChevronLeft,
   BarChart3, UtensilsCrossed, SprayCan, ClipboardCheck, AlertTriangle,
-  ChevronDown,
+  ChevronDown, UserCircle,
 } from 'lucide-react';
 import { useState } from 'react';
+import { NotificationBell } from './NotificationBell';
 
 type NavItem = {
   name: string;
@@ -186,6 +187,20 @@ export function Sidebar() {
             <p className="text-xs text-accent-500/80">{displayRole}</p>
           </div>
         )}
+        <NotificationBell collapsed={collapsed} />
+        <Link
+          href="/dashboard/profile"
+          className={cn(
+            'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+            pathname === '/dashboard/profile'
+              ? 'bg-accent-500/15 text-accent-500'
+              : 'text-wood-400 hover:bg-wood-700 hover:text-wood-100'
+          )}
+          title="Mon profil"
+        >
+          <UserCircle className="h-5 w-5 flex-shrink-0" />
+          {!collapsed && <span>Mon profil</span>}
+        </Link>
         <button
           onClick={handleLogout}
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-wood-400 hover:bg-primary-500/15 hover:text-primary-300 transition-colors"

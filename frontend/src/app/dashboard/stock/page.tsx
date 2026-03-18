@@ -35,13 +35,13 @@ export default function StockPage() {
   const isManager = currentEstablishmentRole === 'MANAGER';
 
   const { data: categories } = useQuery({
-    queryKey: ['categories'],
-    queryFn: () => apiGet<any>('/categories'),
+    queryKey: ['categories', currentEstId],
+    queryFn: () => apiGet<any>(`/categories${currentEstId ? `?establishmentId=${currentEstId}` : ''}`),
   });
 
   const { data: articles, isLoading: articlesLoading } = useQuery({
-    queryKey: ['articles', page, search, categoryFilter],
-    queryFn: () => apiGet<any>(`/articles?page=${page}&limit=20&search=${search}${categoryFilter ? `&categoryId=${categoryFilter}` : ''}`),
+    queryKey: ['articles', page, search, categoryFilter, currentEstId],
+    queryFn: () => apiGet<any>(`/articles?page=${page}&limit=20&search=${search}${categoryFilter ? `&categoryId=${categoryFilter}` : ''}${currentEstId ? `&establishmentId=${currentEstId}` : ''}`),
     enabled: tab === 'articles',
   });
 
@@ -52,8 +52,8 @@ export default function StockPage() {
   });
 
   const { data: allArticles } = useQuery({
-    queryKey: ['articles-all'],
-    queryFn: () => apiGet<any>('/articles?limit=200'),
+    queryKey: ['articles-all', currentEstId],
+    queryFn: () => apiGet<any>(`/articles?limit=200${currentEstId ? `&establishmentId=${currentEstId}` : ''}`),
   });
 
   // Image upload handler
