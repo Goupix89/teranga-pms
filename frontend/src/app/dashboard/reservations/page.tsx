@@ -5,14 +5,19 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch } from '@/lib/api';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { PageHeader, StatusBadge, Pagination, Modal, SearchInput, EmptyState, LoadingPage } from '@/components/ui';
-import { CalendarCheck, Calendar, Plus, LogIn, LogOut, XCircle, Loader2 } from 'lucide-react';
+import { CalendarCheck, Calendar, Plus, LogIn, LogOut, XCircle, Loader2, QrCode, FileDown, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/hooks/useAuthStore';
-import type { Reservation, PaginatedResponse } from '@/types';
+import { api } from '@/lib/api';
+import type { Reservation, PaginatedResponse, PaymentMethod } from '@/types';
 
 export default function ReservationsPage() {
   const queryClient = useQueryClient();
+  const currentUser = useAuthStore((s) => s.user);
   const currentEstablishmentRole = useAuthStore((s) => s.currentEstablishmentRole);
+  const isSuperAdmin = currentUser?.role === 'SUPERADMIN';
+  const canDownload = isSuperAdmin || ['OWNER', 'DAF', 'MANAGER', 'SERVER'].includes(currentEstablishmentRole || '');
+
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -22,8 +27,14 @@ export default function ReservationsPage() {
 
   const [form, setForm] = useState({
     roomId: '', guestName: '', guestEmail: '', guestPhone: '',
-    checkIn: '', checkOut: '', numberOfGuests: '1', source: 'DIRECT', notes: '',
+    checkIn: '', checkOut: '', numberOfGuests: '1', source: 'DIRECT',
+    paymentMethod: 'CASH' as PaymentMethod, notes: '',
   });
+
+  const [qrModal, setQrModal] = useState<{
+    open: boolean; invoiceId?: string; qrCode?: string; invoiceNumber?: string;
+    totalAmount?: number; paymentLabel?: string; currency?: string; paid?: boolean;
+  }>({ open: false });
 
   const { data, isLoading } = useQuery({
     queryKey: ['reservations', page, search, statusFilter],
@@ -36,11 +47,30 @@ export default function ReservationsPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (body: any) => apiPost('/reservations', body),
-    onSuccess: () => {
+    mutationFn: (body: any) => apiPost<any>('/reservations', body),
+    onSuccess: async (response: any) => {
       queryClient.invalidateQueries({ queryKey: ['reservations'] });
       setShowModal(false);
-      toast.success('Réservation créée');
+      const invoiceId = response?.data?.invoiceId;
+      if (invoiceId) {
+        try {
+          const qrRes = await apiGet<any>(`/invoices/${invoiceId}/qrcode`);
+          if (qrRes?.data) {
+            setQrModal({
+              open: true,
+              invoiceId,
+              qrCode: qrRes.data.qrCode,
+              invoiceNumber: qrRes.data.invoice?.invoiceNumber,
+              totalAmount: qrRes.data.invoice?.totalAmount,
+              paymentLabel: qrRes.data.paymentLabel,
+              currency: qrRes.data.invoice?.currency || 'XOF',
+            });
+          }
+        } catch {
+          toast.success('Réservation créée (QR code indisponible)');
+        }
+      }
+      toast.success('Réservation créée — facture générée');
     },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
   });
@@ -77,8 +107,42 @@ export default function ReservationsPage() {
       checkOut: form.checkOut,
       numberOfGuests: Number(form.numberOfGuests),
       source: form.source,
+      paymentMethod: form.paymentMethod,
       notes: form.notes || undefined,
     });
+  };
+
+  const showQrCode = async (invoiceId: string) => {
+    try {
+      const qrRes = await apiGet<any>(`/invoices/${invoiceId}/qrcode`);
+      if (qrRes?.data) {
+        setQrModal({
+          open: true,
+          invoiceId,
+          qrCode: qrRes.data.qrCode,
+          invoiceNumber: qrRes.data.invoice?.invoiceNumber,
+          totalAmount: qrRes.data.invoice?.totalAmount,
+          paymentLabel: qrRes.data.paymentLabel,
+          currency: qrRes.data.invoice?.currency || 'XOF',
+        });
+      }
+    } catch {
+      toast.error('QR code indisponible');
+    }
+  };
+
+  const downloadReceipt = async (reservationId: string, guestName: string) => {
+    try {
+      const res = await api.get(`/reservations/${reservationId}/receipt`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `recu-reservation-${guestName.replace(/\s/g, '_')}.pdf`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Erreur lors du téléchargement du reçu');
+    }
   };
 
   const reservations = data?.data || [];
@@ -122,7 +186,7 @@ export default function ReservationsPage() {
                   <th>Départ</th>
                   <th>Statut</th>
                   <th>Montant</th>
-                  <th>Source</th>
+                  <th>Paiement</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -138,7 +202,37 @@ export default function ReservationsPage() {
                     <td>{formatDate(res.checkOut)}</td>
                     <td><StatusBadge status={res.status} /></td>
                     <td className="font-medium">{formatCurrency(res.totalPrice)}</td>
-                    <td className="text-xs">{res.source}</td>
+                    <td>
+                      <div className="flex items-center gap-1">
+                        {res.invoices && res.invoices.length > 0 && (
+                          <>
+                            <span className="text-xs text-gray-500">
+                              {res.invoices[0].status === 'PAID' ? (
+                                <span className="text-green-600 font-medium">Payée</span>
+                              ) : (
+                                <span className="text-amber-600">En attente</span>
+                              )}
+                            </span>
+                            <button
+                              onClick={() => showQrCode(res.invoices![0].id)}
+                              className="btn-ghost p-1 text-primary-600 hover:text-primary-700"
+                              title="QR code de paiement"
+                            >
+                              <QrCode className="h-4 w-4" />
+                            </button>
+                          </>
+                        )}
+                        {canDownload && (
+                          <button
+                            onClick={() => downloadReceipt(res.id, res.guestName)}
+                            className="btn-ghost p-1 text-gray-600 hover:text-gray-800"
+                            title="Télécharger le reçu PDF"
+                          >
+                            <FileDown className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
                     <td>
                       <div className="flex items-center gap-1">
                         {res.status === 'CONFIRMED' && (
@@ -187,6 +281,57 @@ export default function ReservationsPage() {
           {meta && <Pagination page={meta.page} totalPages={meta.totalPages} total={meta.total} onPageChange={setPage} />}
         </div>
       )}
+
+      {/* QR Code payment modal */}
+      <Modal open={qrModal.open} onClose={() => setQrModal({ open: false })} title="QR Code de paiement" size="md">
+        <div className="flex flex-col items-center space-y-4 py-4">
+          <div className="text-center space-y-1">
+            <p className="text-lg font-semibold text-gray-900">Facture {qrModal.invoiceNumber}</p>
+            <p className="text-2xl font-bold text-primary-700">{formatCurrency(qrModal.totalAmount || 0)} {qrModal.currency}</p>
+            <p className="text-sm text-gray-500">Paiement par <span className="font-medium text-gray-700">{qrModal.paymentLabel}</span></p>
+          </div>
+          {qrModal.qrCode && (
+            <div className="bg-white p-4 rounded-xl shadow-lg border-2 border-primary-100">
+              <img src={qrModal.qrCode} alt="QR Code de paiement" className="w-64 h-64" />
+            </div>
+          )}
+          <p className="text-xs text-gray-400 text-center max-w-xs">
+            Le client doit scanner ce QR code avec son application {qrModal.paymentLabel} pour effectuer le paiement.
+          </p>
+          {qrModal.paid ? (
+            <div className="flex flex-col items-center gap-2 w-full max-w-xs">
+              <div className="flex items-center gap-2 text-green-600 bg-green-50 border border-green-200 rounded-lg px-4 py-3 w-full justify-center">
+                <CheckCircle2 className="h-5 w-5" />
+                <span className="font-semibold">Paiement reçu !</span>
+              </div>
+              <button onClick={() => { setQrModal({ open: false }); queryClient.invalidateQueries({ queryKey: ['reservations'] }); }} className="btn-primary w-full">
+                Fermer
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2 w-full max-w-xs">
+              <button
+                onClick={async () => {
+                  try {
+                    await apiPost(`/invoices/${qrModal.invoiceId}/simulate-payment`, {});
+                    setQrModal((prev) => ({ ...prev, paid: true }));
+                    queryClient.invalidateQueries({ queryKey: ['reservations'] });
+                    toast.success('Paiement simulé avec succès !');
+                  } catch (err: any) {
+                    toast.error(err.response?.data?.error || 'Erreur simulation paiement');
+                  }
+                }}
+                className="btn-primary bg-green-600 hover:bg-green-700 w-full"
+              >
+                Simuler le paiement client
+              </button>
+              <button onClick={() => setQrModal({ open: false })} className="btn-secondary w-full">
+                Fermer
+              </button>
+            </div>
+          )}
+        </div>
+      </Modal>
 
       {/* Edit Dates Modal */}
       <Modal open={!!editingDates} onClose={() => setEditingDates(null)} title="Modifier les dates" size="md">
@@ -259,6 +404,17 @@ export default function ReservationsPage() {
                 <option value="BOOKING_COM">Booking.com</option>
                 <option value="EXPEDIA">Expedia</option>
                 <option value="AIRBNB">Airbnb</option>
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="label">Moyen de paiement</label>
+              <select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value as PaymentMethod })} className="input">
+                <option value="CASH">Espèces</option>
+                <option value="MOOV_MONEY">Flooz (Moov Money)</option>
+                <option value="MIXX_BY_YAS">Yas (MTN)</option>
+                <option value="CARD">Carte bancaire</option>
+                <option value="MOBILE_MONEY">Mobile Money</option>
+                <option value="BANK_TRANSFER">Virement</option>
               </select>
             </div>
           </div>

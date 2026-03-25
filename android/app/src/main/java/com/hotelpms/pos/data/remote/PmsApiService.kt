@@ -47,7 +47,7 @@ interface PmsApiService {
     suspend fun getReservations(@Query("establishmentId") establishmentId: String? = null): ReservationsResponse
 
     @POST("api/reservations")
-    suspend fun createReservation(@Body body: Map<String, Any>): GenericResponse
+    suspend fun createReservation(@Body body: Map<String, Any>): CreateReservationResponse
 
     @PATCH("api/reservations/{id}/dates")
     suspend fun updateReservationDates(@Path("id") id: String, @Body body: ReservationDatesRequest): GenericResponse
@@ -57,6 +57,11 @@ interface PmsApiService {
 
     @POST("api/reservations/{id}/check-out")
     suspend fun checkOut(@Path("id") id: String): GenericResponse
+
+    // Reservation receipt PDF
+    @Streaming
+    @GET("api/reservations/{id}/receipt")
+    suspend fun getReservationReceipt(@Path("id") id: String): Response<ResponseBody>
 
     // Orders
     @GET("api/orders")

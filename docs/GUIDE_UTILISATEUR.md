@@ -272,8 +272,22 @@ Le serveur sera notifié que la commande est prête à être servie.
 
 1. Allez dans **Réservations**
 2. Cliquez sur **+ Nouvelle réservation**
-3. Renseignez : nom du client, chambre, dates d'arrivée et de départ
-4. Validez
+3. Renseignez :
+   - Chambre (avec prix par nuit affiché)
+   - Nom du client, email, téléphone
+   - Dates d'arrivée et de départ
+   - Nombre de personnes, source
+   - **Moyen de paiement** : Espèces, Flooz, Yas, Carte, Mobile Money, Virement
+4. Cliquez sur **Créer la réservation**
+5. Une **facture est automatiquement générée** (FAC-YYYYMMDD-NNNN)
+6. Le **QR code de paiement** s'affiche automatiquement — montrez-le au client si paiement mobile
+
+### Paiement de la réservation
+
+La colonne **Paiement** dans la liste des réservations affiche :
+- Le **statut** de la facture (En attente / Payée)
+- Un bouton **QR code** pour afficher ou réafficher le QR code de paiement
+- Un bouton **téléchargement** pour obtenir le reçu PDF
 
 ### Check-in / Check-out
 
@@ -298,7 +312,7 @@ Le serveur sera notifié que la commande est prête à être servie.
 
 ### Factures automatiques
 
-Chaque commande créée génère automatiquement une facture. Vous n'avez pas besoin de créer manuellement une facture pour les commandes.
+Chaque **commande** et chaque **réservation** créée génère automatiquement une facture. Vous n'avez pas besoin de créer manuellement une facture pour ces opérations.
 
 ### Paiements
 
@@ -327,6 +341,23 @@ Le reçu contient :
 - Moyen de paiement
 - QR code de vérification
 - Message de remerciement
+
+### Télécharger un reçu (réservations)
+
+1. Allez dans **Réservations**
+2. Sur chaque ligne, cliquez sur l'icône de téléchargement dans la colonne "Paiement"
+3. Un fichier PDF est téléchargé au format **ticket de caisse** (80mm)
+
+Le reçu contient :
+- En-tête de l'établissement
+- Numéro de facture
+- Nom du client, téléphone
+- Chambre (numéro et type)
+- Dates d'arrivée et de départ
+- Détail : nombre de nuits × prix par nuit
+- Total en FCFA
+- Statut de paiement
+- QR code de vérification
 
 ### Télécharger une facture PDF
 
@@ -561,6 +592,13 @@ La barre de navigation en bas de l'écran affiche les sections accessibles selon
 - Vue des commandes en attente, en préparation, prêtes
 - Changement de statut en un clic
 
+**Manager / DAF :**
+- Création de réservation avec sélection du moyen de paiement
+- QR code de paiement automatique après création
+- Bouton QR code sur chaque réservation pour réafficher le QR code
+- Statut de paiement visible (En attente / Payée)
+- Simulation de paiement (test)
+
 **Ménage :**
 - Clock-in / Clock-out sur les chambres
 - Suivi des sessions du jour
@@ -589,9 +627,9 @@ Les articles créés par un Manager nécessitent l'**approbation du DAF**. Deman
 
 ### Le QR code ne s'affiche pas
 
-- Vérifiez que la commande a bien été créée (message de confirmation)
+- Vérifiez que la commande ou la réservation a bien été créée (message de confirmation)
 - Le QR code nécessite qu'une facture soit générée automatiquement
-- Vous pouvez réafficher le QR code en cliquant sur l'icône QR dans la colonne "Paiement"
+- Vous pouvez réafficher le QR code en cliquant sur l'icône QR dans la colonne "Paiement" (commandes et réservations)
 
 ### Je ne vois pas certains menus dans la barre latérale
 
@@ -614,8 +652,9 @@ Contactez le DAF ou le Super Admin pour réinitialiser le mot de passe.
 ### Comment télécharger un reçu ou une facture en PDF ?
 
 1. Depuis **Commandes** : cliquez sur l'icône de téléchargement (flèche vers le bas) sur la ligne de la commande
-2. Depuis **Factures** : cliquez sur l'icône de téléchargement sur la ligne de la facture
-3. Le fichier PDF est téléchargé automatiquement
+2. Depuis **Réservations** : cliquez sur l'icône de téléchargement dans la colonne "Paiement"
+3. Depuis **Factures** : cliquez sur l'icône de téléchargement sur la ligne de la facture
+4. Le fichier PDF est téléchargé automatiquement
 4. Rôles autorisés : Serveur, Manager, DAF, Owner, Super Admin
 
 ### Je ne reçois pas de notification quand un client part

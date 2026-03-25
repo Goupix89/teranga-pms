@@ -360,6 +360,130 @@ export class ReceiptService {
     });
   }
 
+  /**
+   * Generate a PDF receipt for a reservation (ticket 80mm format).
+   */
+  async generateReservationPdf(tenantId: string, reservationId: string): Promise<Buffer> {
+    const db = createTenantClient(tenantId);
+
+    const reservation = await db.reservation.findFirst({
+      where: { id: reservationId },
+      include: {
+        room: {
+          select: {
+            number: true, type: true, pricePerNight: true,
+            establishment: { select: { name: true, address: true, city: true, country: true, phone: true, email: true, currency: true } },
+          },
+        },
+        invoices: { select: { id: true, invoiceNumber: true, status: true, totalAmount: true }, take: 1 },
+      },
+    });
+
+    if (!reservation) throw new NotFoundError('Réservation introuvable');
+
+    const est = reservation.room.establishment;
+    const totalAmount = Number(reservation.totalPrice);
+    const pricePerNight = Number(reservation.room.pricePerNight);
+    const checkIn = new Date(reservation.checkIn);
+    const checkOut = new Date(reservation.checkOut);
+    const nights = Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24));
+    const invoice = reservation.invoices[0];
+
+    // QR code
+    const qrPayload = JSON.stringify({
+      type: 'TERANGA_PMS_RESERVATION',
+      reservationId: reservation.id,
+      invoiceNumber: invoice?.invoiceNumber,
+      amount: totalAmount,
+      currency: 'XOF',
+      guest: reservation.guestName,
+      establishment: est.name,
+    });
+    const qrBuffer: Buffer = await QRCode.toBuffer(qrPayload, {
+      width: 120, margin: 1,
+      color: { dark: '#3E2723', light: '#FFFFFF' },
+    });
+
+    const pageWidth = 226;
+    const margin = 12;
+    const contentWidth = pageWidth - margin * 2;
+
+    return new Promise<Buffer>((resolve, reject) => {
+      const doc = new PDFDocument({
+        size: [pageWidth, 600],
+        margins: { top: 12, bottom: 12, left: margin, right: margin },
+        bufferPages: true,
+      });
+
+      const chunks: Buffer[] = [];
+      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      // Header
+      doc.font('Helvetica-Bold').fontSize(14).text(est.name, { align: 'center' });
+      doc.font('Helvetica').fontSize(7);
+      if (est.address) doc.text(est.address, { align: 'center' });
+      if (est.city) doc.text(`${est.city}${est.country ? ', ' + est.country : ''}`, { align: 'center' });
+      if (est.phone) doc.text(`Tél: ${est.phone}`, { align: 'center' });
+      if (est.email) doc.text(est.email, { align: 'center' });
+
+      doc.moveDown(0.3);
+      this.drawSeparator(doc, margin, contentWidth);
+
+      // Reservation info
+      doc.font('Helvetica-Bold').fontSize(9).text(invoice ? `Reçu N° ${invoice.invoiceNumber}` : 'Reçu de réservation', { align: 'center' });
+      doc.font('Helvetica').fontSize(7);
+      doc.text(`Client: ${reservation.guestName}`);
+      if (reservation.guestPhone) doc.text(`Tél: ${reservation.guestPhone}`);
+      doc.text(`Chambre: ${reservation.room.number} (${reservation.room.type})`);
+      doc.text(`Arrivée: ${formatDate(checkIn)}`);
+      doc.text(`Départ: ${formatDate(checkOut)}`);
+      doc.text(`Personnes: ${reservation.numberOfGuests}`);
+
+      doc.moveDown(0.3);
+      this.drawSeparator(doc, margin, contentWidth);
+
+      // Item line
+      doc.font('Helvetica').fontSize(7);
+      const itemLeft = `${nights} nuit${nights > 1 ? 's' : ''} × ${formatCurrency(pricePerNight)}`;
+      const itemRight = formatCurrency(totalAmount);
+      const rightWidth = doc.widthOfString(itemRight);
+      doc.text(itemLeft, margin, doc.y, { continued: true, width: contentWidth - rightWidth - 4 });
+      doc.text(itemRight, { align: 'right', width: contentWidth });
+
+      doc.moveDown(0.3);
+      this.drawSeparator(doc, margin, contentWidth);
+
+      // Total
+      doc.font('Helvetica-Bold').fontSize(10);
+      doc.text(`TOTAL: ${formatCurrency(totalAmount)}`, { align: 'right' });
+
+      // Payment status
+      doc.font('Helvetica').fontSize(7);
+      if (invoice) {
+        const statusLabel = invoice.status === 'PAID' ? 'Payée' : invoice.status === 'ISSUED' ? 'En attente' : invoice.status;
+        doc.text(`Facture: ${invoice.invoiceNumber} — ${statusLabel}`);
+      }
+
+      doc.moveDown(0.5);
+
+      // QR Code
+      const qrSize = 80;
+      const qrX = (pageWidth - qrSize) / 2;
+      doc.image(qrBuffer, qrX, doc.y, { width: qrSize, height: qrSize });
+      doc.y += qrSize + 4;
+
+      // Footer
+      doc.font('Helvetica').fontSize(7);
+      doc.text('Merci de votre visite !', { align: 'center' });
+      doc.moveDown(0.2);
+      doc.fontSize(6).text(`Généré le ${formatDate(new Date())}`, { align: 'center' });
+
+      doc.end();
+    });
+  }
+
   private drawSeparator(doc: PDFKit.PDFDocument, x: number, width: number) {
     const y = doc.y;
     doc.moveTo(x, y).lineTo(x + width, y).dash(2, { space: 2 }).stroke('#999999').undash();

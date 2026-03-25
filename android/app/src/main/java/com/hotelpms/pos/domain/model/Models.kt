@@ -145,7 +145,17 @@ data class Reservation(
     val status: String,
     val numberOfGuests: Int,
     val totalPrice: Double? = null,
-    val room: Room? = null
+    val room: Room? = null,
+    val invoiceId: String? = null,
+    val invoices: List<ReservationInvoice>? = null,
+    val paymentMethod: String? = null
+)
+
+data class ReservationInvoice(
+    val id: String,
+    val invoiceNumber: String,
+    val status: String,
+    val totalAmount: Double
 )
 
 data class ReservationsResponse(
@@ -156,6 +166,18 @@ data class ReservationsResponse(
 data class ReservationDatesRequest(
     val checkIn: String,
     val checkOut: String
+)
+
+data class CreateReservationResponse(
+    val success: Boolean,
+    val data: ReservationCreated? = null,
+    val message: String? = null
+)
+
+data class ReservationCreated(
+    val id: String,
+    val invoiceId: String? = null,
+    val paymentMethod: String? = null
 )
 
 // =============================================================================

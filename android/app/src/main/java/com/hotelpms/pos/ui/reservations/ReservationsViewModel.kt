@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hotelpms.pos.data.local.TokenManager
 import com.hotelpms.pos.data.remote.PmsApiService
+import com.hotelpms.pos.domain.model.QrCodeData
 import com.hotelpms.pos.domain.model.Reservation
 import com.hotelpms.pos.domain.model.ReservationDatesRequest
 import com.hotelpms.pos.domain.model.Room
@@ -20,7 +21,10 @@ data class ReservationsUiState(
     val userRole: String = "",
     val isLoading: Boolean = false,
     val error: String? = null,
-    val successMessage: String? = null
+    val successMessage: String? = null,
+    val qrCodeData: QrCodeData? = null,
+    val showQrDialog: Boolean = false,
+    val paymentSimulated: Boolean = false
 )
 
 @HiltViewModel
@@ -52,7 +56,7 @@ class ReservationsViewModel @Inject constructor(
                         isLoading = false
                     )
                 } else {
-                    uiState = uiState.copy(isLoading = false, error = "Impossible de charger les r\u00e9servations")
+                    uiState = uiState.copy(isLoading = false, error = "Impossible de charger les réservations")
                 }
             } catch (e: Exception) {
                 uiState = uiState.copy(isLoading = false, error = e.message ?: "Erreur de chargement")
@@ -77,7 +81,7 @@ class ReservationsViewModel @Inject constructor(
             try {
                 val response = api.checkIn(id)
                 if (response.success) {
-                    uiState = uiState.copy(isLoading = false, successMessage = "Check-in effectu\u00e9")
+                    uiState = uiState.copy(isLoading = false, successMessage = "Check-in effectué")
                     fetchReservations()
                 } else {
                     uiState = uiState.copy(isLoading = false, error = response.message ?: "Erreur")
@@ -94,7 +98,7 @@ class ReservationsViewModel @Inject constructor(
             try {
                 val response = api.checkOut(id)
                 if (response.success) {
-                    uiState = uiState.copy(isLoading = false, successMessage = "Check-out effectu\u00e9")
+                    uiState = uiState.copy(isLoading = false, successMessage = "Check-out effectué")
                     fetchReservations()
                 } else {
                     uiState = uiState.copy(isLoading = false, error = response.message ?: "Erreur")
@@ -113,9 +117,9 @@ class ReservationsViewModel @Inject constructor(
                 val response = api.updateReservationDates(id, request)
                 if (response.success) {
                     val msg = if (uiState.userRole.uppercase() == "MANAGER") {
-                        "Soumis \u00e0 validation DAF"
+                        "Soumis à validation DAF"
                     } else {
-                        "Dates mises \u00e0 jour"
+                        "Dates mises à jour"
                     }
                     uiState = uiState.copy(isLoading = false, successMessage = msg)
                     fetchReservations()
@@ -123,7 +127,7 @@ class ReservationsViewModel @Inject constructor(
                     uiState = uiState.copy(isLoading = false, error = response.message ?: "Erreur")
                 }
             } catch (e: Exception) {
-                uiState = uiState.copy(isLoading = false, error = e.message ?: "Erreur de mise \u00e0 jour")
+                uiState = uiState.copy(isLoading = false, error = e.message ?: "Erreur de mise à jour")
             }
         }
     }
@@ -135,7 +139,8 @@ class ReservationsViewModel @Inject constructor(
         guestPhone: String,
         checkIn: String,
         checkOut: String,
-        numberOfGuests: Int
+        numberOfGuests: Int,
+        paymentMethod: String
     ) {
         viewModelScope.launch {
             uiState = uiState.copy(isLoading = true)
@@ -148,19 +153,64 @@ class ReservationsViewModel @Inject constructor(
                     "checkIn" to checkIn,
                     "checkOut" to checkOut,
                     "numberOfGuests" to numberOfGuests,
+                    "paymentMethod" to paymentMethod,
                     "establishmentId" to establishmentId
                 )
                 val response = api.createReservation(body)
                 if (response.success) {
-                    uiState = uiState.copy(isLoading = false, successMessage = "R\u00e9servation cr\u00e9\u00e9e")
+                    uiState = uiState.copy(isLoading = false, successMessage = "Réservation créée — facture générée")
                     fetchReservations()
+                    // Auto-show QR code if invoice was generated
+                    val invoiceId = response.data?.invoiceId
+                    if (invoiceId != null) {
+                        showQrCode(invoiceId)
+                    }
                 } else {
                     uiState = uiState.copy(isLoading = false, error = response.message ?: "Erreur")
                 }
             } catch (e: Exception) {
-                uiState = uiState.copy(isLoading = false, error = e.message ?: "Erreur de cr\u00e9ation")
+                uiState = uiState.copy(isLoading = false, error = e.message ?: "Erreur de création")
             }
         }
+    }
+
+    fun showQrCode(invoiceId: String) {
+        viewModelScope.launch {
+            try {
+                val response = api.getInvoiceQrCode(invoiceId)
+                if (response.isSuccessful) {
+                    val body = response.body()
+                    if (body?.data != null) {
+                        uiState = uiState.copy(
+                            qrCodeData = body.data,
+                            showQrDialog = true,
+                            paymentSimulated = false
+                        )
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun simulatePayment(invoiceId: String) {
+        viewModelScope.launch {
+            try {
+                val response = api.simulatePayment(invoiceId)
+                if (response.isSuccessful) {
+                    uiState = uiState.copy(
+                        paymentSimulated = true,
+                        successMessage = "Paiement simulé avec succès !"
+                    )
+                    fetchReservations()
+                }
+            } catch (e: Exception) {
+                uiState = uiState.copy(error = e.message ?: "Erreur de simulation")
+            }
+        }
+    }
+
+    fun dismissQrDialog() {
+        uiState = uiState.copy(showQrDialog = false, qrCodeData = null, paymentSimulated = false)
     }
 
     fun clearError() {

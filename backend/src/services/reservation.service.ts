@@ -1,4 +1,4 @@
-import { Prisma, ReservationStatus, BookingSource } from '@prisma/client';
+import { Prisma, ReservationStatus, BookingSource, PaymentMethod } from '@prisma/client';
 import { prisma, createTenantClient } from '../utils/prisma';
 import { NotFoundError, ConflictError, ValidationError } from '../utils/errors';
 import { calculateNights, paginate, toSkipTake } from '../utils/helpers';
@@ -45,6 +45,7 @@ export class ReservationService {
         where,
         include: {
           room: { select: { id: true, number: true, type: true, establishment: { select: { name: true } } } },
+          invoices: { select: { id: true, invoiceNumber: true, status: true, totalAmount: true }, take: 1, orderBy: { createdAt: 'desc' as const } },
         },
         ...toSkipTake(params),
       }),
@@ -84,9 +85,10 @@ export class ReservationService {
     checkOut: string;
     numberOfGuests: number;
     source: BookingSource;
+    paymentMethod?: PaymentMethod;
     notes?: string;
     externalRef?: string;
-  }) {
+  }, userId?: string) {
     const checkInDate = new Date(data.checkIn);
     const checkOutDate = new Date(data.checkOut);
 
@@ -147,6 +149,33 @@ export class ReservationService {
         },
       });
 
+      // 6. Auto-generate invoice for the reservation
+      let invoiceId: string | undefined;
+      if (userId) {
+        const now = new Date();
+        const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+        const count = await tx.invoice.count({
+          where: { tenantId, createdAt: { gte: new Date(now.toISOString().slice(0, 10)) } },
+        });
+        const invoiceNumber = `FAC-${dateStr}-${String(count + 1).padStart(4, '0')}`;
+
+        const invoice = await tx.invoice.create({
+          data: {
+            tenantId,
+            reservationId: reservation.id,
+            createdById: userId,
+            invoiceNumber,
+            subtotal: totalPrice,
+            taxAmount: 0,
+            taxRate: 0,
+            totalAmount: totalPrice,
+            notes: `Hébergement ${data.guestName} — Chambre ${reservation.room.number} (${nights} nuit${nights > 1 ? 's' : ''})`,
+            status: 'ISSUED',
+          },
+        });
+        invoiceId = invoice.id;
+      }
+
       logger.info('Reservation created', {
         tenantId,
         reservationId: reservation.id,
@@ -154,9 +183,10 @@ export class ReservationService {
         checkIn: data.checkIn,
         checkOut: data.checkOut,
         source: data.source,
+        invoiceId,
       });
 
-      return reservation;
+      return { ...reservation, invoiceId, paymentMethod: data.paymentMethod };
     }, {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     });

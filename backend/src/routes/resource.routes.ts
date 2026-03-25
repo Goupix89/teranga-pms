@@ -274,6 +274,16 @@ reservationRouter.get('/', authenticate, requireAnyEstablishmentRole,
   })
 );
 
+// Reservation receipt PDF — must be before /:id to avoid capture
+reservationRouter.get('/:id/receipt', authenticate, requireDAFOrManagerOrServer,
+  asyncHandler(async (req, res) => {
+    const pdfBuffer = await receiptService.generateReservationPdf(req.user!.tenantId, req.params.id);
+    res.set('Content-Type', 'application/pdf');
+    res.set('Content-Disposition', `inline; filename="recu-reservation-${req.params.id}.pdf"`);
+    res.end(pdfBuffer);
+  })
+);
+
 reservationRouter.get('/:id', authenticate, requireAnyEstablishmentRole,
   asyncHandler(async (req, res) => {
     const data = await reservationService.getById(req.user!.tenantId, req.params.id);
@@ -284,7 +294,7 @@ reservationRouter.get('/:id', authenticate, requireAnyEstablishmentRole,
 // DAF + MANAGER can create reservations
 reservationRouter.post('/', authenticate, requireDAFOrManager, validate(v.createReservationSchema),
   asyncHandler(async (req, res) => {
-    const data = await reservationService.create(req.user!.tenantId, req.body);
+    const data = await reservationService.create(req.user!.tenantId, req.body, req.user!.id);
     res.status(201).json({ success: true, data });
   })
 );

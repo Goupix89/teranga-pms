@@ -43,7 +43,7 @@ hotel-pms/
 3. **Utilisateurs** — CRUD, approbation par DAF, archivage automatique des comptes inactifs, rôles par établissement
 4. **Établissements** — Multi-établissement par tenant, rôles dédiés (DAF, Manager, Serveur, POS, Cuisinier, Ménage)
 5. **Chambres** — CRUD, gestion des statuts, filtres avancés
-6. **Réservations** — CRUD, check-in/check-out, anti-double-booking transactionnel
+6. **Réservations** — CRUD, check-in/check-out, anti-double-booking transactionnel, paiement par QR code ou espèces, auto-génération facture et reçu PDF
 7. **Factures** — Lifecycle complet (brouillon → émise → payée), numérotation auto `FAC-YYYYMMDD-NNNN`
 8. **Paiements** — Multi-méthodes (Espèces, Carte, Mobile Money, Flooz, Yas, Virement), idempotence POS via UUID
 9. **Commandes** — Création avec moyen de paiement, auto-génération facture, QR code pour paiement client
@@ -250,7 +250,8 @@ Le système utilise un **RBAC à 2 niveaux** :
 - `/api/rooms` — Chambres (+ `PATCH /:id/status`)
 
 ### Réservations & Commandes
-- `/api/reservations` — Réservations (+ check-in, check-out, cancel)
+- `/api/reservations` — Réservations (+ check-in, check-out, cancel), auto-génération facture à la création
+- `GET /api/reservations/:id/receipt` — Télécharger le reçu PDF de réservation (format ticket 80mm)
 - `/api/orders` — Commandes (+ `GET /kitchen/:estId`, `GET /stats/:estId`, filtre `?createdById=`)
 - `GET /api/orders/:id/receipt` — Télécharger le reçu PDF (format ticket 80mm)
 
