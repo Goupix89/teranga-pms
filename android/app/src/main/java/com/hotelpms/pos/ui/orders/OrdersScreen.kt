@@ -31,8 +31,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.hotelpms.pos.BuildConfig
 import com.hotelpms.pos.domain.model.Article
+import com.hotelpms.pos.domain.model.Establishment
 import com.hotelpms.pos.domain.model.Order
 import com.hotelpms.pos.domain.model.QrCodeData
+import com.hotelpms.pos.ui.receipt.ReceiptScreen
 import com.hotelpms.pos.ui.theme.*
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
@@ -42,10 +44,21 @@ import java.util.*
 @Composable
 fun OrdersScreen(
     userRole: String = "",
+    establishment: Establishment? = null,
     onNewOrder: (() -> Unit)? = null,
     viewModel: OrdersViewModel = hiltViewModel()
 ) {
     val uiState = viewModel.uiState
+    var receiptOrder by remember { mutableStateOf<Order?>(null) }
+
+    // Receipt dialog
+    if (receiptOrder != null && establishment != null) {
+        ReceiptScreen(
+            order = receiptOrder!!,
+            establishment = establishment,
+            onDismiss = { receiptOrder = null }
+        )
+    }
 
     // QR Code payment dialog
     if (uiState.showQrCode && uiState.qrCodeData != null) {
@@ -131,7 +144,7 @@ fun OrdersScreen(
             if (uiState.viewMode == "menu") {
                 MenuView(viewModel = viewModel, uiState = uiState)
             } else {
-                OrdersListView(viewModel = viewModel, uiState = uiState, userRole = userRole)
+                OrdersListView(viewModel = viewModel, uiState = uiState, userRole = userRole, onReceipt = { receiptOrder = it })
             }
         }
     }
@@ -469,7 +482,8 @@ private fun CartBottomBar(
 private fun OrdersListView(
     viewModel: OrdersViewModel,
     uiState: OrdersUiState,
-    userRole: String
+    userRole: String,
+    onReceipt: (Order) -> Unit = {}
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         // Filter tabs
@@ -524,7 +538,8 @@ private fun OrdersListView(
                         userRole = userRole,
                         onMarkServed = { viewModel.updateOrderStatus(it, "SERVED") },
                         onCancel = { viewModel.updateOrderStatus(it, "CANCELLED") },
-                        onShowQr = { invoiceId -> viewModel.fetchQrCode(invoiceId) }
+                        onShowQr = { invoiceId -> viewModel.fetchQrCode(invoiceId) },
+                        onReceipt = { onReceipt(order) }
                     )
                 }
             }
@@ -542,7 +557,8 @@ private fun OrderCard(
     userRole: String,
     onMarkServed: (String) -> Unit,
     onCancel: (String) -> Unit,
-    onShowQr: (String) -> Unit = {}
+    onShowQr: (String) -> Unit = {},
+    onReceipt: () -> Unit = {}
 ) {
     val statusColor = getStatusColor(order.status)
     val statusLabel = getStatusLabel(order.status)
@@ -625,6 +641,10 @@ private fun OrderCard(
                     }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        // Receipt button
+                        IconButton(onClick = onReceipt, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.Receipt, contentDescription = "Recu", tint = BronzeAbomey, modifier = Modifier.size(20.dp))
+                        }
                         if (order.invoiceId != null) {
                             IconButton(onClick = { onShowQr(order.invoiceId!!) }, modifier = Modifier.size(32.dp)) {
                                 Icon(Icons.Default.QrCode, contentDescription = "QR code", tint = RougeDahomey, modifier = Modifier.size(20.dp))

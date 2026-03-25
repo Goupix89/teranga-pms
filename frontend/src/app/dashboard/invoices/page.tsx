@@ -5,12 +5,19 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost } from '@/lib/api';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { PageHeader, StatusBadge, Pagination, Modal, SearchInput, EmptyState, LoadingPage } from '@/components/ui';
-import { Receipt, Plus, Send, XCircle, Loader2 } from 'lucide-react';
+import { Receipt, Plus, Send, XCircle, Loader2, FileDown } from 'lucide-react';
 import { toast } from 'sonner';
+import { useAuthStore } from '@/hooks/useAuthStore';
+import { api } from '@/lib/api';
 import type { Invoice, PaginatedResponse } from '@/types';
 
 export default function InvoicesPage() {
   const queryClient = useQueryClient();
+  const currentUser = useAuthStore((s) => s.user);
+  const currentEstRole = useAuthStore((s) => s.currentEstablishmentRole);
+  const isSuperAdmin = currentUser?.role === 'SUPERADMIN';
+  const canDownloadPdf = isSuperAdmin || ['OWNER', 'DAF', 'MANAGER', 'SERVER'].includes(currentEstRole || '');
+
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -50,6 +57,20 @@ export default function InvoicesPage() {
     },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
   });
+
+  const downloadInvoicePdf = async (invoiceId: string, invoiceNumber: string) => {
+    try {
+      const res = await api.get(`/invoices/${invoiceId}/pdf`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${invoiceNumber}.pdf`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Erreur lors du téléchargement de la facture');
+    }
+  };
 
   const addItem = () => setItems([...items, { description: '', quantity: '1', unitPrice: '' }]);
   const removeItem = (i: number) => setItems(items.filter((_, idx) => idx !== i));
@@ -112,6 +133,11 @@ export default function InvoicesPage() {
                     <td>{formatDate(inv.createdAt)}</td>
                     <td>
                       <div className="flex gap-1">
+                        {canDownloadPdf && (
+                          <button onClick={() => downloadInvoicePdf(inv.id, inv.invoiceNumber)} className="btn-ghost p-1.5 text-gray-600" title="Télécharger PDF">
+                            <FileDown className="h-4 w-4" />
+                          </button>
+                        )}
                         {inv.status === 'DRAFT' && (
                           <button onClick={() => issueMutation.mutate(inv.id)} className="btn-ghost p-1.5 text-primary-600" title="Émettre">
                             <Send className="h-4 w-4" />

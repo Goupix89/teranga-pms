@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { apiGet, apiPost } from '@/lib/api';
 import { PageHeader, StatusBadge, Pagination, Modal, EmptyState, LoadingPage } from '@/components/ui';
 import { SprayCan, Play, Square, Clock, Loader2 } from 'lucide-react';
@@ -17,6 +18,11 @@ export default function CleaningPage() {
   const currentEstRole = useAuthStore((s) => s.currentEstablishmentRole);
   const isSuperAdmin = currentUser?.role === 'SUPERADMIN';
   const isCleaner = currentEstRole === 'CLEANER';
+
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const roomIdFromUrl = searchParams.get('roomId');
+  const autoClockInTriggered = useRef(false);
 
   const [page, setPage] = useState(1);
   const [showClockIn, setShowClockIn] = useState(false);
@@ -40,8 +46,19 @@ export default function CleaningPage() {
   // Available rooms
   const { data: roomsData } = useQuery({
     queryKey: ['rooms-for-cleaning', currentEstId],
-    queryFn: () => apiGet<any>(`/rooms?limit=200${currentEstId ? `&establishmentId=${currentEstId}` : ''}&status=AVAILABLE`),
+    queryFn: () => apiGet<any>(`/rooms?limit=200${currentEstId ? `&establishmentId=${currentEstId}` : ''}`),
   });
+
+  // Auto-open clock-in modal when arriving from a ROOM_CHECKOUT notification
+  useEffect(() => {
+    if (roomIdFromUrl && !autoClockInTriggered.current) {
+      autoClockInTriggered.current = true;
+      setSelectedRoom(roomIdFromUrl);
+      setShowClockIn(true);
+      // Clean URL without triggering navigation
+      router.replace('/dashboard/cleaning', { scroll: false });
+    }
+  }, [roomIdFromUrl, router]);
 
   const clockInMutation = useMutation({
     mutationFn: (body: any) => apiPost('/cleaning/clock-in', body),
@@ -71,7 +88,7 @@ export default function CleaningPage() {
   const activeSessions: CleaningSession[] = activeData?.data || [];
   const history = historyData?.data || [];
   const meta = historyData?.meta;
-  const rooms = roomsData?.data || [];
+  const rooms = (roomsData?.data || []).filter((r: any) => r.status === 'AVAILABLE' || r.status === 'CLEANING');
 
   if (isLoading) return <LoadingPage />;
 

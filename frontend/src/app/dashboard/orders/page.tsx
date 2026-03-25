@@ -4,10 +4,11 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch } from '@/lib/api';
 import { PageHeader, StatusBadge, Pagination, Modal, SearchInput, EmptyState, LoadingPage } from '@/components/ui';
-import { UtensilsCrossed, Plus, Loader2, BarChart3, QrCode, X, CheckCircle2 } from 'lucide-react';
+import { UtensilsCrossed, Plus, Loader2, BarChart3, QrCode, X, CheckCircle2, FileDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDateTime, formatCurrency, statusLabels } from '@/lib/utils';
 import { useAuthStore } from '@/hooks/useAuthStore';
+import { api } from '@/lib/api';
 import { Order, OrderStatus, PaymentMethod } from '@/types';
 
 export default function OrdersPage() {
@@ -17,6 +18,7 @@ export default function OrdersPage() {
   const currentEstRole = useAuthStore((s) => s.currentEstablishmentRole);
   const isSuperAdmin = currentUser?.role === 'SUPERADMIN';
   const canCreate = isSuperAdmin || ['DAF', 'MANAGER', 'SERVER'].includes(currentEstRole || '');
+  const canDownloadReceipt = isSuperAdmin || ['OWNER', 'DAF', 'MANAGER', 'SERVER'].includes(currentEstRole || '');
 
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState('');
@@ -92,6 +94,20 @@ export default function OrdersPage() {
     },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
   });
+
+  const downloadReceipt = async (orderId: string, orderNumber: string) => {
+    try {
+      const res = await api.get(`/orders/${orderId}/receipt`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `recu-${orderNumber}.pdf`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Erreur lors du téléchargement du reçu');
+    }
+  };
 
   const resetForm = () => setForm({ establishmentId: currentEstId || '', tableNumber: '', paymentMethod: 'MOOV_MONEY', items: [{ articleId: '', quantity: 1 }], notes: '' });
 
@@ -247,6 +263,15 @@ export default function OrdersPage() {
                             title="Afficher QR code de paiement"
                           >
                             <QrCode className="h-4 w-4" />
+                          </button>
+                        )}
+                        {canDownloadReceipt && (
+                          <button
+                            onClick={() => downloadReceipt(order.id, order.orderNumber)}
+                            className="btn-ghost p-1 text-gray-600 hover:text-gray-800"
+                            title="Télécharger le reçu PDF"
+                          >
+                            <FileDown className="h-4 w-4" />
                           </button>
                         )}
                       </div>

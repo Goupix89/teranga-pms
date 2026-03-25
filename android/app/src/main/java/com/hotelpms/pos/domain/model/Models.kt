@@ -100,6 +100,8 @@ data class Establishment(
     val city: String? = null,
     val country: String? = null,
     val phone: String? = null,
+    val email: String? = null,
+    val currency: String? = "XOF",
     val currentUserRole: String? = null
 )
 

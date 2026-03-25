@@ -1,6 +1,7 @@
 package com.hotelpms.pos.data.remote
 
 import com.hotelpms.pos.domain.model.*
+import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.*
 
@@ -111,4 +112,9 @@ interface PmsApiService {
     // Articles management
     @POST("api/articles")
     suspend fun createArticle(@Body body: Map<String, Any>): GenericResponse
+
+    // Receipt PDF
+    @Streaming
+    @GET("api/orders/{id}/receipt")
+    suspend fun getOrderReceipt(@Path("id") id: String): Response<ResponseBody>
 }

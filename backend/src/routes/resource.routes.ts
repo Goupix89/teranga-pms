@@ -32,6 +32,7 @@ import { cleaningService } from '../services/cleaning.service';
 import { stockAlertService } from '../services/stock-alert.service';
 import { memberService } from '../services/member.service';
 import { channelSyncService } from '../services/channel-sync.service';
+import { receiptService } from '../services/receipt.service';
 // QR code and prisma for invoice QR endpoint
 const QRCode = require('qrcode');
 import { PrismaClient } from '@prisma/client';
@@ -413,6 +414,16 @@ orderRouter.get('/:id', authenticate, requireDAFOrManagerOrServer,
   })
 );
 
+// Receipt PDF
+orderRouter.get('/:id/receipt', authenticate, requireDAFOrManagerOrServer,
+  asyncHandler(async (req, res) => {
+    const pdfBuffer = await receiptService.generatePdf(req.user!.tenantId, req.params.id);
+    res.set('Content-Type', 'application/pdf');
+    res.set('Content-Disposition', `inline; filename="recu-${req.params.id}.pdf"`);
+    res.end(pdfBuffer);
+  })
+);
+
 // Servers create orders
 orderRouter.post('/', authenticate, requireDAFOrManagerOrServer, validate(v.createOrderSchema),
   asyncHandler(async (req, res) => {
@@ -583,6 +594,16 @@ invoiceRouter.get('/:id/qrcode', authenticate,
         paymentLabel: paymentMethod === 'MOOV_MONEY' ? 'Flooz' : paymentMethod === 'MIXX_BY_YAS' ? 'Yas' : paymentMethod,
       },
     });
+  })
+);
+
+// Invoice PDF
+invoiceRouter.get('/:id/pdf', authenticate, requireDAFOrManagerOrServer,
+  asyncHandler(async (req, res) => {
+    const pdfBuffer = await receiptService.generateInvoicePdf(req.user!.tenantId, req.params.id);
+    res.set('Content-Type', 'application/pdf');
+    res.set('Content-Disposition', `inline; filename="facture-${req.params.id}.pdf"`);
+    res.end(pdfBuffer);
   })
 );
 

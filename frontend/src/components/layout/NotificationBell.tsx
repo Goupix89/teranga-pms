@@ -35,6 +35,7 @@ const typeIcons: Record<string, string> = {
 function getNotificationRoute(n: Notification): string {
   switch (n.type) {
     case 'ROOM_CHECKOUT':
+      return `/dashboard/cleaning${n.data?.roomId ? `?roomId=${n.data.roomId}` : ''}`;
     case 'CLEANING_DONE':
       return '/dashboard/cleaning';
     case 'ORDER_NEW':

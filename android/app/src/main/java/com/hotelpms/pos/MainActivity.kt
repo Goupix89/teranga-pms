@@ -252,7 +252,9 @@ fun MainScaffold(
             }
 
             composable("orders") {
-                OrdersScreen()
+                OrdersScreen(
+                    establishment = authViewModel.uiState.currentEstablishment
+                )
             }
 
             composable("kitchen") {
