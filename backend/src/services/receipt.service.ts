@@ -181,7 +181,11 @@ export class ReceiptService {
           include: { article: { select: { name: true } } },
         },
         orders: {
-          select: { orderNumber: true, tableNumber: true, paymentMethod: true, createdBy: { select: { firstName: true, lastName: true } } },
+          select: {
+            orderNumber: true, tableNumber: true, paymentMethod: true,
+            createdBy: { select: { firstName: true, lastName: true } },
+            items: { include: { article: { select: { name: true } } } },
+          },
           take: 1,
         },
         reservation: { select: { guestName: true, checkIn: true, checkOut: true } },
@@ -287,17 +291,37 @@ export class ReceiptService {
       doc.y = lineY + 6;
 
       // ── Items ──
+      // Use invoice items if available, otherwise fall back to order items
+      const displayItems: Array<{ description: string; quantity: number; unitPrice: number; total: number }> = [];
+      if (invoice.items.length > 0) {
+        for (const item of invoice.items) {
+          displayItems.push({
+            description: item.article?.name || item.description,
+            quantity: item.quantity,
+            unitPrice: Number(item.unitPrice),
+            total: Number(item.totalPrice),
+          });
+        }
+      } else if (order?.items) {
+        for (const item of order.items as any[]) {
+          const qty = item.quantity;
+          const up = Number(item.unitPrice);
+          displayItems.push({
+            description: item.article?.name || 'Article',
+            quantity: qty,
+            unitPrice: up,
+            total: qty * up,
+          });
+        }
+      }
+
       doc.font('Helvetica').fontSize(9);
-      for (const item of invoice.items) {
-        const qty = item.quantity;
-        const unitPrice = Number(item.unitPrice);
-        const total = Number(item.totalPrice);
-        const desc = item.article?.name || item.description;
+      for (const item of displayItems) {
         const rowY = doc.y;
-        doc.text(desc, colX.desc, rowY, { width: contentWidth * 0.50 });
-        doc.text(String(qty), colX.qty, rowY);
-        doc.text(formatCurrency(unitPrice), colX.unit, rowY);
-        doc.text(formatCurrency(total), colX.total, rowY);
+        doc.text(item.description, colX.desc, rowY, { width: contentWidth * 0.50 });
+        doc.text(String(item.quantity), colX.qty, rowY);
+        doc.text(formatCurrency(item.unitPrice), colX.unit, rowY);
+        doc.text(formatCurrency(item.total), colX.total, rowY);
         doc.moveDown(0.2);
       }
 

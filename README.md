@@ -51,13 +51,14 @@ hotel-pms/
 11. **Cuisine** — Vue temps réel des commandes pour les cuisiniers, notification serveur quand prêt
 12. **Stock & Inventaire** — Mouvements, alertes stock bas, approbation DAF pour écarts
 13. **Fournisseurs** — CRUD complet
-14. **Ménage** — Pointage début/fin (clock-in/clock-out), chambre indisponible pendant nettoyage
+14. **Ménage** — Pointage début/fin (clock-in/clock-out), chambre indisponible pendant nettoyage, démarrage direct depuis notification
 15. **Rapports** — Taux d'occupation, revenus, performance par serveur, export CSV, graphiques
 16. **Intégrations** — API disponibilité (JSON/iCal), Channel Manager, POS Android
 17. **Inscription & Abonnements** — Inscription self-service avec paiement Stripe, plans Basic/Pro/Enterprise
-18. **Notifications temps réel** — SSE + polling, alertes par rôle (checkout, ménage, commandes, approbations, stock)
+18. **Notifications temps réel** — SSE + polling, alertes par rôle (checkout, ménage, commandes, approbations, stock), navigation contextuelle (clic → page concernée)
 19. **Synchronisation calendrier (iCal)** — Sync bidirectionnelle des disponibilités avec Airbnb, Booking.com, Expedia via iCal
 20. **Profil utilisateur** — Modification des informations personnelles, changement de mot de passe
+21. **Reçus & Factures PDF** — Génération de reçus (format ticket 80mm) et factures (A4) en PDF avec QR code, téléchargement depuis les pages Commandes et Factures
 
 ## Flux de Paiement (Commandes)
 
@@ -220,6 +221,7 @@ Le système utilise un **RBAC à 2 niveaux** :
 | Alertes stock | X | X | X | X | | | | |
 | Canaux (iCal sync) | X | X | X | X | | | | |
 | Factures & Paiements | X | X | X | X | X | X | | |
+| Reçus & Factures PDF | X | X | X | X | X | | | |
 | Commandes + QR code | X | X | X | X | X | | | |
 | Filtrer commandes par serveur | X | X | X | X | | | | |
 | Cuisine (temps réel) | X | X | X | X | | | X | |
@@ -250,10 +252,12 @@ Le système utilise un **RBAC à 2 niveaux** :
 ### Réservations & Commandes
 - `/api/reservations` — Réservations (+ check-in, check-out, cancel)
 - `/api/orders` — Commandes (+ `GET /kitchen/:estId`, `GET /stats/:estId`, filtre `?createdById=`)
+- `GET /api/orders/:id/receipt` — Télécharger le reçu PDF (format ticket 80mm)
 
 ### Facturation & Paiements
 - `/api/invoices` — Factures (+ issue, cancel)
 - `GET /api/invoices/:id/qrcode` — QR code de paiement pour une facture
+- `GET /api/invoices/:id/pdf` — Télécharger la facture PDF (format A4)
 - `/api/payments` — Paiements
 
 ### Menu & Stock

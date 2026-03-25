@@ -14,11 +14,15 @@ Ce guide vous accompagne dans l'utilisation quotidienne de la plateforme Teranga
 6. [Cuisine (Cuisinier)](#6-cuisine-cuisinier)
 7. [Chambres et réservations](#7-chambres-et-réservations)
 8. [Factures et paiements](#8-factures-et-paiements)
-9. [Ménage (Nettoyage)](#9-ménage-nettoyage)
-10. [Rapports et exports](#10-rapports-et-exports)
-11. [Gestion des utilisateurs](#11-gestion-des-utilisateurs)
-12. [Application mobile](#12-application-mobile)
-13. [Questions fréquentes](#13-questions-fréquentes)
+9. [Reçus et factures PDF](#9-reçus-et-factures-pdf)
+10. [Ménage (Nettoyage)](#10-ménage-nettoyage)
+11. [Notifications](#11-notifications)
+12. [Synchronisation calendrier (iCal)](#12-synchronisation-calendrier-ical)
+13. [Profil utilisateur](#13-profil-utilisateur)
+14. [Rapports et exports](#14-rapports-et-exports)
+15. [Gestion des utilisateurs](#15-gestion-des-utilisateurs)
+16. [Application mobile](#16-application-mobile)
+17. [Questions fréquentes](#17-questions-fréquentes)
 
 ---
 
@@ -44,11 +48,12 @@ L'application détecte automatiquement votre rôle et affiche l'interface adapt�
 
 | Rôle | Accès principal |
 |------|----------------|
+| **Propriétaire (Owner)** | Accès complet, modifier l'établissement, canaux de réservation |
 | **DAF** | Tout voir, approuver, rapports, finances |
-| **Manager** | Créer le menu, gérer le personnel, rapports |
-| **Serveur** | Prendre les commandes, afficher les QR codes |
+| **Manager** | Créer le menu, gérer le personnel, rapports, canaux |
+| **Serveur** | Prendre les commandes, afficher les QR codes, télécharger les reçus |
 | **Cuisinier** | Voir et traiter les commandes en cuisine |
-| **Ménage** | Pointer le nettoyage des chambres |
+| **Ménage** | Pointer le nettoyage des chambres, notifications cliquables |
 | **POS** | Facturation et encaissement |
 
 ---
@@ -56,6 +61,10 @@ L'application détecte automatiquement votre rôle et affiche l'interface adapt�
 ## 2. Tableau de bord
 
 Chaque rôle dispose d'un tableau de bord adapté à ses besoins.
+
+### Propriétaire (Owner)
+
+Le dashboard du Propriétaire est identique à celui du DAF, avec le titre "Propriétaire". Il a accès à toutes les fonctionnalités, incluant la modification de l'établissement et les canaux de réservation.
 
 ### DAF
 
@@ -299,21 +308,72 @@ Chaque commande créée génère automatiquement une facture. Vous n'avez pas be
 
 ---
 
-## 9. Ménage (Nettoyage)
+## 9. Reçus et factures PDF
 
-### Pointer un nettoyage
+Les rôles **Serveur**, **Manager**, **DAF**, **Owner** et **Super Admin** peuvent télécharger les documents PDF.
+
+### Télécharger un reçu (commandes)
+
+1. Allez dans **Commandes**
+2. Sur chaque ligne de commande, cliquez sur l'icône de téléchargement (flèche vers le bas) dans la colonne "Paiement"
+3. Un fichier PDF est téléchargé au format **ticket de caisse** (80mm)
+
+Le reçu contient :
+- En-tête : nom de l'établissement, adresse, téléphone, email
+- Numéro de commande et date
+- Numéro de table et nom du serveur
+- Liste des articles avec quantités et prix
+- Total en FCFA
+- Moyen de paiement
+- QR code de vérification
+- Message de remerciement
+
+### Télécharger une facture PDF
+
+1. Allez dans **Factures**
+2. Sur chaque facture, cliquez sur l'icône de téléchargement (flèche vers le bas)
+3. Un fichier PDF est téléchargé au format **A4**
+
+La facture contient :
+- En-tête de l'établissement
+- Numéro de facture, date, statut
+- Informations client (si réservation liée)
+- Numéro de commande, table, serveur, moyen de paiement
+- Tableau détaillé des articles (description, quantité, prix unitaire, total)
+- Sous-total, taxe et total en FCFA
+- QR code de vérification
+
+---
+
+## 10. Ménage (Nettoyage)
+
+### Démarrer un nettoyage depuis une notification
+
+Lorsqu'un client quitte sa chambre (check-out), l'agent de ménage reçoit une **notification automatique**. Pour commencer le nettoyage :
+
+1. Cliquez sur la notification dans la barre latérale (icône cloche)
+2. La page Ménage s'ouvre automatiquement avec la **chambre pré-sélectionnée**
+3. Cliquez sur **Commencer** pour démarrer le nettoyage
+
+### Pointer un nettoyage manuellement
 
 1. Allez dans **Ménage** (web) ou ouvrez l'onglet Ménage (mobile)
-2. Les chambres en statut "Nettoyage" apparaissent
-3. Cliquez sur **Clock-in** pour commencer le nettoyage
-4. Lorsque vous avez terminé, cliquez sur **Clock-out**
-5. La chambre repasse automatiquement en statut **"Disponible"**
+2. Cliquez sur **Pointer (début)**
+3. Sélectionnez la chambre dans la liste (les chambres "Disponible" et "Nettoyage" sont affichées)
+4. Ajoutez des notes si nécessaire (ex : nettoyage en profondeur)
+5. Cliquez sur **Commencer**
+
+### Terminer un nettoyage
+
+1. Dans la section **Sessions en cours**, trouvez votre session
+2. Cliquez sur **Pointer (fin)**
+3. La chambre repasse automatiquement en statut **"Disponible"**
+4. Une notification est envoyée au Manager/DAF
 
 ### Suivi (web)
 
-- **Chambres à nettoyer** : nombre de chambres en attente
-- **Nettoyages en cours** : sessions actives
-- **Nettoyées aujourd'hui** : nombre de chambres nettoyées
+- **Sessions en cours** : cartes avec le numéro de chambre, l'agent, l'heure de début
+- **Historique** : tableau avec chambre, agent, début, fin, durée, statut
 
 ### Suivi (mobile)
 
@@ -325,7 +385,91 @@ Le dashboard du ménage affiche :
 
 ---
 
-## 10. Rapports et exports
+## 11. Notifications
+
+Le système envoie des notifications en temps réel selon votre rôle. Elles sont visibles via l'icône **cloche** dans la barre latérale.
+
+### Types de notifications
+
+| Notification | Destinataires | Action au clic |
+|-------------|---------------|----------------|
+| **Check-out chambre** | Ménage | Ouvre la page Ménage avec la chambre pré-sélectionnée |
+| **Nettoyage terminé** | Manager, DAF | Ouvre la page Ménage |
+| **Nouvelle commande** | Cuisinier | Ouvre la page Cuisine |
+| **Commande prête** | Serveur | Ouvre la page Commandes |
+| **Approbation requise** | DAF, Owner | Ouvre la page Approbations |
+| **Résultat approbation** | Demandeur | Ouvre la page Approbations |
+| **Alerte stock** | Manager, DAF | Ouvre la page Alertes stock |
+| **Synchronisation canal** | Manager, DAF, Owner | Ouvre la page Canaux |
+
+### Gérer les notifications
+
+- **Marquer comme lue** : cliquez sur la notification
+- **Tout marquer comme lu** : cliquez sur "Tout lire" en haut du panneau
+- **Indicateur** : un badge rouge sur la cloche indique le nombre de notifications non lues
+
+---
+
+## 12. Synchronisation calendrier (iCal)
+
+La synchronisation iCal permet de connecter les chambres aux plateformes de réservation externes pour éviter les doubles réservations.
+
+### Rôles autorisés
+
+Seuls les comptes **Owner**, **DAF** et **Manager** ont accès à la page **Canaux**.
+
+### Connecter une chambre
+
+1. Allez dans **Canaux** dans la barre latérale
+2. Cliquez sur **Connecter un canal**
+3. Sélectionnez la chambre et la plateforme (Airbnb, Booking.com, Expedia)
+4. Cliquez sur **Connecter**
+
+### Exporter les disponibilités
+
+1. Sur la connexion créée, cliquez sur l'icône **Copier** pour copier l'URL d'export
+2. Dans la plateforme externe : collez cette URL dans la section "Importer un calendrier"
+3. La plateforme synchronisera automatiquement les dates bloquées
+
+### Importer les réservations externes
+
+1. Dans la plateforme externe, trouvez l'option "Exporter le calendrier"
+2. Copiez l'URL iCal fournie
+3. Dans le PMS : collez l'URL dans le champ **URL d'import** de la connexion
+4. Cliquez sur **Synchroniser maintenant** pour tester
+5. La synchronisation automatique s'exécute toutes les 15 minutes (configurable : 5 min à 24h)
+
+### Gestion des conflits
+
+- Le PMS a **priorité** : une réservation externe en conflit est ignorée
+- Les conflits sont visibles dans l'historique de synchronisation
+- Les annulations sur la plateforme externe sont automatiquement détectées
+
+### Sécurité
+
+- Chaque URL d'export contient un **token unique** (non devinable)
+- Si compromis, le token peut être **régénéré** (l'ancienne URL cesse de fonctionner)
+- Les feeds ne contiennent aucune donnée client
+
+---
+
+## 13. Profil utilisateur
+
+### Modifier ses informations
+
+1. Cliquez sur **Profil** dans la barre latérale
+2. Modifiez votre nom, prénom ou e-mail
+3. Sauvegardez
+
+### Changer son mot de passe
+
+1. Allez dans **Profil**
+2. Renseignez l'ancien mot de passe, puis le nouveau (2 fois)
+3. Sauvegardez
+
+---
+
+## 14. Rapports et exports
 
 Accessible aux rôles **DAF** et **Manager** via **Rapports** dans la barre latérale.
 
@@ -364,7 +508,7 @@ Les fichiers sont téléchargés au format CSV, utilisables dans Excel ou Google
 
 ---
 
-## 11. Gestion des utilisateurs
+## 15. Gestion des utilisateurs
 
 ### Créer un employé (Manager)
 
@@ -385,7 +529,7 @@ Une fois approuvé, l'employé peut se connecter avec ses identifiants.
 
 ---
 
-## 12. Application mobile
+## 16. Application mobile
 
 ### Installation
 
@@ -430,7 +574,7 @@ L'application se connecte au serveur backend via l'URL configurée. Si vous renc
 
 ---
 
-## 13. Questions fréquentes
+## 17. Questions fréquentes
 
 ### Je n'arrive pas à créer un article
 
@@ -467,10 +611,23 @@ Chaque rôle a accès uniquement aux fonctionnalités qui le concernent. Par exe
 
 Contactez le DAF ou le Super Admin pour réinitialiser le mot de passe.
 
+### Comment télécharger un reçu ou une facture en PDF ?
+
+1. Depuis **Commandes** : cliquez sur l'icône de téléchargement (flèche vers le bas) sur la ligne de la commande
+2. Depuis **Factures** : cliquez sur l'icône de téléchargement sur la ligne de la facture
+3. Le fichier PDF est téléchargé automatiquement
+4. Rôles autorisés : Serveur, Manager, DAF, Owner, Super Admin
+
+### Je ne reçois pas de notification quand un client part
+
+- Vérifiez que le check-out a bien été effectué (la chambre doit passer en statut "Nettoyage")
+- Le système envoie automatiquement une notification ROOM_CHECKOUT aux agents de ménage
+- Vérifiez la connexion SSE (polling toutes les 30 secondes en fallback)
+
 ### L'application mobile affiche "EMPLOYEE" au lieu de mon rôle
 
 Déconnectez-vous et reconnectez-vous. L'application détectera votre rôle d'établissement.
 
 ---
 
-*Document mis à jour le 18 mars 2026 — Teranga PMS v2*
+*Document mis à jour le 25 mars 2026 — Teranga PMS v2.1*
