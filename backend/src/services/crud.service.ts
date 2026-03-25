@@ -310,9 +310,21 @@ export class EstablishmentService {
     phone?: string; email?: string; website?: string; starRating?: number;
     timezone?: string; currency?: string;
   }) {
-    return prisma.establishment.create({
+    const establishment = await prisma.establishment.create({
       data: { tenantId, ...data },
     });
+
+    // Create default article categories for the new establishment
+    const defaultCategories = ['Restaurant', 'Boissons', 'Fournitures'];
+    for (const name of defaultCategories) {
+      await prisma.articleCategory.upsert({
+        where: { tenantId_establishmentId_name: { tenantId, establishmentId: establishment.id, name } },
+        update: {},
+        create: { tenantId, establishmentId: establishment.id, name },
+      });
+    }
+
+    return establishment;
   }
 
   async update(tenantId: string, id: string, data: Partial<{

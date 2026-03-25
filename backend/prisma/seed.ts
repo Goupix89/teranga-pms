@@ -289,20 +289,20 @@ async function main() {
 
   // Create article categories
   const catBoissons = await prisma.articleCategory.upsert({
-    where: { tenantId_name: { tenantId: tenant.id, name: 'Boissons' } },
-    update: { establishmentId: establishment.id },
+    where: { tenantId_establishmentId_name: { tenantId: tenant.id, establishmentId: establishment.id, name: 'Boissons' } },
+    update: {},
     create: { tenantId: tenant.id, establishmentId: establishment.id, name: 'Boissons' },
   });
 
   const catRestaurant = await prisma.articleCategory.upsert({
-    where: { tenantId_name: { tenantId: tenant.id, name: 'Restaurant' } },
-    update: { establishmentId: establishment.id },
+    where: { tenantId_establishmentId_name: { tenantId: tenant.id, establishmentId: establishment.id, name: 'Restaurant' } },
+    update: {},
     create: { tenantId: tenant.id, establishmentId: establishment.id, name: 'Restaurant' },
   });
 
   const catFournitures = await prisma.articleCategory.upsert({
-    where: { tenantId_name: { tenantId: tenant.id, name: 'Fournitures' } },
-    update: { establishmentId: establishment.id },
+    where: { tenantId_establishmentId_name: { tenantId: tenant.id, establishmentId: establishment.id, name: 'Fournitures' } },
+    update: {},
     create: { tenantId: tenant.id, establishmentId: establishment.id, name: 'Fournitures' },
   });
 

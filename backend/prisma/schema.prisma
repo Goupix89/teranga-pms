@@ -497,7 +497,7 @@ model ArticleCategory {
   children      ArticleCategory[] @relation("CategoryHierarchy")
   articles      Article[]
 
-  @@unique([tenantId, name])
+  @@unique([tenantId, establishmentId, name])
   @@index([tenantId])
   @@index([establishmentId])
   @@map("article_categories")

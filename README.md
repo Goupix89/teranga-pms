@@ -211,7 +211,7 @@ Le système utilise un **RBAC à 2 niveaux** :
 |----------------|:----------:|:-----:|:---:|:-------:|:-------:|:---:|:---------:|:------:|
 | Paramètres plateforme | X | | | | | | | |
 | Créer/supprimer établissements | X | | | | | | | |
-| Modifier établissement | X | X | X | | | | | |
+| Modifier établissement | X | | | | | | | |
 | Gérer utilisateurs | X | X | X | X ^1 | | | | |
 | Approuver demandes | X | X | X | | | | | |
 | Rapports & Export CSV | X | X | X | X | | | | |
