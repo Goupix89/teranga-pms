@@ -310,6 +310,9 @@ export default function ChannelsPage() {
                           onChange={(e) => updateMutation.mutate({ id: conn.id, data: { syncIntervalMin: parseInt(e.target.value) } })}
                           className="rounded-lg border border-wood-200 px-2 py-1 text-sm"
                         >
+                          <option value={1}>1 min</option>
+                          <option value={5}>5 min</option>
+                          <option value={10}>10 min</option>
                           <option value={15}>15 min</option>
                           <option value={30}>30 min</option>
                           <option value={60}>1 heure</option>

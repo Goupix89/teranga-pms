@@ -579,7 +579,7 @@ invoiceRouter.get('/:id/qrcode', authenticate,
       orderBy: { paidAt: 'desc' },
     });
 
-    const paymentMethod = order?.paymentMethod || existingPayment?.method || (req.query.paymentMethod as string) || 'MOBILE_MONEY';
+    const paymentMethod = order?.paymentMethod || (invoice as any).paymentMethod || existingPayment?.method || (req.query.paymentMethod as string) || 'MOBILE_MONEY';
 
     // FedaPay: create a transaction and get checkout URL
     let fedapayCheckoutUrl: string | undefined;
@@ -637,30 +637,26 @@ invoiceRouter.get('/:id/qrcode', authenticate,
           appLogger.info('FedaPay txn response', { status: txnResponse.status, body: JSON.stringify(txnData).substring(0, 500) });
 
           if (txnResponse.ok || txnResponse.status === 201) {
-            // Extract transaction ID from various possible FedaPay response formats:
-            // Format 1: {v1: {transaction: {id, klass, ...}}}
-            // Format 2: {transaction: {id, ...}}
-            // Format 3: {id: ..., klass: "v1/transaction", ...}
+            // Extract transaction ID from FedaPay response
+            // Actual format: {"v1/transaction": {"klass": "v1/transaction", "id": 420517, ...}}
             let transactionId: string | number | undefined;
-            if (txnData?.v1?.transaction?.id) {
+            if (txnData?.['v1/transaction']?.id) {
+              transactionId = txnData['v1/transaction'].id;
+            } else if (txnData?.v1?.transaction?.id) {
               transactionId = txnData.v1.transaction.id;
             } else if (txnData?.transaction?.id) {
               transactionId = txnData.transaction.id;
             } else if (txnData?.id && txnData?.klass?.includes('transaction')) {
               transactionId = txnData.id;
             }
-            // Fallback: search recursively for an 'id' field in any nested object with 'transaction' key
+            // Fallback: search for any key containing 'transaction' with an id
             if (!transactionId) {
-              const findTxnId = (obj: any): any => {
-                if (!obj || typeof obj !== 'object') return null;
-                for (const [k, v] of Object.entries(obj)) {
-                  if (k === 'transaction' && typeof v === 'object' && (v as any)?.id) return (v as any).id;
-                  const found = findTxnId(v);
-                  if (found) return found;
+              for (const [k, v] of Object.entries(txnData || {})) {
+                if (k.includes('transaction') && typeof v === 'object' && (v as any)?.id) {
+                  transactionId = (v as any).id;
+                  break;
                 }
-                return null;
-              };
-              transactionId = findTxnId(txnData);
+              }
             }
 
             appLogger.info('FedaPay extracted transactionId', { transactionId });
@@ -679,8 +675,17 @@ invoiceRouter.get('/:id/qrcode', authenticate,
               appLogger.info('FedaPay token response', { status: tokenResponse.status, body: JSON.stringify(tokenData).substring(0, 300) });
 
               if (tokenResponse.ok || tokenResponse.status === 201) {
-                // Token can be at tokenData.token or tokenData.data.token
-                const token = tokenData?.token || tokenData?.data?.token;
+                // Extract token from response — may be nested under "v1/token" or similar
+                let token = tokenData?.token || tokenData?.data?.token;
+                if (!token) {
+                  for (const [k, v] of Object.entries(tokenData || {})) {
+                    if (typeof v === 'object' && (v as any)?.token) {
+                      token = (v as any).token;
+                      break;
+                    }
+                  }
+                }
+                appLogger.info('FedaPay extracted token', { token: token ? 'found' : 'missing' });
                 if (token) {
                   fedapayCheckoutUrl = isSandbox
                     ? `https://sandbox-checkout.fedapay.com/checkout/${token}`

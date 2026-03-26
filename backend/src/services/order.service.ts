@@ -102,7 +102,10 @@ export class OrderService {
       throw new ValidationError('La commande doit contenir au moins un article');
     }
 
-    return prisma.$transaction(async (tx) => {
+    // Retry loop to handle concurrent order number collisions
+    for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+    return await prisma.$transaction(async (tx) => {
       // Verify establishment belongs to tenant
       const establishment = await tx.establishment.findFirst({
         where: { id: data.establishmentId, tenantId },
@@ -140,14 +143,19 @@ export class OrderService {
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
 
-      const todayCount = await tx.order.count({
+      // Use MAX-based numbering to avoid race conditions
+      const lastOrder = await tx.order.findFirst({
         where: {
           tenantId,
           createdAt: { gte: todayStart, lt: todayEnd },
         },
+        orderBy: { orderNumber: 'desc' },
+        select: { orderNumber: true },
       });
-
-      const orderNumber = `CMD-${dateStr}-${String(todayCount + 1).padStart(4, '0')}`;
+      const lastNum = lastOrder
+        ? parseInt(lastOrder.orderNumber.split('-').pop() || '0', 10)
+        : 0;
+      const orderNumber = `CMD-${dateStr}-${String(lastNum + 1).padStart(4, '0')}`;
 
       // Create order with items
       const order = await tx.order.create({
@@ -211,6 +219,13 @@ export class OrderService {
 
       return { ...order, invoiceId: invoice.id };
     });
+    } catch (err: any) {
+      // Retry on unique constraint violation (P2002)
+      if (err?.code === 'P2002' && attempt < 2) continue;
+      throw err;
+    }
+    }
+    throw new Error('Failed to create order after retries');
   }
 
   /**

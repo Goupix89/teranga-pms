@@ -14,13 +14,14 @@ import { logger } from '../utils/logger';
  */
 export async function authenticate(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
+  const queryToken = req.query.token as string | undefined;
 
-  if (!authHeader?.startsWith('Bearer ')) {
+  if (!authHeader?.startsWith('Bearer ') && !queryToken) {
     return next(new UnauthorizedError('Token d\'authentification manquant'));
   }
 
   try {
-    const token = authHeader.slice(7);
+    const token = authHeader ? authHeader.slice(7) : queryToken!;
     const payload = jwt.verify(token, config.jwt.accessSecret) as TokenPayload;
 
     req.user = {

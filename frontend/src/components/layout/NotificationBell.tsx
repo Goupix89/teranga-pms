@@ -87,10 +87,7 @@ export function NotificationBell({ collapsed }: { collapsed: boolean }) {
     if (!accessToken) return;
 
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-    const eventSource = new EventSource(`${apiUrl}/api/notifications/stream`, {
-      // Note: EventSource doesn't support custom headers natively.
-      // We'll rely on polling as primary + SSE as bonus when auth cookies work
-    });
+    const eventSource = new EventSource(`${apiUrl}/api/notifications/stream?token=${encodeURIComponent(accessToken)}`);
 
     eventSource.onmessage = (event) => {
       try {

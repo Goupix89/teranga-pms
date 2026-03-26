@@ -154,10 +154,16 @@ export class ReservationService {
       if (userId) {
         const now = new Date();
         const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
-        const count = await tx.invoice.count({
-          where: { tenantId, createdAt: { gte: new Date(now.toISOString().slice(0, 10)) } },
+        const todayStart = new Date(now.toISOString().slice(0, 10));
+        const lastInvoice = await tx.invoice.findFirst({
+          where: { tenantId, createdAt: { gte: todayStart } },
+          orderBy: { invoiceNumber: 'desc' },
+          select: { invoiceNumber: true },
         });
-        const invoiceNumber = `FAC-${dateStr}-${String(count + 1).padStart(4, '0')}`;
+        const lastNum = lastInvoice
+          ? parseInt(lastInvoice.invoiceNumber.split('-').pop() || '0', 10)
+          : 0;
+        const invoiceNumber = `FAC-${dateStr}-${String(lastNum + 1).padStart(4, '0')}`;
 
         const invoice = await tx.invoice.create({
           data: {
@@ -169,6 +175,7 @@ export class ReservationService {
             taxAmount: 0,
             taxRate: 0,
             totalAmount: totalPrice,
+            paymentMethod: data.paymentMethod || null,
             notes: `Hébergement ${data.guestName} — Chambre ${reservation.room.number} (${nights} nuit${nights > 1 ? 's' : ''})`,
             status: 'ISSUED',
           },
