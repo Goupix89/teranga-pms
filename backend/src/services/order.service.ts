@@ -182,9 +182,17 @@ export class OrderService {
         },
       });
 
-      // Auto-generate invoice for the order
-      const orderSuffix = orderNumber.replace('CMD-', '');
-      const invoiceNumber = `FAC-${orderSuffix}`;
+      // Auto-generate invoice for the order — use global invoice counter
+      const invoiceDateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+      const lastInvoice = await tx.invoice.findFirst({
+        where: { tenantId, invoiceNumber: { startsWith: `FAC-${invoiceDateStr}` } },
+        orderBy: { invoiceNumber: 'desc' },
+        select: { invoiceNumber: true },
+      });
+      const lastInvNum = lastInvoice
+        ? parseInt(lastInvoice.invoiceNumber.split('-').pop() || '0', 10)
+        : 0;
+      const invoiceNumber = `FAC-${invoiceDateStr}-${String(lastInvNum + 1).padStart(4, '0')}`;
 
       const invoice = await tx.invoice.create({
         data: {
@@ -195,6 +203,7 @@ export class OrderService {
           taxAmount: 0,
           taxRate: 0,
           totalAmount,
+          paymentMethod: data.paymentMethod as any || null,
           notes: `Commande ${orderNumber}${data.tableNumber ? ` - Table ${data.tableNumber}` : ''}`,
           status: 'ISSUED',
         },

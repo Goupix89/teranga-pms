@@ -675,21 +675,27 @@ invoiceRouter.get('/:id/qrcode', authenticate,
               appLogger.info('FedaPay token response', { status: tokenResponse.status, body: JSON.stringify(tokenData).substring(0, 300) });
 
               if (tokenResponse.ok || tokenResponse.status === 201) {
-                // Extract token from response — may be nested under "v1/token" or similar
+                // FedaPay returns {"token": "...", "url": "https://sandbox-process.fedapay.com/..."}
+                // Use the URL directly from the response — it's the correct checkout page
+                let checkoutUrl = tokenData?.url;
                 let token = tokenData?.token || tokenData?.data?.token;
-                if (!token) {
+                // Also check nested format
+                if (!checkoutUrl || !token) {
                   for (const [k, v] of Object.entries(tokenData || {})) {
-                    if (typeof v === 'object' && (v as any)?.token) {
-                      token = (v as any).token;
-                      break;
+                    if (typeof v === 'object') {
+                      if (!checkoutUrl && (v as any)?.url) checkoutUrl = (v as any).url;
+                      if (!token && (v as any)?.token) token = (v as any).token;
                     }
                   }
                 }
-                appLogger.info('FedaPay extracted token', { token: token ? 'found' : 'missing' });
-                if (token) {
+                appLogger.info('FedaPay extracted checkout', { hasUrl: !!checkoutUrl, hasToken: !!token });
+                if (checkoutUrl) {
+                  fedapayCheckoutUrl = checkoutUrl;
+                } else if (token) {
+                  // Fallback: build URL from token
                   fedapayCheckoutUrl = isSandbox
-                    ? `https://sandbox-checkout.fedapay.com/checkout/${token}`
-                    : `https://checkout.fedapay.com/checkout/${token}`;
+                    ? `https://sandbox-process.fedapay.com/${token}`
+                    : `https://process.fedapay.com/${token}`;
                 }
               }
             } else {
