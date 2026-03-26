@@ -54,7 +54,7 @@ export const createChannelSchema = z.object({
 export const updateChannelSchema = z.object({
   importUrl: z.string().url('URL invalide').optional().nullable(),
   isActive: z.boolean().optional(),
-  syncIntervalMin: z.number().int().min(5, 'Minimum 5 minutes').max(1440, 'Maximum 24 heures').optional(),
+  syncIntervalMin: z.number().int().min(1, 'Minimum 1 minute').max(1440, 'Maximum 24 heures').optional(),
 });
 
 // =============================================================================

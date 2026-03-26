@@ -157,8 +157,8 @@ export function registerCronJobs() {
     timezone: 'Africa/Lome',
   });
 
-  // Every 15 minutes — sync external calendars (iCal)
-  cron.schedule('*/15 * * * *', syncExternalCalendars, {
+  // Every minute — sync external calendars (iCal)
+  cron.schedule('* * * * *', syncExternalCalendars, {
     timezone: 'Africa/Lome',
   });
 

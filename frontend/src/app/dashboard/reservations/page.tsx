@@ -320,14 +320,27 @@ export default function ReservationsPage() {
           ) : (
             <div className="flex flex-col gap-2 w-full max-w-xs">
               {qrModal.fedapayCheckoutUrl && (
-                <a
-                  href={qrModal.fedapayCheckoutUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn-primary bg-blue-600 hover:bg-blue-700 w-full text-center flex items-center justify-center gap-2"
-                >
-                  💳 Payer avec FedaPay
-                </a>
+                <>
+                  <a
+                    href={qrModal.fedapayCheckoutUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-primary bg-blue-600 hover:bg-blue-700 w-full text-center flex items-center justify-center gap-2"
+                  >
+                    💳 Payer avec FedaPay
+                  </a>
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-2 w-full">
+                    <p className="text-xs text-gray-500 mb-1 text-center">Lien de paiement :</p>
+                    <a
+                      href={qrModal.fedapayCheckoutUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-600 hover:text-blue-800 underline break-all block text-center"
+                    >
+                      {qrModal.fedapayCheckoutUrl}
+                    </a>
+                  </div>
+                </>
               )}
               <button
                 onClick={async () => {

@@ -700,7 +700,7 @@ model ChannelConnection {
   lastSyncAt      DateTime?     @map("last_sync_at")
   lastSyncStatus  String?       @map("last_sync_status")
   lastSyncError   String?       @map("last_sync_error")
-  syncIntervalMin Int           @default(15) @map("sync_interval_min")
+  syncIntervalMin Int           @default(1) @map("sync_interval_min")
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
