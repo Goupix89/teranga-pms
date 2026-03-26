@@ -122,12 +122,35 @@ export default function InvoicesPage() {
         <div className="card">
           <div className="table-container">
             <table>
-              <thead><tr><th>N° Facture</th><th>Client</th><th>Montant</th><th>Statut</th><th>Date</th><th>Actions</th></tr></thead>
+              <thead><tr><th>N° Facture</th><th>Détails</th><th>Montant</th><th>Statut</th><th>Date</th><th>Actions</th></tr></thead>
               <tbody>
                 {invoices.map((inv) => (
                   <tr key={inv.id}>
                     <td className="font-semibold text-gray-900">{inv.invoiceNumber}</td>
-                    <td>{inv.reservation?.guestName || '-'}</td>
+                    <td>
+                      <div className="space-y-0.5">
+                        {inv.reservation ? (
+                          <>
+                            <div className="font-medium text-gray-900">{inv.reservation.guestName}</div>
+                            <div className="text-xs text-gray-500">
+                              Chambre {inv.reservation.room?.number}
+                            </div>
+                          </>
+                        ) : inv.orders?.length ? (
+                          <>
+                            <div className="font-medium text-gray-900">
+                              {inv.orders.map((o) => o.orderNumber).join(', ')}
+                            </div>
+                          </>
+                        ) : null}
+                        {inv.notes && (
+                          <div className="text-xs text-gray-400 truncate max-w-[250px]" title={inv.notes}>{inv.notes}</div>
+                        )}
+                        {!inv.reservation && !inv.orders?.length && !inv.notes && (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </div>
+                    </td>
                     <td className="font-medium">{formatCurrency(inv.totalAmount)}</td>
                     <td><StatusBadge status={inv.status} /></td>
                     <td>{formatDate(inv.createdAt)}</td>

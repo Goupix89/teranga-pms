@@ -166,6 +166,7 @@ export interface Invoice {
   items?: InvoiceItem[];
   payments?: Payment[];
   reservation?: { id: string; guestName: string; room?: { number: string } };
+  orders?: { id: string; orderNumber: string }[];
   createdBy?: { id: string; firstName: string; lastName: string };
   createdAt: string;
 }
