@@ -539,7 +539,7 @@ private fun OrdersListView(
                         userRole = userRole,
                         onMarkServed = { viewModel.updateOrderStatus(it, "SERVED") },
                         onCancel = { viewModel.updateOrderStatus(it, "CANCELLED") },
-                        onShowQr = { invoiceId -> viewModel.fetchQrCode(invoiceId) },
+                        onShowQr = { invoiceId, pm -> viewModel.fetchQrCode(invoiceId, pm) },
                         onReceipt = { onReceipt(order) }
                     )
                 }
@@ -558,7 +558,7 @@ private fun OrderCard(
     userRole: String,
     onMarkServed: (String) -> Unit,
     onCancel: (String) -> Unit,
-    onShowQr: (String) -> Unit = {},
+    onShowQr: (String, String?) -> Unit = { _, _ -> },
     onReceipt: () -> Unit = {}
 ) {
     val statusColor = getStatusColor(order.status)
@@ -647,7 +647,7 @@ private fun OrderCard(
                             Icon(Icons.Default.Receipt, contentDescription = "Recu", tint = BronzeAbomey, modifier = Modifier.size(20.dp))
                         }
                         if (order.invoiceId != null) {
-                            IconButton(onClick = { onShowQr(order.invoiceId!!) }, modifier = Modifier.size(32.dp)) {
+                            IconButton(onClick = { onShowQr(order.invoiceId!!, order.paymentMethod) }, modifier = Modifier.size(32.dp)) {
                                 Icon(Icons.Default.QrCode, contentDescription = "QR code", tint = RougeDahomey, modifier = Modifier.size(20.dp))
                             }
                         }

@@ -47,7 +47,7 @@ interface PmsApiService {
     suspend fun getReservations(@Query("establishmentId") establishmentId: String? = null): ReservationsResponse
 
     @POST("api/reservations")
-    suspend fun createReservation(@Body body: Map<String, Any>): CreateReservationResponse
+    suspend fun createReservation(@Body body: HashMap<String, Any>): CreateReservationResponse
 
     @PATCH("api/reservations/{id}/dates")
     suspend fun updateReservationDates(@Path("id") id: String, @Body body: ReservationDatesRequest): GenericResponse
@@ -78,7 +78,10 @@ interface PmsApiService {
 
     // Invoices - QR code
     @GET("api/invoices/{id}/qrcode")
-    suspend fun getInvoiceQrCode(@Path("id") id: String): Response<QrCodeResponse>
+    suspend fun getInvoiceQrCode(
+        @Path("id") id: String,
+        @Query("paymentMethod") paymentMethod: String? = null
+    ): Response<QrCodeResponse>
 
     // Simulate payment (dev/test)
     @POST("api/invoices/{id}/simulate-payment")

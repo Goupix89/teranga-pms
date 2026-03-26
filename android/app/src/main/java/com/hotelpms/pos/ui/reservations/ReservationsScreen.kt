@@ -4,6 +4,8 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -23,7 +25,11 @@ import com.hotelpms.pos.domain.model.Reservation
 import com.hotelpms.pos.domain.model.Room
 import com.hotelpms.pos.ui.theme.*
 import java.text.NumberFormat
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -125,7 +131,7 @@ fun ReservationsScreen(
                         onUpdateDates = { checkIn, checkOut ->
                             viewModel.updateDates(reservation.id, checkIn, checkOut)
                         },
-                        onShowQrCode = { invoiceId -> viewModel.showQrCode(invoiceId) }
+                        onShowQrCode = { invoiceId, pm -> viewModel.showQrCode(invoiceId, pm) }
                     )
                 }
                 item { Spacer(modifier = Modifier.height(80.dp)) }
@@ -205,25 +211,27 @@ private fun QrCodePaymentDialog(
                 }
 
                 // Decode and display QR code image
-                val base64Data = qrCode.substringAfter("base64,", qrCode)
-                try {
-                    val bytes = Base64.decode(base64Data, Base64.DEFAULT)
-                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                    if (bitmap != null) {
-                        Card(
-                            modifier = Modifier.size(200.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White)
-                        ) {
-                            Image(
-                                bitmap = bitmap.asImageBitmap(),
-                                contentDescription = "QR Code",
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(8.dp)
-                            )
-                        }
+                val bitmap = remember(qrCode) {
+                    try {
+                        val base64Data = qrCode.substringAfter("base64,", qrCode)
+                        val bytes = Base64.decode(base64Data, Base64.DEFAULT)
+                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    } catch (_: Exception) { null }
+                }
+                if (bitmap != null) {
+                    Card(
+                        modifier = Modifier.size(200.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White)
+                    ) {
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = "QR Code",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(8.dp)
+                        )
                     }
-                } catch (_: Exception) {
+                } else {
                     Text("QR code indisponible", color = MaterialTheme.colorScheme.error)
                 }
 
@@ -299,7 +307,7 @@ private fun ReservationCard(
     onCheckIn: () -> Unit,
     onCheckOut: () -> Unit,
     onUpdateDates: (String, String) -> Unit,
-    onShowQrCode: (String) -> Unit
+    onShowQrCode: (String, String?) -> Unit
 ) {
     var showDateDialog by remember { mutableStateOf(false) }
 
@@ -435,7 +443,7 @@ private fun ReservationCard(
             ) {
                 // QR code button
                 if (invoice != null) {
-                    IconButton(onClick = { onShowQrCode(invoice.id) }) {
+                    IconButton(onClick = { onShowQrCode(invoice.id, invoice.paymentMethod) }) {
                         Icon(
                             Icons.Default.QrCode2,
                             contentDescription = "QR Code paiement",
@@ -499,6 +507,7 @@ private fun ReservationCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun UpdateDatesDialog(
     currentCheckIn: String,
@@ -508,6 +517,38 @@ private fun UpdateDatesDialog(
 ) {
     var checkIn by remember { mutableStateOf(currentCheckIn.substringBefore("T")) }
     var checkOut by remember { mutableStateOf(currentCheckOut.substringBefore("T")) }
+    var showCheckInPicker by remember { mutableStateOf(false) }
+    var showCheckOutPicker by remember { mutableStateOf(false) }
+    val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
+    val displayDateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE) }
+
+    // Convert current API dates to display format
+    val checkInDisplay = remember(checkIn) {
+        try {
+            val d = dateFormat.parse(checkIn)
+            if (d != null) displayDateFormat.format(d) else checkIn
+        } catch (_: Exception) { checkIn }
+    }
+    val checkOutDisplay = remember(checkOut) {
+        try {
+            val d = dateFormat.parse(checkOut)
+            if (d != null) displayDateFormat.format(d) else checkOut
+        } catch (_: Exception) { checkOut }
+    }
+
+    // Initial selected dates for pickers
+    val checkInMillis = remember(checkIn) {
+        try {
+            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).apply { timeZone = TimeZone.getTimeZone("UTC") }
+            sdf.parse(checkIn)?.time
+        } catch (_: Exception) { null }
+    }
+    val checkOutMillis = remember(checkOut) {
+        try {
+            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).apply { timeZone = TimeZone.getTimeZone("UTC") }
+            sdf.parse(checkOut)?.time
+        } catch (_: Exception) { null }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -515,20 +556,30 @@ private fun UpdateDatesDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
-                    value = checkIn,
-                    onValueChange = { checkIn = it },
-                    label = { Text("Date d'arriv\u00e9e (AAAA-MM-JJ)") },
+                    value = checkInDisplay,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Date d'arrivée") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    placeholder = { Text("2026-03-20") }
+                    trailingIcon = {
+                        IconButton(onClick = { showCheckInPicker = true }) {
+                            Icon(Icons.Default.CalendarMonth, contentDescription = "Choisir la date")
+                        }
+                    }
                 )
                 OutlinedTextField(
-                    value = checkOut,
-                    onValueChange = { checkOut = it },
-                    label = { Text("Date de d\u00e9part (AAAA-MM-JJ)") },
+                    value = checkOutDisplay,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Date de départ") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    placeholder = { Text("2026-03-25") }
+                    trailingIcon = {
+                        IconButton(onClick = { showCheckOutPicker = true }) {
+                            Icon(Icons.Default.CalendarMonth, contentDescription = "Choisir la date")
+                        }
+                    }
                 )
             }
         },
@@ -546,6 +597,88 @@ private fun UpdateDatesDialog(
             }
         }
     )
+
+    // Check-in date picker
+    if (showCheckInPicker) {
+        val today = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val pickerState = rememberDatePickerState(
+            initialSelectedDateMillis = checkInMillis ?: today,
+            selectableDates = object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean = utcTimeMillis >= today
+            }
+        )
+        DatePickerDialog(
+            onDismissRequest = { showCheckInPicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    pickerState.selectedDateMillis?.let { millis ->
+                        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).apply { timeZone = TimeZone.getTimeZone("UTC") }
+                        checkIn = sdf.format(Date(millis))
+                        // Auto-adjust checkout if it's before new check-in
+                        try {
+                            val ciDate = dateFormat.parse(checkIn)
+                            val coDate = dateFormat.parse(checkOut)
+                            if (ciDate != null && (coDate == null || !coDate.after(ciDate))) {
+                                val cal = Calendar.getInstance().apply { time = ciDate; add(Calendar.DAY_OF_MONTH, 1) }
+                                checkOut = dateFormat.format(cal.time)
+                            }
+                        } catch (_: Exception) {}
+                    }
+                    showCheckInPicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCheckInPicker = false }) { Text("Annuler") }
+            }
+        ) {
+            DatePicker(state = pickerState)
+        }
+    }
+
+    // Check-out date picker
+    if (showCheckOutPicker) {
+        val minCheckOut = try {
+            val ciDate = dateFormat.parse(checkIn)
+            if (ciDate != null) {
+                Calendar.getInstance().apply { time = ciDate; add(Calendar.DAY_OF_MONTH, 1) }.timeInMillis
+            } else {
+                Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                    add(Calendar.DAY_OF_MONTH, 1)
+                }.timeInMillis
+            }
+        } catch (_: Exception) {
+            Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                add(Calendar.DAY_OF_MONTH, 1)
+            }.timeInMillis
+        }
+        val pickerState = rememberDatePickerState(
+            initialSelectedDateMillis = checkOutMillis ?: minCheckOut,
+            selectableDates = object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean = utcTimeMillis >= minCheckOut
+            }
+        )
+        DatePickerDialog(
+            onDismissRequest = { showCheckOutPicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    pickerState.selectedDateMillis?.let { millis ->
+                        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).apply { timeZone = TimeZone.getTimeZone("UTC") }
+                        checkOut = sdf.format(Date(millis))
+                    }
+                    showCheckOutPicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCheckOutPicker = false }) { Text("Annuler") }
+            }
+        ) {
+            DatePicker(state = pickerState)
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -565,6 +698,10 @@ private fun CreateReservationDialog(
     var paymentMethod by remember { mutableStateOf("CASH") }
     var roomDropdownExpanded by remember { mutableStateOf(false) }
     var paymentDropdownExpanded by remember { mutableStateOf(false) }
+    var showCheckInPicker by remember { mutableStateOf(false) }
+    var showCheckOutPicker by remember { mutableStateOf(false) }
+    val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
+    val displayDateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE) }
 
     val availableRooms = rooms.filter { it.status == "AVAILABLE" }
     val selectedRoom = availableRooms.find { it.id == selectedRoomId }
@@ -586,7 +723,9 @@ private fun CreateReservationDialog(
         text = {
             Column(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
             ) {
                 // Room selector
                 ExposedDropdownMenuBox(
@@ -640,20 +779,56 @@ private fun CreateReservationDialog(
                     singleLine = true
                 )
                 OutlinedTextField(
-                    value = checkIn,
-                    onValueChange = { checkIn = it },
-                    label = { Text("Date d'arriv\u00e9e (AAAA-MM-JJ)") },
+                    value = if (checkIn.isNotBlank()) {
+                        try { displayDateFormat.format(dateFormat.parse(checkIn)!!) } catch (_: Exception) { checkIn }
+                    } else "",
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Date d'arriv\u00e9e") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    placeholder = { Text("2026-03-20") }
+                    placeholder = { Text("S\u00e9lectionner une date") },
+                    trailingIcon = {
+                        IconButton(onClick = { showCheckInPicker = true }) {
+                            Icon(Icons.Default.CalendarMonth, contentDescription = "Choisir la date")
+                        }
+                    },
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                        .also { source ->
+                            LaunchedEffect(source) {
+                                source.interactions.collect {
+                                    if (it is androidx.compose.foundation.interaction.PressInteraction.Release) {
+                                        showCheckInPicker = true
+                                    }
+                                }
+                            }
+                        }
                 )
                 OutlinedTextField(
-                    value = checkOut,
-                    onValueChange = { checkOut = it },
-                    label = { Text("Date de d\u00e9part (AAAA-MM-JJ)") },
+                    value = if (checkOut.isNotBlank()) {
+                        try { displayDateFormat.format(dateFormat.parse(checkOut)!!) } catch (_: Exception) { checkOut }
+                    } else "",
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Date de d\u00e9part") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    placeholder = { Text("2026-03-25") }
+                    placeholder = { Text("S\u00e9lectionner une date") },
+                    trailingIcon = {
+                        IconButton(onClick = { showCheckOutPicker = true }) {
+                            Icon(Icons.Default.CalendarMonth, contentDescription = "Choisir la date")
+                        }
+                    },
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                        .also { source ->
+                            LaunchedEffect(source) {
+                                source.interactions.collect {
+                                    if (it is androidx.compose.foundation.interaction.PressInteraction.Release) {
+                                        showCheckOutPicker = true
+                                    }
+                                }
+                            }
+                        }
                 )
                 OutlinedTextField(
                     value = guests,
@@ -721,6 +896,75 @@ private fun CreateReservationDialog(
             }
         }
     )
+
+    // Check-in date picker
+    if (showCheckInPicker) {
+        val today = Calendar.getInstance()
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = if (checkIn.isNotBlank()) {
+                try { dateFormat.parse(checkIn)?.time } catch (_: Exception) { null }
+            } else null,
+            selectableDates = object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean {
+                    return utcTimeMillis >= today.timeInMillis - 24 * 60 * 60 * 1000
+                }
+            }
+        )
+        DatePickerDialog(
+            onDismissRequest = { showCheckInPicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let { millis ->
+                        checkIn = dateFormat.format(Date(millis))
+                        // Auto-set checkout to next day if empty or before checkin
+                        val nextDay = dateFormat.format(Date(millis + 24 * 60 * 60 * 1000))
+                        if (checkOut.isBlank() || checkOut <= checkIn) {
+                            checkOut = nextDay
+                        }
+                    }
+                    showCheckInPicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCheckInPicker = false }) { Text("Annuler") }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+
+    // Check-out date picker
+    if (showCheckOutPicker) {
+        val minDate = if (checkIn.isNotBlank()) {
+            try { dateFormat.parse(checkIn)?.time?.plus(24 * 60 * 60 * 1000) } catch (_: Exception) { null }
+        } else null
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = if (checkOut.isNotBlank()) {
+                try { dateFormat.parse(checkOut)?.time } catch (_: Exception) { null }
+            } else null,
+            selectableDates = object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean {
+                    return minDate == null || utcTimeMillis >= minDate
+                }
+            }
+        )
+        DatePickerDialog(
+            onDismissRequest = { showCheckOutPicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let { millis ->
+                        checkOut = dateFormat.format(Date(millis))
+                    }
+                    showCheckOutPicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCheckOutPicker = false }) { Text("Annuler") }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
 }
 
 private fun formatDate(isoString: String): String {

@@ -221,7 +221,7 @@ class OrdersViewModel @Inject constructor(
                     )
                     fetchOrders()
                     if (invoiceId != null) {
-                        fetchQrCode(invoiceId)
+                        fetchQrCode(invoiceId, uiState.paymentMethod)
                     }
                 } else {
                     uiState = uiState.copy(isCreating = false, error = "Erreur lors de la création")
@@ -232,10 +232,10 @@ class OrdersViewModel @Inject constructor(
         }
     }
 
-    fun fetchQrCode(invoiceId: String) {
+    fun fetchQrCode(invoiceId: String, paymentMethod: String? = null) {
         viewModelScope.launch {
             try {
-                val response = apiService.getInvoiceQrCode(invoiceId)
+                val response = apiService.getInvoiceQrCode(invoiceId, paymentMethod)
                 if (response.isSuccessful && response.body()?.data != null) {
                     uiState = uiState.copy(
                         qrCodeData = response.body()!!.data,

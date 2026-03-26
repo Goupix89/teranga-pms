@@ -45,7 +45,7 @@ export class ReservationService {
         where,
         include: {
           room: { select: { id: true, number: true, type: true, establishment: { select: { name: true } } } },
-          invoices: { select: { id: true, invoiceNumber: true, status: true, totalAmount: true }, take: 1, orderBy: { createdAt: 'desc' as const } },
+          invoices: { select: { id: true, invoiceNumber: true, status: true, totalAmount: true, paymentMethod: true }, take: 1, orderBy: { createdAt: 'desc' as const } },
         },
         ...toSkipTake(params),
       }),

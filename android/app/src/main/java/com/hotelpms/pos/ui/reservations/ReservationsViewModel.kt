@@ -145,7 +145,7 @@ class ReservationsViewModel @Inject constructor(
         viewModelScope.launch {
             uiState = uiState.copy(isLoading = true)
             try {
-                val body = mapOf<String, Any>(
+                val body = hashMapOf<String, Any>(
                     "roomId" to roomId,
                     "guestName" to guestName,
                     "guestEmail" to guestEmail,
@@ -163,7 +163,7 @@ class ReservationsViewModel @Inject constructor(
                     // Auto-show QR code if invoice was generated
                     val invoiceId = response.data?.invoiceId
                     if (invoiceId != null) {
-                        showQrCode(invoiceId)
+                        showQrCode(invoiceId, paymentMethod)
                     }
                 } else {
                     uiState = uiState.copy(isLoading = false, error = response.message ?: "Erreur")
@@ -174,10 +174,10 @@ class ReservationsViewModel @Inject constructor(
         }
     }
 
-    fun showQrCode(invoiceId: String) {
+    fun showQrCode(invoiceId: String, paymentMethod: String? = null) {
         viewModelScope.launch {
             try {
-                val response = api.getInvoiceQrCode(invoiceId)
+                val response = api.getInvoiceQrCode(invoiceId, paymentMethod)
                 if (response.isSuccessful) {
                     val body = response.body()
                     if (body?.data != null) {

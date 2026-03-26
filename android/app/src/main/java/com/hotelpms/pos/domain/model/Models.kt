@@ -155,7 +155,8 @@ data class ReservationInvoice(
     val id: String,
     val invoiceNumber: String,
     val status: String,
-    val totalAmount: Double
+    val totalAmount: Double,
+    val paymentMethod: String? = null
 )
 
 data class ReservationsResponse(
