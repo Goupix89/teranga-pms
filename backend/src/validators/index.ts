@@ -165,7 +165,7 @@ export const createReservationSchema = z.object({
   checkOut: z.string().date('Format YYYY-MM-DD requis'),
   numberOfGuests: z.number().int().min(1).max(20).default(1),
   source: z.enum(['DIRECT', 'BOOKING_COM', 'EXPEDIA', 'AIRBNB', 'CHANNEL_MANAGER', 'PHONE', 'WALK_IN']).default('DIRECT'),
-  paymentMethod: z.enum(['CASH', 'CARD', 'BANK_TRANSFER', 'MOBILE_MONEY', 'MOOV_MONEY', 'MIXX_BY_YAS', 'OTHER']).optional(),
+  paymentMethod: z.enum(['CASH', 'CARD', 'BANK_TRANSFER', 'MOBILE_MONEY', 'MOOV_MONEY', 'MIXX_BY_YAS', 'FEDAPAY', 'OTHER']).optional(),
   notes: z.string().max(1000).optional(),
 }).refine(
   (d) => new Date(d.checkOut) > new Date(d.checkIn),
@@ -220,7 +220,7 @@ export const updateInvoiceSchema = z.object({
 export const createPaymentSchema = z.object({
   invoiceId: z.string().uuid(),
   amount: z.number().positive(),
-  method: z.enum(['CASH', 'CARD', 'BANK_TRANSFER', 'MOBILE_MONEY', 'MOOV_MONEY', 'MIXX_BY_YAS', 'OTHER']),
+  method: z.enum(['CASH', 'CARD', 'BANK_TRANSFER', 'MOBILE_MONEY', 'MOOV_MONEY', 'MIXX_BY_YAS', 'FEDAPAY', 'OTHER']),
   reference: z.string().max(100).optional(),
 });
 
@@ -250,8 +250,13 @@ export const externalBookingSchema = z.object({
   start: z.string().date(),
   end: z.string().date(),
   guest: z.string().min(1).max(200),
+  guestEmail: z.string().email().max(200).optional(),
+  guestPhone: z.string().max(30).optional(),
   source: z.enum(['BOOKING_COM', 'EXPEDIA', 'AIRBNB', 'CHANNEL_MANAGER']).default('CHANNEL_MANAGER'),
   externalRef: z.string().max(100).optional(),
+  paymentMethod: z.enum(['CASH', 'CARD', 'BANK_TRANSFER', 'MOBILE_MONEY', 'MOOV_MONEY', 'MIXX_BY_YAS', 'FEDAPAY', 'OTHER']).optional(),
+  fedapayTransactionId: z.string().max(100).optional(),
+  numberOfGuests: z.number().int().min(1).max(20).default(1),
 }).refine(
   (d) => new Date(d.end) > new Date(d.start),
   { message: 'end doit être après start' }
@@ -356,7 +361,7 @@ export const registerTenantSchema = z.object({
 export const createOrderSchema = z.object({
   establishmentId: z.string().uuid(),
   tableNumber: z.string().max(20).optional(),
-  paymentMethod: z.enum(['CASH', 'CARD', 'BANK_TRANSFER', 'MOBILE_MONEY', 'MOOV_MONEY', 'MIXX_BY_YAS', 'OTHER']).optional(),
+  paymentMethod: z.enum(['CASH', 'CARD', 'BANK_TRANSFER', 'MOBILE_MONEY', 'MOOV_MONEY', 'MIXX_BY_YAS', 'FEDAPAY', 'OTHER']).optional(),
   items: z.array(z.object({
     articleId: z.string().uuid(),
     quantity: z.number().int().positive().max(999),
@@ -414,4 +419,20 @@ export const addMemberSchema = z.object({
 
 export const updateMemberRoleSchema = z.object({
   role: establishmentRoleEnum,
+});
+
+// =============================================================================
+// API Keys
+// =============================================================================
+
+export const createApiKeySchema = z.object({
+  name: z.string().min(1, 'Le nom est requis').max(100, 'Nom trop long (max 100)'),
+  expiresInDays: z.number().int().min(1).max(365).default(90),
+  allowedIps: z.array(z.string().max(45)).max(20).default([]),
+});
+
+export const updateApiKeySchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  isActive: z.boolean().optional(),
+  allowedIps: z.array(z.string().max(45)).max(20).optional(),
 });

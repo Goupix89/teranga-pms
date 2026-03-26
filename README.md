@@ -9,6 +9,7 @@ hotel-pms/
 ├── backend/           # API REST — Node.js/Express + TypeScript + Prisma + PostgreSQL
 ├── frontend/          # Interface Web — Next.js 14 (App Router) + TypeScript + Tailwind CSS
 ├── android/           # App Mobile — Kotlin + Jetpack Compose + Hilt + Room DB
+├── wordpress/         # Plugins WordPress (Teranga Booking, BA Book Everything Sync)
 ├── docs/              # Documentation (RBAC, Guide utilisateur)
 └── docker-compose.yml # PostgreSQL, Redis, API, Frontend
 ```
@@ -22,7 +23,7 @@ hotel-pms/
 | ORM / DB | Prisma + PostgreSQL 15+ |
 | Cache | Redis 7 |
 | Auth | JWT (access + refresh tokens), bcryptjs, RBAC 2 niveaux |
-| Paiement | Stripe (abonnements), Flooz/Yas via QR code (commandes) |
+| Paiement | Stripe (abonnements), Flooz/Yas via QR code (commandes), FedaPay (WordPress) |
 | QR Code | `qrcode` npm (génération data URL côté serveur) |
 | Upload | Multer (images articles, max 5 Mo, JPG/PNG/WebP) |
 | Mobile | Kotlin, Jetpack Compose, Room DB, Retrofit, Hilt DI |
@@ -45,7 +46,7 @@ hotel-pms/
 5. **Chambres** — CRUD, gestion des statuts, filtres avancés
 6. **Réservations** — CRUD, check-in/check-out, anti-double-booking transactionnel, paiement par QR code ou espèces, auto-génération facture et reçu PDF
 7. **Factures** — Lifecycle complet (brouillon → émise → payée), numérotation auto `FAC-YYYYMMDD-NNNN`
-8. **Paiements** — Multi-méthodes (Espèces, Carte, Mobile Money, Flooz, Yas, Virement), idempotence POS via UUID
+8. **Paiements** — Multi-méthodes (Espèces, Carte, Mobile Money, Flooz, Yas, FedaPay, Virement), idempotence POS via UUID
 9. **Commandes** — Création avec moyen de paiement, auto-génération facture, QR code pour paiement client
 10. **Menu & Articles** — Catégories Restaurant/Boissons, upload d'images, workflow d'approbation DAF, stock optionnel pour plats préparés
 11. **Cuisine** — Vue temps réel des commandes pour les cuisiniers, notification serveur quand prêt
@@ -53,7 +54,7 @@ hotel-pms/
 13. **Fournisseurs** — CRUD complet
 14. **Ménage** — Pointage début/fin (clock-in/clock-out), chambre indisponible pendant nettoyage, démarrage direct depuis notification
 15. **Rapports** — Taux d'occupation, revenus, performance par serveur, export CSV, graphiques
-16. **Intégrations** — API disponibilité (JSON/iCal), Channel Manager, POS Android
+16. **Intégrations** — API disponibilité (JSON/iCal), Channel Manager, POS Android, WordPress + FedaPay
 17. **Inscription & Abonnements** — Inscription self-service avec paiement Stripe, plans Basic/Pro/Enterprise
 18. **Notifications temps réel** — SSE + polling, alertes par rôle (checkout, ménage, commandes, approbations, stock), navigation contextuelle (clic → page concernée)
 19. **Synchronisation calendrier (iCal)** — Sync bidirectionnelle des disponibilités avec Airbnb, Booking.com, Expedia via iCal
@@ -80,6 +81,7 @@ Serveur crée une commande (web ou mobile)
 | `CASH` | Espèces | Paiement en liquide |
 | `CARD` | Carte bancaire | Paiement par carte |
 | `MOBILE_MONEY` | Mobile Money | Paiement mobile générique |
+| `FEDAPAY` | FedaPay | Paiement via FedaPay (Mobile Money, carte) — WordPress |
 | `BANK_TRANSFER` | Virement | Virement bancaire |
 
 ## Workflow d'approbation des articles
@@ -220,6 +222,7 @@ Le système utilise un **RBAC à 2 niveaux** :
 | Stock & Inventaire | X | X | X | X | | | | |
 | Alertes stock | X | X | X | X | | | | |
 | Canaux (iCal sync) | X | X | X | X | | | | |
+| Clés API | X | X | X | | | | | |
 | Factures & Paiements | X | X | X | X | X | X | | |
 | Reçus & Factures PDF | X | X | X | X | X | | | |
 | Commandes + QR code | X | X | X | X | X | | | |
@@ -296,11 +299,53 @@ Le système utilise un **RBAC à 2 niveaux** :
 - `POST /api/channels/:id/regenerate-token` — Régénérer le token d'export
 - `GET /api/calendar/:token.ics` — **Feed iCal public** (sans authentification, token dans l'URL)
 
+### Clés API
+- `GET /api/api-keys` — Liste des clés API du tenant
+- `POST /api/api-keys` — Créer une nouvelle clé API (retourne la clé en clair une seule fois)
+- `PATCH /api/api-keys/:id` — Modifier (nom, activer/désactiver, IPs autorisées)
+- `DELETE /api/api-keys/:id` — Supprimer une clé API
+
 ### Intégrations
 - `GET /api/availability.json` — Disponibilité chambres (JSON)
 - `GET /api/availability.ics` — Calendrier iCal global (RFC 5545, authentifié)
-- `POST /api/external-bookings` — Réservations Channel Manager (API Key)
+- `POST /api/external-bookings` — Réservations Channel Manager (API Key) avec paiement FedaPay
+- `POST /api/webhooks/fedapay` — Webhook FedaPay (confirmation paiement, public)
 - `POST /api/pos/transactions` — Transactions POS Android
+
+### Plugin WordPress — Teranga Booking
+Un plugin WordPress est fourni dans `wordpress/teranga-booking/` pour intégrer un formulaire de réservation avec paiement FedaPay sur un site externe.
+
+**Installation :**
+1. Copier le dossier `teranga-booking/` dans `wp-content/plugins/`
+2. Activer le plugin dans WordPress
+3. Aller dans **Réglages → Teranga Booking** et configurer :
+   - URL API Teranga PMS (ex: `https://api.mon-hotel.teranga.app`)
+   - Clé API Teranga (générée depuis le PMS)
+   - Clés FedaPay (publique + secrète, depuis [app.fedapay.com](https://app.fedapay.com))
+   - Environnement : `sandbox` pour les tests, `live` pour la production
+4. Configurer le webhook dans FedaPay Dashboard :
+   - URL : `https://api.mon-hotel.teranga.app/api/webhooks/fedapay`
+   - Événement : `transaction.approved`
+5. Insérer le shortcode `[teranga_booking]` dans une page WordPress
+
+**Flux de paiement :**
+1. Le client remplit le formulaire sur le site WordPress
+2. FedaPay Checkout s'ouvre pour le paiement (Mobile Money, carte, etc.)
+3. Paiement confirmé → la réservation est créée dans Teranga PMS avec facture
+4. Le webhook FedaPay confirme le paiement côté serveur (double sécurité)
+
+### Plugin BA Book Everything Sync
+Si votre site WordPress utilise déjà **BA Book Everything** avec FedaPay, utilisez le plugin `wordpress/teranga-ba-sync/` à la place :
+
+1. Copier `teranga-ba-sync/` dans `wp-content/plugins/`
+2. Activer dans WordPress
+3. Configurer dans **Réglages → Teranga BA Sync** :
+   - URL API et clé API Teranga
+   - **Mapping chambres** : associer chaque ID d'objet BA au numéro de chambre Teranga (JSON `{"ID_BA": "NUM_CHAMBRE"}`)
+   - Moment de sync : `babe_order_paid` (recommandé) ou `babe_order_completed`
+4. Configurer le webhook FedaPay (même URL que ci-dessus)
+
+Le plugin écoute automatiquement les hooks de BA Book Everything et synchronise chaque réservation payée vers Teranga PMS (avec facture et paiement auto-enregistré). Les annulations sont aussi propagées.
 
 ## Synchronisation Calendrier (iCal) — Guide de configuration
 

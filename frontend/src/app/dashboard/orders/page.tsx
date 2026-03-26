@@ -29,7 +29,7 @@ export default function OrdersPage() {
   const isDAFOrManager = isSuperAdmin || ['DAF', 'MANAGER'].includes(currentEstRole || '');
 
   const [form, setForm] = useState({ establishmentId: '', tableNumber: '', paymentMethod: 'MOOV_MONEY' as PaymentMethod, items: [{ articleId: '', quantity: 1 }] as Array<{ articleId: string; quantity: number }>, notes: '' });
-  const [qrModal, setQrModal] = useState<{ open: boolean; invoiceId?: string; qrCode?: string; invoiceNumber?: string; totalAmount?: number; paymentLabel?: string; currency?: string; paid?: boolean }>({ open: false });
+  const [qrModal, setQrModal] = useState<{ open: boolean; invoiceId?: string; qrCode?: string; invoiceNumber?: string; totalAmount?: number; paymentLabel?: string; currency?: string; paid?: boolean; fedapayCheckoutUrl?: string }>({ open: false });
 
   // Fetch users (servers) for filter — only for DAF/Manager
   const { data: usersData } = useQuery({
@@ -73,6 +73,7 @@ export default function OrdersPage() {
               totalAmount: qrRes.data.invoice?.totalAmount,
               paymentLabel: qrRes.data.paymentLabel,
               currency: qrRes.data.invoice?.currency || 'XOF',
+              fedapayCheckoutUrl: qrRes.data.fedapayCheckoutUrl,
             });
           }
         } catch {
@@ -237,7 +238,7 @@ export default function OrdersPage() {
                     <td className="text-sm">
                       <div className="flex items-center gap-1">
                         <span className="text-gray-600">
-                          {order.paymentMethod === 'MOOV_MONEY' ? 'Flooz' : order.paymentMethod === 'MIXX_BY_YAS' ? 'Yas' : order.paymentMethod || '-'}
+                          {order.paymentMethod === 'MOOV_MONEY' ? 'Flooz' : order.paymentMethod === 'MIXX_BY_YAS' ? 'Yas' : order.paymentMethod === 'FEDAPAY' ? 'FedaPay' : order.paymentMethod || '-'}
                         </span>
                         {order.invoiceId && (
                           <button
@@ -253,6 +254,7 @@ export default function OrdersPage() {
                                     totalAmount: qrRes.data.invoice?.totalAmount,
                                     paymentLabel: qrRes.data.paymentLabel,
                                     currency: qrRes.data.invoice?.currency || 'XOF',
+                                    fedapayCheckoutUrl: qrRes.data.fedapayCheckoutUrl,
                                   });
                                 }
                               } catch {
@@ -320,9 +322,15 @@ export default function OrdersPage() {
               <img src={qrModal.qrCode} alt="QR Code de paiement" className="w-64 h-64" />
             </div>
           )}
-          <p className="text-xs text-gray-400 text-center max-w-xs">
-            Le client doit scanner ce QR code avec son application {qrModal.paymentLabel} pour effectuer le paiement.
-          </p>
+          {qrModal.fedapayCheckoutUrl ? (
+            <p className="text-xs text-gray-400 text-center max-w-xs">
+              Scannez le QR code ou cliquez sur le bouton ci-dessous pour payer via FedaPay.
+            </p>
+          ) : (
+            <p className="text-xs text-gray-400 text-center max-w-xs">
+              Le client doit scanner ce QR code avec son application {qrModal.paymentLabel} pour effectuer le paiement.
+            </p>
+          )}
           {qrModal.paid ? (
             <div className="flex flex-col items-center gap-2 w-full max-w-xs">
               <div className="flex items-center gap-2 text-green-600 bg-green-50 border border-green-200 rounded-lg px-4 py-3 w-full justify-center">
@@ -335,6 +343,16 @@ export default function OrdersPage() {
             </div>
           ) : (
             <div className="flex flex-col gap-2 w-full max-w-xs">
+              {qrModal.fedapayCheckoutUrl && (
+                <a
+                  href={qrModal.fedapayCheckoutUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-primary bg-blue-600 hover:bg-blue-700 w-full text-center flex items-center justify-center gap-2"
+                >
+                  💳 Payer avec FedaPay
+                </a>
+              )}
               <button
                 onClick={async () => {
                   try {
@@ -386,6 +404,7 @@ export default function OrdersPage() {
                 <option value="CASH">Espèces</option>
                 <option value="CARD">Carte bancaire</option>
                 <option value="MOBILE_MONEY">Mobile Money</option>
+                <option value="FEDAPAY">FedaPay</option>
                 <option value="BANK_TRANSFER">Virement</option>
               </select>
             </div>

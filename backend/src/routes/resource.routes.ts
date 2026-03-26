@@ -37,6 +37,9 @@ import { receiptService } from '../services/receipt.service';
 const QRCode = require('qrcode');
 import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
+import crypto from 'crypto';
+import { config } from '../config';
+import { encrypt, decrypt, maskSecret } from '../utils/encryption';
 
 // Helper to wrap async route handlers
 const asyncHandler = (fn: (req: Request, res: Response, next: NextFunction) => Promise<any>) =>
@@ -568,10 +571,106 @@ invoiceRouter.get('/:id/qrcode', authenticate,
       select: { paymentMethod: true, orderNumber: true, tableNumber: true },
     });
 
-    const paymentMethod = order?.paymentMethod || 'MOBILE_MONEY';
+    // Also check reservation for paymentMethod (reservations store it in the create response)
+    let reservationPaymentMethod: string | null = null;
+    if (invoice.reservationId) {
+      const reservation = await prisma.reservation.findUnique({
+        where: { id: invoice.reservationId },
+        select: { id: true },
+      });
+      // The paymentMethod from reservations is passed as query param
+      if (req.query.paymentMethod) {
+        reservationPaymentMethod = req.query.paymentMethod as string;
+      }
+    }
 
-    // Build QR code payload
-    const qrPayload = {
+    const paymentMethod = order?.paymentMethod || reservationPaymentMethod || (req.query.paymentMethod as string) || 'MOBILE_MONEY';
+
+    // FedaPay: create a transaction and get checkout URL
+    let fedapayCheckoutUrl: string | undefined;
+    if (paymentMethod === 'FEDAPAY') {
+      // Get FedaPay config: tenant settings first, then global env fallback
+      const tenant = await prisma.tenant.findUnique({
+        where: { id: req.user!.tenantId },
+        select: { settings: true },
+      });
+      const tenantSettings = (tenant?.settings as Record<string, any>) || {};
+
+      let fedapayKey = '';
+      let isSandbox = true;
+      let callbackUrl = '';
+
+      if (tenantSettings.fedapaySecretKey) {
+        fedapayKey = decrypt(tenantSettings.fedapaySecretKey);
+        isSandbox = tenantSettings.fedapaySandbox !== false;
+        callbackUrl = tenantSettings.fedapayCallbackUrl || '';
+      } else if (config.fedapay.secretKey) {
+        fedapayKey = config.fedapay.secretKey;
+        isSandbox = config.fedapay.isSandbox;
+        callbackUrl = config.fedapay.callbackUrl;
+      }
+
+      if (fedapayKey) {
+        try {
+          const apiBase = isSandbox
+            ? 'https://sandbox-api.fedapay.com'
+            : 'https://api.fedapay.com';
+
+          // Create FedaPay transaction
+          const txnResponse = await fetch(`${apiBase}/v1/transactions`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${fedapayKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              description: `Paiement facture ${invoice.invoiceNumber}`,
+              amount: Number(invoice.totalAmount),
+              currency: { iso: invoice.currency || 'XOF' },
+              callback_url: callbackUrl,
+              custom_metadata: {
+                invoice_id: invoice.id,
+                invoice_number: invoice.invoiceNumber,
+                reservation_id: invoice.reservationId || null,
+                tenant_id: req.user!.tenantId,
+              },
+            }),
+          });
+
+          if (txnResponse.ok) {
+            const txnData = await txnResponse.json() as any;
+            const transactionId = txnData?.v1?.transaction?.id;
+
+            if (transactionId) {
+              // Generate payment token/URL
+              const tokenResponse = await fetch(`${apiBase}/v1/transactions/${transactionId}/token`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${fedapayKey}`,
+                  'Content-Type': 'application/json',
+                },
+              });
+
+              if (tokenResponse.ok) {
+                const tokenData = await tokenResponse.json() as any;
+                const token = tokenData?.token;
+                if (token) {
+                  fedapayCheckoutUrl = isSandbox
+                    ? `https://sandbox-checkout.fedapay.com/checkout/${token}`
+                    : `https://checkout.fedapay.com/checkout/${token}`;
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.error('FedaPay transaction creation error:', err);
+          // Continue without FedaPay URL — fallback to regular QR
+        }
+      }
+    }
+
+    // Build QR code: for FedaPay, encode the checkout URL; otherwise, encode JSON payload
+    const qrContent = fedapayCheckoutUrl || JSON.stringify({
       type: 'TERANGA_PMS_PAYMENT',
       invoiceId: invoice.id,
       invoiceNumber: invoice.invoiceNumber,
@@ -581,9 +680,9 @@ invoiceRouter.get('/:id/qrcode', authenticate,
       orderNumber: order?.orderNumber,
       tableNumber: order?.tableNumber,
       status: invoice.status,
-    };
+    });
 
-    const qrDataUrl = await QRCode.toDataURL(JSON.stringify(qrPayload), {
+    const qrDataUrl = await QRCode.toDataURL(qrContent, {
       width: 400,
       margin: 2,
       color: { dark: '#3E2723', light: '#FFF8E1' },
@@ -601,7 +700,8 @@ invoiceRouter.get('/:id/qrcode', authenticate,
           currency: invoice.currency || 'XOF',
         },
         paymentMethod,
-        paymentLabel: paymentMethod === 'MOOV_MONEY' ? 'Flooz' : paymentMethod === 'MIXX_BY_YAS' ? 'Yas' : paymentMethod,
+        paymentLabel: paymentMethod === 'MOOV_MONEY' ? 'Flooz' : paymentMethod === 'MIXX_BY_YAS' ? 'Yas' : paymentMethod === 'FEDAPAY' ? 'FedaPay' : paymentMethod,
+        fedapayCheckoutUrl,
       },
     });
   })
@@ -1027,11 +1127,11 @@ integrationRouter.get('/availability.ics', authenticate,
 // POST /api/external-bookings (API Key auth for channel managers)
 integrationRouter.post('/external-bookings', authenticateApiKey, validate(v.externalBookingSchema),
   asyncHandler(async (req, res) => {
-    const { room, start, end, guest, source, externalRef } = req.body;
+    const { room, start, end, guest, guestEmail, guestPhone, source, externalRef, paymentMethod, fedapayTransactionId, numberOfGuests } = req.body;
 
     // Resolve room by number
-    const { prisma } = await import('../utils/prisma');
-    const roomEntity = await prisma.room.findFirst({
+    const { prisma: db } = await import('../utils/prisma');
+    const roomEntity = await db.room.findFirst({
       where: { tenantId: req.tenantId!, number: room, isActive: true },
     });
 
@@ -1039,22 +1139,66 @@ integrationRouter.post('/external-bookings', authenticateApiKey, validate(v.exte
       return res.status(404).json({ success: false, error: `Chambre ${room} introuvable` });
     }
 
+    // Find a tenant member (OWNER preferred) for invoice createdById
+    const tenantMember = await db.user.findFirst({
+      where: { tenantId: req.tenantId!, status: 'ACTIVE' },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+
     const reservation = await reservationService.create(req.tenantId!, {
       roomId: roomEntity.id,
       guestName: guest,
+      guestEmail,
+      guestPhone,
       checkIn: start,
       checkOut: end,
-      numberOfGuests: 1,
+      numberOfGuests: numberOfGuests || 1,
       source: source || 'CHANNEL_MANAGER',
       externalRef,
-    });
+      paymentMethod: paymentMethod || (fedapayTransactionId ? 'FEDAPAY' : undefined),
+    }, tenantMember?.id); // Pass userId to auto-generate invoice
+
+    // If FedaPay transaction ID provided, auto-record payment
+    let paymentId: string | undefined;
+    if (fedapayTransactionId && reservation.invoiceId) {
+      try {
+        const invoice = await db.invoice.findFirst({
+          where: { id: reservation.invoiceId, tenantId: req.tenantId! },
+        });
+        if (invoice) {
+          const result = await paymentService.create(req.tenantId!, {
+            invoiceId: reservation.invoiceId,
+            amount: invoice.totalAmount.toNumber(),
+            method: 'FEDAPAY',
+            reference: fedapayTransactionId,
+            transactionUuid: `fedapay_${fedapayTransactionId}`,
+          });
+          paymentId = result.payment.id;
+        }
+      } catch (e: any) {
+        // Payment recording failed but reservation was created — log and continue
+        const { logger } = await import('../utils/logger');
+        logger.warn('Failed to auto-record FedaPay payment for external booking', {
+          reservationId: reservation.id,
+          fedapayTransactionId,
+          error: e.message,
+        });
+      }
+    }
 
     res.status(201).json({
-      id: reservation.id,
-      room: room,
-      checkIn: reservation.checkIn,
-      checkOut: reservation.checkOut,
-      status: reservation.status,
+      success: true,
+      data: {
+        id: reservation.id,
+        room: room,
+        checkIn: reservation.checkIn,
+        checkOut: reservation.checkOut,
+        status: reservation.status,
+        invoiceId: reservation.invoiceId,
+        paymentId,
+        paymentStatus: paymentId ? 'PAID' : 'PENDING',
+      },
     });
   })
 );
@@ -1134,5 +1278,282 @@ channelRouter.post('/:id/regenerate-token', authenticate, requireDAFOrManager,
   asyncHandler(async (req, res) => {
     const data = await channelSyncService.regenerateToken(req.user!.tenantId, req.params.id);
     res.json({ success: true, data });
+  })
+);
+
+// =============================================================================
+// API KEYS MANAGEMENT
+// =============================================================================
+export const apiKeyRouter = Router();
+
+// GET /api/api-keys — list tenant's API keys
+apiKeyRouter.get('/', authenticate, requireDAF,
+  asyncHandler(async (req, res) => {
+    const keys = await prisma.apiKey.findMany({
+      where: { tenantId: req.user!.tenantId },
+      select: {
+        id: true,
+        name: true,
+        prefix: true,
+        isActive: true,
+        expiresAt: true,
+        lastUsedAt: true,
+        allowedIps: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json({ success: true, data: keys });
+  })
+);
+
+// POST /api/api-keys — create a new API key
+apiKeyRouter.post('/', authenticate, requireDAF, validate(v.createApiKeySchema),
+  asyncHandler(async (req, res) => {
+    const { name, expiresInDays, allowedIps } = req.body;
+
+    // Generate a secure random key
+    const rawKey = `tpms_${crypto.randomBytes(32).toString('hex')}`;
+    const prefix = rawKey.slice(0, 12);
+    const keyHash = crypto.createHash('sha256').update(rawKey).digest('hex');
+
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + (expiresInDays || 90));
+
+    const apiKey = await prisma.apiKey.create({
+      data: {
+        tenantId: req.user!.tenantId,
+        name,
+        keyHash,
+        prefix,
+        expiresAt,
+        allowedIps: allowedIps || [],
+      },
+      select: {
+        id: true,
+        name: true,
+        prefix: true,
+        isActive: true,
+        expiresAt: true,
+        allowedIps: true,
+        createdAt: true,
+      },
+    });
+
+    // Return the full key ONLY on creation (never stored in plain text)
+    res.status(201).json({
+      success: true,
+      data: { ...apiKey, key: rawKey },
+      message: 'Clé API créée. Copiez-la maintenant, elle ne sera plus affichée.',
+    });
+  })
+);
+
+// PATCH /api/api-keys/:id — update an API key
+apiKeyRouter.patch('/:id', authenticate, requireDAF, validate(v.updateApiKeySchema),
+  asyncHandler(async (req, res) => {
+    const existing = await prisma.apiKey.findFirst({
+      where: { id: req.params.id, tenantId: req.user!.tenantId },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Clé API introuvable' });
+    }
+
+    const updated = await prisma.apiKey.update({
+      where: { id: req.params.id },
+      data: req.body,
+      select: {
+        id: true,
+        name: true,
+        prefix: true,
+        isActive: true,
+        expiresAt: true,
+        lastUsedAt: true,
+        allowedIps: true,
+        createdAt: true,
+      },
+    });
+
+    res.json({ success: true, data: updated });
+  })
+);
+
+// DELETE /api/api-keys/:id — delete an API key
+apiKeyRouter.delete('/:id', authenticate, requireDAF,
+  asyncHandler(async (req, res) => {
+    const existing = await prisma.apiKey.findFirst({
+      where: { id: req.params.id, tenantId: req.user!.tenantId },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Clé API introuvable' });
+    }
+
+    await prisma.apiKey.delete({ where: { id: req.params.id } });
+
+    res.json({ success: true, message: 'Clé API supprimée' });
+  })
+);
+
+// =============================================================================
+// TENANT SETTINGS (FedaPay, etc.)
+// =============================================================================
+export const tenantSettingsRouter = Router();
+
+// GET /api/tenant/settings — get tenant settings (secrets masked)
+tenantSettingsRouter.get('/', authenticate, requireOwner,
+  asyncHandler(async (req, res) => {
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: req.user!.tenantId },
+      select: { settings: true },
+    });
+
+    const settings = (tenant?.settings as Record<string, any>) || {};
+
+    // Return settings with secrets masked
+    const safeSettings: Record<string, any> = {
+      currency: settings.currency || 'XOF',
+      language: settings.language || 'fr',
+      fedapay: {
+        enabled: !!settings.fedapaySecretKey,
+        secretKeyMasked: settings.fedapaySecretKey ? maskSecret(decrypt(settings.fedapaySecretKey)) : null,
+        isSandbox: settings.fedapaySandbox !== false,
+        callbackUrl: settings.fedapayCallbackUrl || '',
+      },
+    };
+
+    res.json({ success: true, data: safeSettings });
+  })
+);
+
+// PATCH /api/tenant/settings/fedapay — configure FedaPay for this tenant
+tenantSettingsRouter.patch('/fedapay', authenticate, requireOwner,
+  asyncHandler(async (req, res) => {
+    const { secretKey, isSandbox, callbackUrl } = req.body;
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: req.user!.tenantId },
+      select: { settings: true },
+    });
+
+    const currentSettings = (tenant?.settings as Record<string, any>) || {};
+
+    // Build updated settings
+    const updatedSettings: Record<string, any> = { ...currentSettings };
+
+    if (secretKey !== undefined) {
+      if (secretKey === '' || secretKey === null) {
+        // Remove FedaPay config
+        delete updatedSettings.fedapaySecretKey;
+      } else {
+        // Validate key format
+        if (!secretKey.startsWith('sk_sandbox_') && !secretKey.startsWith('sk_live_')) {
+          return res.status(400).json({
+            success: false,
+            error: 'La clé secrète FedaPay doit commencer par sk_sandbox_ ou sk_live_',
+          });
+        }
+        // Encrypt and store
+        updatedSettings.fedapaySecretKey = encrypt(secretKey);
+      }
+    }
+
+    if (isSandbox !== undefined) {
+      updatedSettings.fedapaySandbox = isSandbox;
+    }
+
+    if (callbackUrl !== undefined) {
+      updatedSettings.fedapayCallbackUrl = callbackUrl;
+    }
+
+    await prisma.tenant.update({
+      where: { id: req.user!.tenantId },
+      data: { settings: updatedSettings },
+    });
+
+    // Return masked result
+    res.json({
+      success: true,
+      data: {
+        enabled: !!updatedSettings.fedapaySecretKey,
+        secretKeyMasked: updatedSettings.fedapaySecretKey ? maskSecret(decrypt(updatedSettings.fedapaySecretKey)) : null,
+        isSandbox: updatedSettings.fedapaySandbox !== false,
+        callbackUrl: updatedSettings.fedapayCallbackUrl || '',
+      },
+    });
+  })
+);
+
+// DELETE /api/tenant/settings/fedapay — disconnect FedaPay
+tenantSettingsRouter.delete('/fedapay', authenticate, requireOwner,
+  asyncHandler(async (req, res) => {
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: req.user!.tenantId },
+      select: { settings: true },
+    });
+
+    const currentSettings = (tenant?.settings as Record<string, any>) || {};
+    delete currentSettings.fedapaySecretKey;
+    delete currentSettings.fedapaySandbox;
+    delete currentSettings.fedapayCallbackUrl;
+
+    await prisma.tenant.update({
+      where: { id: req.user!.tenantId },
+      data: { settings: currentSettings },
+    });
+
+    res.json({ success: true, message: 'FedaPay déconnecté' });
+  })
+);
+
+// POST /api/tenant/settings/fedapay/test — test FedaPay connection
+tenantSettingsRouter.post('/fedapay/test', authenticate, requireOwner,
+  asyncHandler(async (req, res) => {
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: req.user!.tenantId },
+      select: { settings: true },
+    });
+
+    const settings = (tenant?.settings as Record<string, any>) || {};
+    if (!settings.fedapaySecretKey) {
+      return res.status(400).json({ success: false, error: 'Aucune clé FedaPay configurée' });
+    }
+
+    const secretKey = decrypt(settings.fedapaySecretKey);
+    const isSandbox = settings.fedapaySandbox !== false;
+    const apiBase = isSandbox ? 'https://sandbox-api.fedapay.com' : 'https://api.fedapay.com';
+
+    try {
+      const response = await fetch(`${apiBase}/v1/accounts`, {
+        headers: {
+          'Authorization': `Bearer ${secretKey}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json() as any;
+        res.json({
+          success: true,
+          data: {
+            connected: true,
+            mode: isSandbox ? 'sandbox' : 'live',
+            accountName: data?.v1?.account?.business?.name || data?.v1?.account?.email || 'Compte FedaPay',
+          },
+        });
+      } else {
+        const errData = await response.json().catch(() => ({})) as any;
+        res.json({
+          success: false,
+          error: errData?.message || `Erreur FedaPay (${response.status})`,
+        });
+      }
+    } catch (err: any) {
+      res.json({
+        success: false,
+        error: `Impossible de joindre FedaPay: ${err.message}`,
+      });
+    }
   })
 );

@@ -51,6 +51,12 @@ export const config = {
     successUrl: process.env.STRIPE_SUCCESS_URL || 'http://localhost:3001/auth/register/success',
     cancelUrl: process.env.STRIPE_CANCEL_URL || 'http://localhost:3001/auth/register?cancelled=true',
   },
+
+  fedapay: {
+    secretKey: process.env.FEDAPAY_SECRET_KEY || '',
+    isSandbox: process.env.FEDAPAY_SANDBOX !== 'false',
+    callbackUrl: process.env.FEDAPAY_CALLBACK_URL || 'http://localhost:3001/dashboard',
+  },
 } as const;
 
 // Validate critical config at startup

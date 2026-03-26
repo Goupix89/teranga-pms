@@ -38,6 +38,8 @@ import {
   cleaningRouter,
   integrationRouter,
   channelRouter,
+  apiKeyRouter,
+  tenantSettingsRouter,
 } from './routes/resource.routes';
 import { channelSyncService } from './services/channel-sync.service';
 
@@ -113,6 +115,82 @@ app.get('/api/calendar/:token.ics', async (req, res, next) => {
     res.send(ical);
   } catch (err) {
     next(err);
+  }
+});
+
+// FedaPay webhook — public endpoint, no tenant resolution needed
+app.post('/api/webhooks/fedapay', async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  try {
+    const { PrismaClient } = await import('@prisma/client');
+    const prisma = new PrismaClient();
+
+    const event = req.body;
+    logger.info('FedaPay webhook received', { type: event?.name, id: event?.entity?.id });
+
+    // FedaPay sends events like "transaction.approved", "transaction.declined"
+    if (event?.name === 'transaction.approved' && event?.entity) {
+      const txn = event.entity;
+      const fedapayTxnId = String(txn.id || txn.reference);
+      const transactionUuid = `fedapay_${fedapayTxnId}`;
+
+      // Check if payment already recorded (idempotence)
+      const existing = await prisma.payment.findUnique({
+        where: { transactionUuid },
+      });
+
+      if (!existing) {
+        // Find the invoice linked to this FedaPay transaction via custom metadata
+        // PMS transactions send invoice_id directly; WordPress plugin sends reservation_id
+        const invoiceIdFromMeta = txn.custom_metadata?.invoice_id;
+        const reservationId = txn.custom_metadata?.reservation_id;
+
+        let invoice: any = null;
+        if (invoiceIdFromMeta) {
+          invoice = await prisma.invoice.findFirst({
+            where: { id: invoiceIdFromMeta, status: { not: 'CANCELLED' } },
+          });
+        } else if (reservationId) {
+          invoice = await prisma.invoice.findFirst({
+            where: { reservationId, status: { not: 'CANCELLED' } },
+            orderBy: { createdAt: 'desc' },
+          });
+        }
+
+        if (invoice) {
+          // Record the payment
+          const amount = (txn.amount || invoice.totalAmount.toNumber()) / 1; // FedaPay amounts are in base currency
+          await prisma.payment.create({
+            data: {
+              tenantId: invoice.tenantId,
+              invoiceId: invoice.id,
+              amount: Math.min(amount, invoice.totalAmount.toNumber()),
+              method: 'FEDAPAY',
+              reference: fedapayTxnId,
+              transactionUuid,
+            },
+          });
+
+          // Mark invoice as PAID
+          await prisma.invoice.update({
+            where: { id: invoice.id },
+            data: { status: 'PAID', paidAt: new Date() },
+          });
+
+          logger.info('FedaPay payment recorded via webhook', {
+            invoiceId: invoice.id,
+            reservationId,
+            fedapayTxnId,
+            amount,
+          });
+        }
+      }
+    }
+
+    res.json({ received: true });
+  } catch (err) {
+    logger.error('FedaPay webhook error', { error: err });
+    // Always return 200 to FedaPay to prevent retries on our errors
+    res.json({ received: true });
   }
 });
 
@@ -236,6 +314,12 @@ app.use('/api/establishments', memberRouter);
 
 // Channel sync (iCal)
 app.use('/api/channels', channelRouter);
+
+// API Keys management
+app.use('/api/api-keys', apiKeyRouter);
+
+// Tenant settings (FedaPay config, etc.) — OWNER only
+app.use('/api/tenant/settings', tenantSettingsRouter);
 
 // Integration endpoints (availability, external bookings, POS)
 app.use('/api', integrationRouter);

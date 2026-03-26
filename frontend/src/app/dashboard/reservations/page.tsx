@@ -34,6 +34,7 @@ export default function ReservationsPage() {
   const [qrModal, setQrModal] = useState<{
     open: boolean; invoiceId?: string; qrCode?: string; invoiceNumber?: string;
     totalAmount?: number; paymentLabel?: string; currency?: string; paid?: boolean;
+    fedapayCheckoutUrl?: string;
   }>({ open: false });
 
   const { data, isLoading } = useQuery({
@@ -54,7 +55,7 @@ export default function ReservationsPage() {
       const invoiceId = response?.data?.invoiceId;
       if (invoiceId) {
         try {
-          const qrRes = await apiGet<any>(`/invoices/${invoiceId}/qrcode`);
+          const qrRes = await apiGet<any>(`/invoices/${invoiceId}/qrcode?paymentMethod=${form.paymentMethod}`);
           if (qrRes?.data) {
             setQrModal({
               open: true,
@@ -64,6 +65,7 @@ export default function ReservationsPage() {
               totalAmount: qrRes.data.invoice?.totalAmount,
               paymentLabel: qrRes.data.paymentLabel,
               currency: qrRes.data.invoice?.currency || 'XOF',
+              fedapayCheckoutUrl: qrRes.data.fedapayCheckoutUrl,
             });
           }
         } catch {
@@ -124,6 +126,7 @@ export default function ReservationsPage() {
           totalAmount: qrRes.data.invoice?.totalAmount,
           paymentLabel: qrRes.data.paymentLabel,
           currency: qrRes.data.invoice?.currency || 'XOF',
+          fedapayCheckoutUrl: qrRes.data.fedapayCheckoutUrl,
         });
       }
     } catch {
@@ -295,9 +298,15 @@ export default function ReservationsPage() {
               <img src={qrModal.qrCode} alt="QR Code de paiement" className="w-64 h-64" />
             </div>
           )}
-          <p className="text-xs text-gray-400 text-center max-w-xs">
-            Le client doit scanner ce QR code avec son application {qrModal.paymentLabel} pour effectuer le paiement.
-          </p>
+          {qrModal.fedapayCheckoutUrl ? (
+            <p className="text-xs text-gray-400 text-center max-w-xs">
+              Scannez le QR code ou cliquez sur le bouton ci-dessous pour payer via FedaPay.
+            </p>
+          ) : (
+            <p className="text-xs text-gray-400 text-center max-w-xs">
+              Le client doit scanner ce QR code avec son application {qrModal.paymentLabel} pour effectuer le paiement.
+            </p>
+          )}
           {qrModal.paid ? (
             <div className="flex flex-col items-center gap-2 w-full max-w-xs">
               <div className="flex items-center gap-2 text-green-600 bg-green-50 border border-green-200 rounded-lg px-4 py-3 w-full justify-center">
@@ -310,6 +319,16 @@ export default function ReservationsPage() {
             </div>
           ) : (
             <div className="flex flex-col gap-2 w-full max-w-xs">
+              {qrModal.fedapayCheckoutUrl && (
+                <a
+                  href={qrModal.fedapayCheckoutUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-primary bg-blue-600 hover:bg-blue-700 w-full text-center flex items-center justify-center gap-2"
+                >
+                  💳 Payer avec FedaPay
+                </a>
+              )}
               <button
                 onClick={async () => {
                   try {
@@ -414,6 +433,7 @@ export default function ReservationsPage() {
                 <option value="MIXX_BY_YAS">Yas (MTN)</option>
                 <option value="CARD">Carte bancaire</option>
                 <option value="MOBILE_MONEY">Mobile Money</option>
+                <option value="FEDAPAY">FedaPay</option>
                 <option value="BANK_TRANSFER">Virement</option>
               </select>
             </div>

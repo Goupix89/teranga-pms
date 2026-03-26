@@ -242,7 +242,8 @@ data class QrCodeData(
     val qrCode: String,
     val invoice: QrInvoiceInfo? = null,
     val paymentMethod: String? = null,
-    val paymentLabel: String? = null
+    val paymentLabel: String? = null,
+    val fedapayCheckoutUrl: String? = null
 )
 
 data class QrInvoiceInfo(

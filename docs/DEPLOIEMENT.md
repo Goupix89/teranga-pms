@@ -658,6 +658,8 @@ crontab -e
 - [ ] Le SSL est actif et force (redirection HTTP → HTTPS dans CyberPanel)
 - [ ] Le seed de demo n'a PAS ete execute en production
 - [ ] Le firewall autorise uniquement les ports 22, 80, 443
+- [ ] Les cles API sont generees via l'interface web (Cles API) — ne jamais les stocker en clair
+- [ ] Le webhook FedaPay pointe vers `https://votre-domaine/api/webhooks/fedapay`
 - [ ] Les backups automatiques sont configures et testes
 
 ### Configurer le firewall

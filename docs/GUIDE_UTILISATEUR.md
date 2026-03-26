@@ -18,11 +18,13 @@ Ce guide vous accompagne dans l'utilisation quotidienne de la plateforme Teranga
 10. [Ménage (Nettoyage)](#10-ménage-nettoyage)
 11. [Notifications](#11-notifications)
 12. [Synchronisation calendrier (iCal)](#12-synchronisation-calendrier-ical)
-13. [Profil utilisateur](#13-profil-utilisateur)
-14. [Rapports et exports](#14-rapports-et-exports)
-15. [Gestion des utilisateurs](#15-gestion-des-utilisateurs)
-16. [Application mobile](#16-application-mobile)
-17. [Questions fréquentes](#17-questions-fréquentes)
+13. [Réservation WordPress + FedaPay](#13-réservation-wordpress--fedapay)
+14. [Clés API](#14-clés-api)
+15. [Profil utilisateur](#15-profil-utilisateur)
+16. [Rapports et exports](#16-rapports-et-exports)
+17. [Gestion des utilisateurs](#17-gestion-des-utilisateurs)
+18. [Application mobile](#18-application-mobile)
+19. [Questions fréquentes](#19-questions-fréquentes)
 
 ---
 
@@ -484,7 +486,123 @@ Seuls les comptes **Owner**, **DAF** et **Manager** ont accès à la page **Cana
 
 ---
 
-## 13. Profil utilisateur
+## 13. Réservation WordPress + FedaPay
+
+Teranga PMS fournit un plugin WordPress pour permettre aux clients de réserver et payer directement depuis votre site internet via **FedaPay** (Mobile Money, carte bancaire, etc.).
+
+### Prérequis
+
+- Un site WordPress (v5.0+)
+- Un compte FedaPay ([app.fedapay.com](https://app.fedapay.com))
+- Une clé API Teranga PMS (demandez au SuperAdmin)
+
+### Installation du plugin
+
+1. Copiez le dossier `wordpress/teranga-booking/` dans votre répertoire `wp-content/plugins/`
+2. Dans WordPress : **Extensions → Extensions installées → Activer** « Teranga Booking »
+3. Allez dans **Réglages → Teranga Booking**
+
+### Configuration
+
+| Champ | Description |
+|---|---|
+| URL API Teranga PMS | L'adresse de votre API (ex: `https://api.mon-hotel.teranga.app`) |
+| Clé API Teranga | Fournie par le SuperAdmin (format `tpms_...`) |
+| Clé publique FedaPay | Depuis votre dashboard FedaPay (`pk_live_...` ou `pk_sandbox_...`) |
+| Clé secrète FedaPay | Depuis votre dashboard FedaPay |
+| Environnement | `sandbox` pour tester, `live` pour la production |
+| Page de confirmation | URL vers laquelle rediriger après paiement (ex: `/merci`) |
+
+### Configurer le webhook FedaPay
+
+1. Connectez-vous à [app.fedapay.com](https://app.fedapay.com)
+2. Allez dans **Paramètres → Webhooks → Ajouter**
+3. URL : `https://api.votre-hotel.teranga.app/api/webhooks/fedapay`
+4. Événement : `transaction.approved`
+5. Enregistrez
+
+### Ajouter le formulaire à une page
+
+1. Créez une page WordPress (ex: « Réserver »)
+2. Ajoutez le shortcode : `[teranga_booking]`
+3. Publiez la page
+
+### Parcours client
+
+1. Le client visite la page de réservation sur votre site
+2. Il remplit le formulaire (nom, chambre, dates, email, téléphone)
+3. Il clique sur **Payer et réserver avec FedaPay**
+4. La popup FedaPay s'ouvre : il choisit son moyen de paiement (MTN Mobile Money, Moov Money, carte Visa/Mastercard…)
+5. Paiement validé → la réservation est automatiquement créée dans Teranga PMS avec une facture marquée **Payée**
+6. Le client est redirigé vers la page de confirmation
+
+### Vérification côté PMS
+
+- La réservation apparaît dans **Réservations** avec la source **CHANNEL_MANAGER**
+- La facture est automatiquement générée et marquée **Payée**
+- Le paiement est enregistré avec la méthode **FEDAPAY** et la référence de transaction
+
+### Intégration avec BA Book Everything (existant)
+
+Si votre site utilise déjà le plugin **BA Book Everything** avec FedaPay, utilisez le plugin **Teranga BA Sync** à la place du formulaire standalone :
+
+1. Installez le plugin `teranga-ba-sync` dans WordPress
+2. Allez dans **Réglages → Teranga BA Sync**
+3. Configurez l'URL API et la clé API Teranga
+4. **Mapping des chambres** : associez chaque ID d'objet BA Book Everything au numéro de chambre dans Teranga PMS
+   - Trouvez les IDs dans **BA Book Everything → All Items** (colonne ID)
+   - Exemple : `{"23": "101", "45": "102", "67": "201"}`
+5. Choisissez le moment de synchronisation :
+   - **Paiement reçu** (recommandé) : dès que FedaPay confirme le paiement
+   - **Commande complétée** : après toutes les étapes de validation
+
+Le plugin fonctionne automatiquement : chaque réservation payée sur BA Book Everything est envoyée à Teranga PMS avec la facture et le paiement déjà enregistrés. Les annulations sont aussi propagées.
+
+L'historique des synchronisations est visible dans la page de configuration du plugin.
+
+---
+
+## 14. Clés API
+
+Les clés API permettent de connecter des systèmes externes (site WordPress, Channel Manager, etc.) à Teranga PMS de manière sécurisée.
+
+### Rôles autorisés
+
+Seuls les comptes **Owner** et **DAF** ont accès à la page **Clés API**.
+
+### Créer une clé API
+
+1. Allez dans **Clés API** dans la barre latérale
+2. Cliquez sur **Nouvelle clé API**
+3. Remplissez :
+   - **Nom** : un nom descriptif (ex: « Site WordPress », « Booking.com »)
+   - **Durée de validité** : 30 jours, 90 jours, 6 mois ou 1 an
+   - **IPs autorisées** : optionnel, restreint l'accès à certaines adresses IP
+4. Cliquez sur **Créer la clé**
+5. **Copiez immédiatement la clé affichée** — elle ne sera plus jamais visible
+
+### Gérer les clés
+
+- **Activer/Désactiver** : cliquez sur l'icône d'alimentation pour activer ou désactiver une clé sans la supprimer
+- **Supprimer** : cliquez sur l'icône corbeille (confirmation demandée). Toutes les intégrations utilisant cette clé cesseront de fonctionner
+- **Dernière utilisation** : la colonne indique la date de dernière utilisation de chaque clé
+
+### Utilisation dans WordPress
+
+Copiez la clé générée dans la configuration du plugin WordPress :
+- **Teranga Booking** : Réglages → Teranga Booking → Clé API Teranga
+- **Teranga BA Sync** : Réglages → Teranga BA Sync → Clé API Teranga
+
+### Sécurité
+
+- La clé est stockée sous forme de hash SHA256 — même les administrateurs ne peuvent pas la récupérer
+- Chaque clé possède un **préfixe** visible (ex: `tpms_a3b2c1...`) pour l'identifier
+- Les clés expirées sont automatiquement rejetées
+- La restriction par IP ajoute une couche de sécurité supplémentaire
+
+---
+
+## 15. Profil utilisateur
 
 ### Modifier ses informations
 
@@ -500,7 +618,7 @@ Seuls les comptes **Owner**, **DAF** et **Manager** ont accès à la page **Cana
 
 ---
 
-## 14. Rapports et exports
+## 16. Rapports et exports
 
 Accessible aux rôles **DAF** et **Manager** via **Rapports** dans la barre latérale.
 
@@ -539,7 +657,7 @@ Les fichiers sont téléchargés au format CSV, utilisables dans Excel ou Google
 
 ---
 
-## 15. Gestion des utilisateurs
+## 17. Gestion des utilisateurs
 
 ### Créer un employé (Manager)
 
@@ -560,7 +678,7 @@ Une fois approuvé, l'employé peut se connecter avec ses identifiants.
 
 ---
 
-## 16. Application mobile
+## 18. Application mobile
 
 ### Installation
 
@@ -612,7 +730,7 @@ L'application se connecte au serveur backend via l'URL configurée. Si vous renc
 
 ---
 
-## 17. Questions fréquentes
+## 19. Questions fréquentes
 
 ### Je n'arrive pas à créer un article
 
@@ -667,6 +785,34 @@ Contactez le DAF ou le Super Admin pour réinitialiser le mot de passe.
 
 Déconnectez-vous et reconnectez-vous. L'application détectera votre rôle d'établissement.
 
+### Le paiement FedaPay depuis WordPress ne crée pas la réservation
+
+- Vérifiez la **clé API Teranga** dans Réglages → Teranga Booking
+- Vérifiez que l'**URL API** est accessible depuis le serveur WordPress
+- Vérifiez les logs du serveur Teranga pour les erreurs
+- Le webhook FedaPay doit être configuré sur `transaction.approved`
+
+### Le webhook FedaPay ne met pas à jour le paiement
+
+- L'URL du webhook doit être `https://votre-api/api/webhooks/fedapay` (HTTPS requis en production)
+- Vérifiez dans le dashboard FedaPay que le webhook reçoit bien les événements
+- Le paiement est aussi enregistré lors de la création de la réservation (double sécurité)
+
+### Comment générer une clé API pour WordPress ?
+
+1. Connectez-vous en tant que **Owner** ou **DAF**
+2. Allez dans **Clés API** dans la barre latérale
+3. Cliquez sur **Nouvelle clé API**, donnez un nom et cliquez sur **Créer**
+4. Copiez la clé affichée immédiatement (elle ne sera plus visible ensuite)
+5. Collez-la dans la configuration du plugin WordPress
+
+### J'ai perdu ma clé API
+
+La clé n'est affichée qu'une seule fois à la création. Si vous l'avez perdue :
+1. Supprimez l'ancienne clé dans **Clés API**
+2. Créez une nouvelle clé
+3. Mettez à jour la configuration WordPress avec la nouvelle clé
+
 ---
 
-*Document mis à jour le 25 mars 2026 — Teranga PMS v2.1*
+*Document mis à jour le 25 mars 2026 — Teranga PMS v2.3*

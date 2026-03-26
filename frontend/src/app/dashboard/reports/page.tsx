@@ -128,7 +128,7 @@ export default function ReportsPage() {
   });
   const paymentLabels: Record<string, string> = {
     MOOV_MONEY: 'Flooz', MIXX_BY_YAS: 'Yas', CASH: 'Espèces',
-    CARD: 'Carte', MOBILE_MONEY: 'Mobile Money', BANK_TRANSFER: 'Virement', NON_DEFINI: 'Non défini',
+    CARD: 'Carte', MOBILE_MONEY: 'Mobile Money', FEDAPAY: 'FedaPay', BANK_TRANSFER: 'Virement', NON_DEFINI: 'Non défini',
   };
   const paymentChartData = Object.entries(paymentCounts).map(([key, value]) => ({
     name: paymentLabels[key] || key, value,

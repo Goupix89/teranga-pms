@@ -7,7 +7,7 @@ Le système utilise un RBAC à deux niveaux :
 | Niveau | Rôles | Description |
 |--------|-------|-------------|
 | **Tenant** (plateforme) | `SUPERADMIN`, `EMPLOYEE` | Accès global à la plateforme |
-| **Etablissement** | `DAF`, `MANAGER`, `SERVER`, `POS`, `COOK`, `CLEANER` | Accès spécifique à un établissement |
+| **Etablissement** | `OWNER`, `DAF`, `MANAGER`, `SERVER`, `POS`, `COOK`, `CLEANER` | Accès spécifique à un établissement |
 
 ---
 
@@ -20,6 +20,20 @@ Accès complet à toutes les fonctionnalités, tous les établissements.
 - Bypass de toutes les restrictions d'établissement
 - Dashboard complet avec toutes les statistiques
 - Gestion des utilisateurs et des établissements
+
+---
+
+### Owner (Propriétaire)
+
+Le propriétaire a les mêmes permissions que le DAF, plus la gestion des canaux de réservation et des clés API.
+
+#### Permissions spécifiques (en plus du DAF)
+
+| Module | Action | Autorisé |
+|--------|--------|----------|
+| **Clés API** | Créer / modifier / supprimer | Oui |
+| **Canaux iCal** | Connecter / configurer | Oui |
+| **Fournisseurs** | CRUD complet | Oui |
 
 ---
 
@@ -44,6 +58,7 @@ Le DAF est l'administrateur de l'établissement. Il valide les actions sensibles
 | **Approbations** | Approuver / rejeter | Oui |
 | **Cuisine** | Voir le tableau cuisine | Oui (lecture seule) |
 | **Ménage** | Pointage (clock-in/out) | Non |
+| **Clés API** | Créer / modifier / supprimer | Oui |
 | **Dashboard** | Stats Manager + financières | Oui (7 graphiques) |
 
 #### Dashboard DAF
@@ -185,6 +200,24 @@ Lorsqu'une commande est créée, une facture est automatiquement générée :
 - Montant : total de la commande
 - La facture est liée à la commande
 
+### Création de réservation → Facture + QR code
+
+Lorsqu'une réservation est créée (web, mobile ou WordPress) :
+
+- Facture auto-générée : `FAC-YYYYMMDD-NNNN`, statut `ISSUED`
+- QR code de paiement disponible immédiatement
+- Moyen de paiement : Espèces, Mobile Money, Flooz, Yas, FedaPay, Carte, Virement
+- Reçu PDF téléchargeable (format ticket 80mm)
+
+### Réservation WordPress + FedaPay
+
+Lorsqu'un client réserve depuis un site WordPress :
+
+1. Paiement FedaPay (Mobile Money, carte)
+2. Plugin WordPress envoie la réservation via `POST /api/external-bookings`
+3. Réservation créée + facture auto-générée + paiement enregistré
+4. Webhook FedaPay confirme le paiement (double sécurité)
+
 ### Checkout → Nettoyage automatique
 
 Lorsqu'un check-out est effectué sur une réservation :
@@ -211,6 +244,7 @@ Lorsqu'un check-out est effectué sur une réservation :
 | Rôle | Email | Mot de passe |
 |------|-------|-------------|
 | SuperAdmin | `superadmin@hoteldemo.com` | `Admin123!` |
+| Owner | `owner@hoteldemo.com` | `Owner123!` |
 | DAF | `daf@hoteldemo.com` | `Daf12345!` |
 | Manager | `manager@hoteldemo.com` | `Manager123!` |
 | Serveur | `serveur@hoteldemo.com` | `Serveur123!` |

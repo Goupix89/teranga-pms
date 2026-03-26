@@ -78,6 +78,7 @@ enum PaymentMethod {
   MOBILE_MONEY
   MOOV_MONEY
   MIXX_BY_YAS
+  FEDAPAY
   OTHER
 }
 

@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -176,7 +177,7 @@ private fun MenuView(viewModel: OrdersViewModel, uiState: OrdersUiState) {
             )
 
             // Payment method chips
-            val methods = listOf("CASH" to "Espèces", "MOOV_MONEY" to "Flooz", "MIXX_BY_YAS" to "Yas")
+            val methods = listOf("CASH" to "Espèces", "MOOV_MONEY" to "Flooz", "MIXX_BY_YAS" to "Yas", "FEDAPAY" to "FedaPay")
             methods.forEach { (value, label) ->
                 FilterChip(
                     selected = uiState.paymentMethod == value,
@@ -727,11 +728,31 @@ private fun QrCodePaymentDialog(
                 }
 
                 Spacer(Modifier.height(12.dp))
-                Text(
-                    "Le client doit scanner ce QR code avec son application ${qrData.paymentLabel ?: ""} pour effectuer le paiement.",
-                    fontSize = 11.sp, color = BronzeAbomey, textAlign = TextAlign.Center
-                )
+                if (qrData.fedapayCheckoutUrl != null) {
+                    Text(
+                        "Scannez le QR code ou appuyez sur le bouton ci-dessous pour payer via FedaPay.",
+                        fontSize = 11.sp, color = BronzeAbomey, textAlign = TextAlign.Center
+                    )
+                } else {
+                    Text(
+                        "Le client doit scanner ce QR code avec son application ${qrData.paymentLabel ?: ""} pour effectuer le paiement.",
+                        fontSize = 11.sp, color = BronzeAbomey, textAlign = TextAlign.Center
+                    )
+                }
                 Spacer(Modifier.height(16.dp))
+
+                // FedaPay checkout button
+                if (qrData.fedapayCheckoutUrl != null) {
+                    val uriHandler = LocalUriHandler.current
+                    Button(
+                        onClick = { uriHandler.openUri(qrData.fedapayCheckoutUrl) },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E88E5)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("\uD83D\uDCB3 Payer avec FedaPay", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
 
                 if (simulationSuccess) {
                     // Payment confirmed
@@ -816,6 +837,7 @@ private fun getPaymentLabel(method: String?): String = when (method) {
     "CASH" -> "Espèces"
     "CARD" -> "Carte"
     "MOBILE_MONEY" -> "Mobile Money"
+    "FEDAPAY" -> "FedaPay"
     "BANK_TRANSFER" -> "Virement"
     else -> method ?: ""
 }

@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -153,6 +154,7 @@ fun ReservationsScreen(
             paymentLabel = state.qrCodeData.paymentLabel ?: "",
             paid = state.paymentSimulated,
             currencyFormat = currencyFormat,
+            fedapayCheckoutUrl = state.qrCodeData.fedapayCheckoutUrl,
             onSimulatePayment = {
                 state.qrCodeData.invoice?.id?.let { viewModel.simulatePayment(it) }
             },
@@ -170,6 +172,7 @@ private fun QrCodePaymentDialog(
     paymentLabel: String,
     paid: Boolean,
     currencyFormat: NumberFormat,
+    fedapayCheckoutUrl: String? = null,
     onSimulatePayment: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -224,12 +227,33 @@ private fun QrCodePaymentDialog(
                     Text("QR code indisponible", color = MaterialTheme.colorScheme.error)
                 }
 
-                Text(
-                    text = "Le client doit scanner ce QR code avec son application $paymentLabel",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
+                if (fedapayCheckoutUrl != null) {
+                    Text(
+                        text = "Scannez le QR code ou appuyez sur le bouton ci-dessous pour payer via FedaPay.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                } else {
+                    Text(
+                        text = "Le client doit scanner ce QR code avec son application $paymentLabel",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
+
+                // FedaPay checkout button
+                if (fedapayCheckoutUrl != null) {
+                    val uriHandler = LocalUriHandler.current
+                    Button(
+                        onClick = { uriHandler.openUri(fedapayCheckoutUrl) },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E88E5)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("\uD83D\uDCB3 Payer avec FedaPay", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
 
                 if (paid) {
                     Surface(
@@ -551,6 +575,7 @@ private fun CreateReservationDialog(
         "MIXX_BY_YAS" to "Yas (MTN)",
         "CARD" to "Carte bancaire",
         "MOBILE_MONEY" to "Mobile Money",
+        "FEDAPAY" to "FedaPay",
         "BANK_TRANSFER" to "Virement"
     )
     val selectedPaymentLabel = paymentMethods.find { it.first == paymentMethod }?.second ?: paymentMethod
