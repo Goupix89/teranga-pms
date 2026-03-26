@@ -90,6 +90,7 @@
         if (resp.reason === FedaPay.CHECKOUT_COMPLETED) {
           // Payment successful — create booking in Teranga PMS
           var txnId = resp.transaction && resp.transaction.id ? String(resp.transaction.id) : '';
+          var txnAmount = resp.transaction && resp.transaction.amount ? resp.transaction.amount : 0;
 
           var formData = new FormData();
           formData.append('action', 'teranga_create_booking');
@@ -103,6 +104,9 @@
           formData.append('numberOfGuests', String(numberOfGuests));
           formData.append('fedapayTransactionId', txnId);
           formData.append('externalRef', 'fedapay_' + txnId);
+          if (txnAmount > 0) {
+            formData.append('amountPaid', String(txnAmount));
+          }
 
           fetch(TerangaBooking.ajaxUrl, {
             method: 'POST',

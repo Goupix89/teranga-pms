@@ -202,6 +202,12 @@ function teranga_create_booking() {
         'externalRef'       => sanitize_text_field($_POST['externalRef'] ?? ''),
     ];
 
+    // Include actual amount paid if provided (supports deposit/partial payments)
+    $amount_paid = floatval($_POST['amountPaid'] ?? 0);
+    if ($amount_paid > 0) {
+        $data['amountPaid'] = $amount_paid;
+    }
+
     // Remove empty optional fields
     $data = array_filter($data, function ($v) { return $v !== '' && $v !== 0; });
 

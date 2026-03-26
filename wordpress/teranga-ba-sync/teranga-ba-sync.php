@@ -168,9 +168,21 @@ function teranga_ba_sync_order($order_id, $amount = 0) {
             continue;
         }
 
-        // Get FedaPay transaction reference
+        // Get FedaPay transaction reference and amount
         $payment_token = get_post_meta($order_id, '_payment_token_id', true);
         $payment_method_name = get_post_meta($order_id, '_payment_method', true);
+
+        // Get the actual amount paid (may be a deposit / partial payment)
+        $order_amount = 0;
+        if ($amount > 0) {
+            $order_amount = floatval($amount);
+        } else {
+            // Try to get from order meta
+            $meta_amount = get_post_meta($order_id, '_order_total', true);
+            if (!$meta_amount) $meta_amount = get_post_meta($order_id, '_total_amount', true);
+            if (!$meta_amount) $meta_amount = get_post_meta($order_id, '_babe_order_total', true);
+            $order_amount = floatval($meta_amount);
+        }
 
         $data = [
             'room'                  => $room_number,
@@ -185,6 +197,11 @@ function teranga_ba_sync_order($order_id, $amount = 0) {
             'externalRef'           => 'ba_order_' . $order_id,
             'fedapayTransactionId'  => $payment_token ?: ('ba_' . $order_id),
         ];
+
+        // Include actual amount paid (supports partial/deposit payments)
+        if ($order_amount > 0) {
+            $data['amountPaid'] = $order_amount;
+        }
 
         // Validate required fields
         if (empty($data['start']) || empty($data['end']) || empty($data['guest'])) {

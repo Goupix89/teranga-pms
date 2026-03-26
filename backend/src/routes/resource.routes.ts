@@ -40,6 +40,7 @@ const prisma = new PrismaClient();
 import crypto from 'crypto';
 import { config } from '../config';
 import { encrypt, decrypt, maskSecret } from '../utils/encryption';
+import { logger as appLogger } from '../utils/logger';
 
 // Helper to wrap async route handlers
 const asyncHandler = (fn: (req: Request, res: Response, next: NextFunction) => Promise<any>) =>
@@ -583,6 +584,7 @@ invoiceRouter.get('/:id/qrcode', authenticate,
     // FedaPay: create a transaction and get checkout URL
     let fedapayCheckoutUrl: string | undefined;
     if (paymentMethod === 'FEDAPAY') {
+      appLogger.info('FedaPay QR: entering FedaPay block', { paymentMethod, invoiceId: invoice.id });
       // Get FedaPay config: tenant settings first, then global env fallback
       const tenant = await prisma.tenant.findUnique({
         where: { id: req.user!.tenantId },
@@ -631,9 +633,12 @@ invoiceRouter.get('/:id/qrcode', authenticate,
             }),
           });
 
-          if (txnResponse.ok) {
-            const txnData = await txnResponse.json() as any;
-            const transactionId = txnData?.v1?.transaction?.id;
+          const txnData = await txnResponse.json() as any;
+          appLogger.info('FedaPay txn response', { status: txnResponse.status, body: JSON.stringify(txnData).substring(0, 500) });
+
+          if (txnResponse.ok || txnResponse.status === 201) {
+            // FedaPay response can be {v1: {transaction: {id}}} or {transaction: {id}}
+            const transactionId = txnData?.v1?.transaction?.id || txnData?.transaction?.id;
 
             if (transactionId) {
               // Generate payment token/URL
@@ -645,8 +650,10 @@ invoiceRouter.get('/:id/qrcode', authenticate,
                 },
               });
 
-              if (tokenResponse.ok) {
-                const tokenData = await tokenResponse.json() as any;
+              const tokenData = await tokenResponse.json() as any;
+              appLogger.info('FedaPay token response', { status: tokenResponse.status, body: JSON.stringify(tokenData).substring(0, 300) });
+
+              if (tokenResponse.ok || tokenResponse.status === 201) {
                 const token = tokenData?.token;
                 if (token) {
                   fedapayCheckoutUrl = isSandbox
@@ -654,10 +661,14 @@ invoiceRouter.get('/:id/qrcode', authenticate,
                     : `https://checkout.fedapay.com/checkout/${token}`;
                 }
               }
+            } else {
+              appLogger.error('FedaPay: no transaction ID in response', { body: JSON.stringify(txnData).substring(0, 300) });
             }
+          } else {
+            appLogger.error('FedaPay txn creation failed', { status: txnResponse.status, body: JSON.stringify(txnData).substring(0, 300) });
           }
         } catch (err) {
-          console.error('FedaPay transaction creation error:', err);
+          appLogger.error('FedaPay transaction creation error', { error: String(err) });
           // Continue without FedaPay URL — fallback to regular QR
         }
       }
@@ -1167,12 +1178,13 @@ integrationRouter.get('/availability.ics', authenticate,
 // POST /api/external-bookings (API Key auth for channel managers)
 integrationRouter.post('/external-bookings', authenticateApiKey, validate(v.externalBookingSchema),
   asyncHandler(async (req, res) => {
-    const { room, start, end, guest, guestEmail, guestPhone, source, externalRef, paymentMethod, fedapayTransactionId, numberOfGuests } = req.body;
+    const { room, start, end, guest, guestEmail, guestPhone, source, externalRef, paymentMethod, fedapayTransactionId, numberOfGuests, amountPaid } = req.body;
 
     // Resolve room by number
     const { prisma: db } = await import('../utils/prisma');
     const roomEntity = await db.room.findFirst({
       where: { tenantId: req.tenantId!, number: room, isActive: true },
+      include: { establishment: { select: { name: true } } },
     });
 
     if (!roomEntity) {
@@ -1199,22 +1211,48 @@ integrationRouter.post('/external-bookings', authenticateApiKey, validate(v.exte
       paymentMethod: paymentMethod || (fedapayTransactionId ? 'FEDAPAY' : undefined),
     }, tenantMember?.id); // Pass userId to auto-generate invoice
 
+    // Update invoice notes with room and guest details
+    if (reservation.invoiceId) {
+      const checkInDate = new Date(start);
+      const checkOutDate = new Date(end);
+      const nights = Math.ceil((checkOutDate.getTime() - checkInDate.getTime()) / (1000 * 60 * 60 * 24));
+      await db.invoice.update({
+        where: { id: reservation.invoiceId },
+        data: {
+          notes: `Hébergement ${guest} — Chambre ${room} (${roomEntity.type || 'Standard'}) — ${roomEntity.establishment?.name || ''} — ${nights} nuit${nights > 1 ? 's' : ''} (${start} au ${end})`,
+        },
+      });
+    }
+
     // If FedaPay transaction ID provided, auto-record payment
     let paymentId: string | undefined;
+    let paymentStatus = 'PENDING';
     if (fedapayTransactionId && reservation.invoiceId) {
       try {
         const invoice = await db.invoice.findFirst({
           where: { id: reservation.invoiceId, tenantId: req.tenantId! },
         });
         if (invoice) {
+          // Use amountPaid if provided (e.g., 60% deposit), otherwise use full amount
+          const payAmount = amountPaid && amountPaid > 0
+            ? Math.min(amountPaid, invoice.totalAmount.toNumber())
+            : invoice.totalAmount.toNumber();
+
           const result = await paymentService.create(req.tenantId!, {
             invoiceId: reservation.invoiceId,
-            amount: invoice.totalAmount.toNumber(),
+            amount: payAmount,
             method: 'FEDAPAY',
             reference: fedapayTransactionId,
             transactionUuid: `fedapay_${fedapayTransactionId}`,
           });
           paymentId = result.payment.id;
+
+          // Determine payment status based on amount paid
+          if (payAmount >= invoice.totalAmount.toNumber() - 0.01) {
+            paymentStatus = 'PAID';
+          } else {
+            paymentStatus = 'PARTIALLY_PAID';
+          }
         }
       } catch (e: any) {
         // Payment recording failed but reservation was created — log and continue
@@ -1232,12 +1270,19 @@ integrationRouter.post('/external-bookings', authenticateApiKey, validate(v.exte
       data: {
         id: reservation.id,
         room: room,
+        roomType: roomEntity.type,
+        establishmentName: roomEntity.establishment?.name,
+        guestName: guest,
+        guestEmail,
+        guestPhone,
         checkIn: reservation.checkIn,
         checkOut: reservation.checkOut,
         status: reservation.status,
+        totalPrice: reservation.totalPrice ? Number(reservation.totalPrice) : undefined,
         invoiceId: reservation.invoiceId,
         paymentId,
-        paymentStatus: paymentId ? 'PAID' : 'PENDING',
+        amountPaid: amountPaid || (paymentId ? Number(reservation.totalPrice) : 0),
+        paymentStatus,
       },
     });
   })
@@ -1570,28 +1615,44 @@ tenantSettingsRouter.post('/fedapay/test', authenticate, requireOwner,
     const apiBase = isSandbox ? 'https://sandbox-api.fedapay.com' : 'https://api.fedapay.com';
 
     try {
-      const response = await fetch(`${apiBase}/v1/accounts`, {
+      // Test with a small transaction creation then cancel — FedaPay has no /accounts/me endpoint
+      const response = await fetch(`${apiBase}/v1/transactions`, {
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${secretKey}`,
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          description: 'Test de connexion Teranga PMS',
+          amount: 100,
+          currency: { iso: 'XOF' },
+        }),
       });
 
-      if (response.ok) {
-        const data = await response.json() as any;
+      const data = await response.json() as any;
+
+      if (response.ok || response.status === 201) {
+        // Clean up: delete the test transaction
+        const txnId = data?.v1?.transaction?.id || data?.transaction?.id;
+        if (txnId) {
+          fetch(`${apiBase}/v1/transactions/${txnId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${secretKey}` },
+          }).catch(() => {});
+        }
+
         res.json({
           success: true,
           data: {
             connected: true,
             mode: isSandbox ? 'sandbox' : 'live',
-            accountName: data?.v1?.account?.business?.name || data?.v1?.account?.email || 'Compte FedaPay',
+            accountName: 'Compte FedaPay',
           },
         });
       } else {
-        const errData = await response.json().catch(() => ({})) as any;
         res.json({
           success: false,
-          error: errData?.message || `Erreur FedaPay (${response.status})`,
+          error: data?.message || data?.error?.message || `Erreur FedaPay (${response.status})`,
         });
       }
     } catch (err: any) {

@@ -257,6 +257,7 @@ export const externalBookingSchema = z.object({
   paymentMethod: z.enum(['CASH', 'CARD', 'BANK_TRANSFER', 'MOBILE_MONEY', 'MOOV_MONEY', 'MIXX_BY_YAS', 'FEDAPAY', 'OTHER']).optional(),
   fedapayTransactionId: z.string().max(100).optional(),
   numberOfGuests: z.number().int().min(1).max(20).default(1),
+  amountPaid: z.number().min(0).optional(), // Partial payment (e.g., 60% deposit)
 }).refine(
   (d) => new Date(d.end) > new Date(d.start),
   { message: 'end doit être après start' }
