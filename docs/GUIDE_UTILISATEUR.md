@@ -19,12 +19,14 @@ Ce guide vous accompagne dans l'utilisation quotidienne de la plateforme Teranga
 11. [Notifications](#11-notifications)
 12. [Synchronisation calendrier (iCal)](#12-synchronisation-calendrier-ical)
 13. [Réservation WordPress + FedaPay](#13-réservation-wordpress--fedapay)
-14. [Clés API](#14-clés-api)
-15. [Profil utilisateur](#15-profil-utilisateur)
-16. [Rapports et exports](#16-rapports-et-exports)
-17. [Gestion des utilisateurs](#17-gestion-des-utilisateurs)
-18. [Application mobile](#18-application-mobile)
-19. [Questions fréquentes](#19-questions-fréquentes)
+14. [Configuration FedaPay (Owner)](#14-configuration-fedapay-owner)
+15. [Clés API](#15-clés-api)
+16. [Profil utilisateur](#16-profil-utilisateur)
+17. [Rapports et exports](#17-rapports-et-exports)
+18. [Gestion des utilisateurs](#18-gestion-des-utilisateurs)
+19. [Application mobile](#19-application-mobile)
+20. [Fonctionnalités à venir](#20-fonctionnalités-à-venir)
+21. [Questions fréquentes](#21-questions-fréquentes)
 
 ---
 
@@ -205,11 +207,12 @@ Le serveur prend les commandes des clients et génère les QR codes de paiement.
 2. Cliquez sur **+ Nouvelle commande**
 3. Remplissez le formulaire :
    - **N° Table** (optionnel) : numéro ou nom de la table
-   - **Moyen de paiement** : Flooz (Moov Money), Yas (MTN), Espèces, Carte, etc.
+   - **Moyen de paiement** : Flooz (Moov Money), Yas (MTN), FedaPay, Espèces, Carte, etc.
    - **Articles** : sélectionnez les articles dans la liste déroulante. Seuls les articles des catégories Restaurant et Boissons sont proposés. Ajustez la quantité. Cliquez sur *"+ Ajouter un article"* pour en ajouter d'autres.
    - **Notes** (optionnel) : instructions spéciales
 4. Cliquez sur **Créer la commande**
 5. Un **QR code de paiement** s'affiche automatiquement. Montrez-le au client pour qu'il scanne avec son application Flooz ou Yas.
+6. Si **FedaPay** est sélectionné : un bouton et un lien vers la gateway FedaPay s'affichent pour rediriger le client vers la page de paiement.
 
 ### Sur l'application mobile
 
@@ -279,10 +282,11 @@ Le serveur sera notifié que la commande est prête à être servie.
    - Nom du client, email, téléphone
    - Dates d'arrivée et de départ
    - Nombre de personnes, source
-   - **Moyen de paiement** : Espèces, Flooz, Yas, Carte, Mobile Money, Virement
+   - **Moyen de paiement** : Espèces, Flooz, Yas, FedaPay, Carte, Mobile Money, Virement
 4. Cliquez sur **Créer la réservation**
 5. Une **facture est automatiquement générée** (FAC-YYYYMMDD-NNNN)
 6. Le **QR code de paiement** s'affiche automatiquement — montrez-le au client si paiement mobile
+7. Si **FedaPay** est sélectionné : un **bouton "Payer avec FedaPay"** et un **lien cliquable** vers la gateway de paiement s'affichent sous le QR code
 
 ### Paiement de la réservation
 
@@ -470,7 +474,7 @@ Seuls les comptes **Owner**, **DAF** et **Manager** ont accès à la page **Cana
 2. Copiez l'URL iCal fournie
 3. Dans le PMS : collez l'URL dans le champ **URL d'import** de la connexion
 4. Cliquez sur **Synchroniser maintenant** pour tester
-5. La synchronisation automatique s'exécute toutes les 15 minutes (configurable : 5 min à 24h)
+5. La synchronisation automatique s'exécute toutes les minutes par défaut (configurable : 1 min à 24h)
 
 ### Gestion des conflits
 
@@ -562,7 +566,50 @@ L'historique des synchronisations est visible dans la page de configuration du p
 
 ---
 
-## 14. Clés API
+## 14. Configuration FedaPay (Owner)
+
+Chaque propriétaire d'établissement peut connecter son propre compte FedaPay pour recevoir les paiements directement sur son compte.
+
+### Rôle autorisé
+
+Seul le rôle **Owner** a accès à la configuration FedaPay.
+
+### Connecter son compte FedaPay
+
+1. Allez dans **Paramètres** dans la barre latérale
+2. Dans la section **Intégration FedaPay**, cliquez sur **Connecter**
+3. Renseignez :
+   - **Clé secrète FedaPay** : depuis votre dashboard [app.fedapay.com](https://app.fedapay.com) (`sk_live_...` ou `sk_sandbox_...`)
+   - **Mode** : Sandbox (test) ou Live (production)
+   - **URL de callback** : URL de retour après paiement (optionnel)
+   - **URL Webhook WordPress** : pour notifier votre site WordPress des paiements (optionnel)
+4. Cliquez sur **Enregistrer**
+
+### Tester la connexion
+
+Cliquez sur **Tester la connexion** pour vérifier que votre clé FedaPay est valide. Le système crée une transaction de test (100 XOF) puis la supprime.
+
+### Utilisation
+
+Une fois FedaPay configuré, lorsqu'une commande ou réservation est créée avec le moyen de paiement **FedaPay** :
+- Le QR code encode l'URL de la gateway FedaPay
+- Un **bouton "Payer avec FedaPay"** apparaît sous le QR code
+- Un **lien cliquable** vers la page de paiement est affiché
+- Le client peut payer par Mobile Money (MTN, Moov), carte bancaire, etc.
+
+### Sécurité
+
+- La clé secrète est stockée **chiffrée** (AES-256-GCM) dans la base de données
+- Elle n'est jamais visible en clair dans l'interface (masquée : `sk_sandbox_****...****`)
+- Chaque tenant a ses propres clés — aucun partage entre établissements
+
+### Déconnecter
+
+Cliquez sur **Déconnecter** pour supprimer la configuration FedaPay. Les paiements FedaPay ne seront plus disponibles.
+
+---
+
+## 15. Clés API
 
 Les clés API permettent de connecter des systèmes externes (site WordPress, Channel Manager, etc.) à Teranga PMS de manière sécurisée.
 
@@ -602,7 +649,7 @@ Copiez la clé générée dans la configuration du plugin WordPress :
 
 ---
 
-## 15. Profil utilisateur
+## 16. Profil utilisateur
 
 ### Modifier ses informations
 
@@ -618,7 +665,7 @@ Copiez la clé générée dans la configuration du plugin WordPress :
 
 ---
 
-## 16. Rapports et exports
+## 17. Rapports et exports
 
 Accessible aux rôles **DAF** et **Manager** via **Rapports** dans la barre latérale.
 
@@ -657,7 +704,7 @@ Les fichiers sont téléchargés au format CSV, utilisables dans Excel ou Google
 
 ---
 
-## 17. Gestion des utilisateurs
+## 18. Gestion des utilisateurs
 
 ### Créer un employé (Manager)
 
@@ -678,7 +725,7 @@ Une fois approuvé, l'employé peut se connecter avec ses identifiants.
 
 ---
 
-## 18. Application mobile
+## 19. Application mobile
 
 ### Installation
 
@@ -730,7 +777,20 @@ L'application se connecte au serveur backend via l'URL configurée. Si vous renc
 
 ---
 
-## 19. Questions fréquentes
+## 20. Fonctionnalités à venir
+
+### Calendrier de disponibilité par chambre
+
+Un calendrier visuel sera ajouté pour afficher les disponibilités de chaque chambre, synchronisé en temps réel entre tous les canaux connectés (Airbnb, Booking.com, Expedia, réservations PMS directes). Cette vue permettra :
+
+- Visualiser d'un coup d'oeil les réservations PMS et externes sur un calendrier interactif
+- Identifier les dates libres et les conflits potentiels
+- Naviguer par mois/semaine
+- Filtrer par chambre, par canal ou par établissement
+
+---
+
+## 21. Questions fréquentes
 
 ### Je n'arrive pas à créer un article
 
@@ -815,4 +875,4 @@ La clé n'est affichée qu'une seule fois à la création. Si vous l'avez perdue
 
 ---
 
-*Document mis à jour le 25 mars 2026 — Teranga PMS v2.3*
+*Document mis à jour le 26 mars 2026 — Teranga PMS v2.4*

@@ -516,4 +516,6 @@ R : Le serveur génère un QR code depuis l'application. Le client scanne le QR 
 
 ---
 
-*Document mis à jour le 15 mars 2026 — Hotel PMS v2.0*
+*Document mis à jour le 26 mars 2026 — Teranga PMS v2.4*
+
+> **Note** : Le guide utilisateur complet et à jour se trouve dans [`docs/GUIDE_UTILISATEUR.md`](docs/GUIDE_UTILISATEUR.md).

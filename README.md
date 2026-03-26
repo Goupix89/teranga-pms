@@ -23,7 +23,7 @@ hotel-pms/
 | ORM / DB | Prisma + PostgreSQL 15+ |
 | Cache | Redis 7 |
 | Auth | JWT (access + refresh tokens), bcryptjs, RBAC 2 niveaux |
-| Paiement | Stripe (abonnements), Flooz/Yas via QR code (commandes), FedaPay (WordPress) |
+| Paiement | Stripe (abonnements), Flooz/Yas via QR code, FedaPay (gateway intégrée + WordPress) |
 | QR Code | `qrcode` npm (génération data URL côté serveur) |
 | Upload | Multer (images articles, max 5 Mo, JPG/PNG/WebP) |
 | Mobile | Kotlin, Jetpack Compose, Room DB, Retrofit, Hilt DI |
@@ -46,7 +46,7 @@ hotel-pms/
 5. **Chambres** — CRUD, gestion des statuts, filtres avancés
 6. **Réservations** — CRUD, check-in/check-out, anti-double-booking transactionnel, paiement par QR code ou espèces, auto-génération facture et reçu PDF
 7. **Factures** — Lifecycle complet (brouillon → émise → payée), numérotation auto `FAC-YYYYMMDD-NNNN`
-8. **Paiements** — Multi-méthodes (Espèces, Carte, Mobile Money, Flooz, Yas, FedaPay, Virement), idempotence POS via UUID
+8. **Paiements** — Multi-méthodes (Espèces, Carte, Mobile Money, Flooz, Yas, FedaPay, Virement), idempotence POS via UUID, intégration FedaPay par tenant (chaque propriétaire connecte son compte FedaPay)
 9. **Commandes** — Création avec moyen de paiement, auto-génération facture, QR code pour paiement client
 10. **Menu & Articles** — Catégories Restaurant/Boissons, upload d'images, workflow d'approbation DAF, stock optionnel pour plats préparés
 11. **Cuisine** — Vue temps réel des commandes pour les cuisiniers, notification serveur quand prêt
@@ -57,18 +57,20 @@ hotel-pms/
 16. **Intégrations** — API disponibilité (JSON/iCal), Channel Manager, POS Android, WordPress + FedaPay
 17. **Inscription & Abonnements** — Inscription self-service avec paiement Stripe, plans Basic/Pro/Enterprise
 18. **Notifications temps réel** — SSE + polling, alertes par rôle (checkout, ménage, commandes, approbations, stock), navigation contextuelle (clic → page concernée)
-19. **Synchronisation calendrier (iCal)** — Sync bidirectionnelle des disponibilités avec Airbnb, Booking.com, Expedia via iCal
+19. **Synchronisation calendrier (iCal)** — Sync bidirectionnelle des disponibilités avec Airbnb, Booking.com, Expedia via iCal (intervalle configurable : 1 min à 24h)
 20. **Profil utilisateur** — Modification des informations personnelles, changement de mot de passe
 21. **Reçus & Factures PDF** — Génération de reçus (format ticket 80mm) et factures (A4) en PDF avec QR code, téléchargement depuis les pages Commandes et Factures
+22. **Configuration FedaPay par tenant** — Chaque propriétaire peut connecter son propre compte FedaPay via l'interface Paramètres (clés chiffrées AES-256-GCM)
 
-## Flux de Paiement (Commandes)
+## Flux de Paiement (Commandes & Réservations)
 
 ```
-Serveur crée une commande (web ou mobile)
-  → Sélectionne le moyen de paiement (Flooz ou Yas)
+Serveur/Manager crée une commande ou réservation (web ou mobile)
+  → Sélectionne le moyen de paiement (Flooz, Yas, FedaPay, etc.)
   → Facture auto-générée (FAC-YYYYMMDD-NNNN)
   → QR code affiché (web ou mobile)
-  → Client scanne le QR code avec son app Flooz/Yas
+  → Si FedaPay : bouton + lien cliquable vers la gateway de paiement
+  → Client scanne le QR code ou clique sur le lien FedaPay
   → Paiement effectué
 ```
 
@@ -81,7 +83,7 @@ Serveur crée une commande (web ou mobile)
 | `CASH` | Espèces | Paiement en liquide |
 | `CARD` | Carte bancaire | Paiement par carte |
 | `MOBILE_MONEY` | Mobile Money | Paiement mobile générique |
-| `FEDAPAY` | FedaPay | Paiement via FedaPay (Mobile Money, carte) — WordPress |
+| `FEDAPAY` | FedaPay | Paiement via FedaPay (Mobile Money, carte) — WordPress + Teranga |
 | `BANK_TRANSFER` | Virement | Virement bancaire |
 
 ## Workflow d'approbation des articles
@@ -199,7 +201,7 @@ Le système utilise un **RBAC à 2 niveaux** :
 
 | Rôle | Description |
 |------|-------------|
-| **OWNER** | Propriétaire — accès complet à l'établissement, mêmes droits que le DAF + gestion des canaux de réservation |
+| **OWNER** | Propriétaire — accès complet à l'établissement, mêmes droits que le DAF + gestion des canaux de réservation + configuration FedaPay |
 | **DAF** | Directeur Administratif et Financier — administrateur de l'établissement. Valide les créations d'articles/employés, gère finances/stock/rapports. Badge d'approbation en temps réel sur le dashboard |
 | **MANAGER** | Gestion quotidienne — crée les articles du menu (soumis à approbation DAF), crée employés (sous validation DAF), rapports d'activité, gestion stock |
 | **SERVER** | Serveur — prise de commandes via le menu (Restaurant/Boissons), affichage QR code pour paiement client, stats personnelles. N'a pas accès aux réservations ni aux chambres directement |
@@ -305,6 +307,12 @@ Le système utilise un **RBAC à 2 niveaux** :
 - `PATCH /api/api-keys/:id` — Modifier (nom, activer/désactiver, IPs autorisées)
 - `DELETE /api/api-keys/:id` — Supprimer une clé API
 
+### Paramètres tenant
+- `GET /api/tenant/settings` — Paramètres du tenant (secrets masqués)
+- `PATCH /api/tenant/settings/fedapay` — Configurer FedaPay (clé secrète chiffrée, mode sandbox/live, callback URL, webhook URL)
+- `DELETE /api/tenant/settings/fedapay` — Déconnecter FedaPay
+- `POST /api/tenant/settings/fedapay/test` — Tester la connexion FedaPay
+
 ### Intégrations
 - `GET /api/availability.json` — Disponibilité chambres (JSON)
 - `GET /api/availability.ics` — Calendrier iCal global (RFC 5545, authentifié)
@@ -385,7 +393,7 @@ Seuls les comptes **OWNER**, **DAF** et **MANAGER** ont accès à la page "Canau
 2. Copier l'URL iCal fournie par Airbnb (format : `https://www.airbnb.com/calendar/ical/xxx.ics`)
 3. Dans le PMS : déplier la connexion, coller l'URL dans le champ **URL d'import**
 4. Cliquer **Synchroniser maintenant** pour un premier test
-5. La synchronisation automatique s'exécute toutes les 15 minutes (configurable : 5 min à 24h)
+5. La synchronisation automatique s'exécute toutes les minutes par défaut (configurable : 1 min à 24h)
 
 ### Mêmes étapes pour Booking.com et Expedia
 
@@ -402,6 +410,10 @@ Les plateformes proposent toutes un export/import iCal dans leurs paramètres de
 - Chaque URL d'export contient un **token unique de 64 caractères** (non devinable)
 - Si un token est compromis, il peut être régénéré (l'ancienne URL cesse de fonctionner immédiatement)
 - Les feeds iCal ne contiennent aucune donnée client (uniquement "Non disponible" + dates)
+
+## Fonctionnalités à venir
+
+- **Calendrier de disponibilité par chambre** — Vue calendrier visuelle des disponibilités de chaque chambre, synchronisée en temps réel entre tous les canaux connectés (Airbnb, Booking.com, Expedia, PMS). Permettra de visualiser d'un coup d'oeil les réservations PMS et externes sur un calendrier interactif.
 
 ## App Mobile Android
 

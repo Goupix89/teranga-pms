@@ -33,6 +33,7 @@ Le propriétaire a les mêmes permissions que le DAF, plus la gestion des canaux
 |--------|--------|----------|
 | **Clés API** | Créer / modifier / supprimer | Oui |
 | **Canaux iCal** | Connecter / configurer | Oui |
+| **Configuration FedaPay** | Connecter / tester / déconnecter | Oui |
 | **Fournisseurs** | CRUD complet | Oui |
 
 ---
@@ -205,8 +206,10 @@ Lorsqu'une commande est créée, une facture est automatiquement générée :
 Lorsqu'une réservation est créée (web, mobile ou WordPress) :
 
 - Facture auto-générée : `FAC-YYYYMMDD-NNNN`, statut `ISSUED`
+- Le moyen de paiement est stocké sur la facture
 - QR code de paiement disponible immédiatement
 - Moyen de paiement : Espèces, Mobile Money, Flooz, Yas, FedaPay, Carte, Virement
+- Si FedaPay : bouton + lien cliquable vers la gateway de paiement
 - Reçu PDF téléchargeable (format ticket 80mm)
 
 ### Réservation WordPress + FedaPay
@@ -214,9 +217,10 @@ Lorsqu'une réservation est créée (web, mobile ou WordPress) :
 Lorsqu'un client réserve depuis un site WordPress :
 
 1. Paiement FedaPay (Mobile Money, carte)
-2. Plugin WordPress envoie la réservation via `POST /api/external-bookings`
-3. Réservation créée + facture auto-générée + paiement enregistré
+2. Plugin WordPress envoie la réservation via `POST /api/external-bookings` (instantané)
+3. Réservation créée + facture auto-générée + paiement enregistré (montant partiel supporté : acompte 60%)
 4. Webhook FedaPay confirme le paiement (double sécurité)
+5. Notification vers WordPress via webhook de paiement (si configuré)
 
 ### Checkout → Nettoyage automatique
 
