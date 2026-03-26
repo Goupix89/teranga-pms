@@ -263,6 +263,50 @@ add_action('babe_order_canceled', function ($order_id) {
 });
 
 // =============================================================================
+// WEBHOOK — Receive payment notifications from Teranga PMS
+// =============================================================================
+
+add_action('rest_api_init', function () {
+    register_rest_route('teranga-ba-sync/v1', '/payment-webhook', [
+        'methods'             => 'POST',
+        'callback'            => 'teranga_ba_handle_payment_webhook',
+        'permission_callback' => '__return_true', // Public endpoint
+    ]);
+});
+
+function teranga_ba_handle_payment_webhook($request) {
+    $data = $request->get_json_params();
+
+    if (empty($data['event']) || $data['event'] !== 'payment.completed') {
+        return new WP_REST_Response(['received' => true, 'action' => 'ignored'], 200);
+    }
+
+    $external_ref = $data['externalRef'] ?? '';
+    teranga_ba_log("Webhook paiement reçu : $external_ref — Montant: " . ($data['amount'] ?? 0));
+
+    // Extract BA order ID from externalRef (format: ba_order_XXX)
+    if (preg_match('/^ba_order_(\d+)$/', $external_ref, $matches)) {
+        $order_id = intval($matches[1]);
+
+        // Mark the BA order as paid
+        update_post_meta($order_id, '_teranga_payment_status', 'PAID');
+        update_post_meta($order_id, '_teranga_payment_method', $data['paymentMethod'] ?? 'FEDAPAY');
+        update_post_meta($order_id, '_teranga_payment_amount', $data['amount'] ?? 0);
+        update_post_meta($order_id, '_teranga_paid_at', $data['paidAt'] ?? current_time('c'));
+
+        teranga_ba_log("Commande BA #$order_id marquée comme payée via Teranga PMS");
+
+        return new WP_REST_Response([
+            'received' => true,
+            'action'   => 'order_updated',
+            'orderId'  => $order_id,
+        ], 200);
+    }
+
+    return new WP_REST_Response(['received' => true, 'action' => 'no_match'], 200);
+}
+
+// =============================================================================
 // HELPERS
 // =============================================================================
 

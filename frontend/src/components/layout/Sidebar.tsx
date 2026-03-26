@@ -40,7 +40,7 @@ const navigation: NavItem[] = [
   { name: 'Utilisateurs', href: '/dashboard/users', icon: Users, estRoles: ['OWNER', 'DAF', 'MANAGER'] },
   { name: 'Rapports', href: '/dashboard/reports', icon: BarChart3, estRoles: ['OWNER', 'DAF', 'MANAGER'] },
   { name: 'Clés API', href: '/dashboard/api-keys', icon: KeyRound, estRoles: ['OWNER', 'DAF'] },
-  { name: 'Paramètres', href: '/dashboard/settings', icon: Settings, superadminOnly: true },
+  { name: 'Paramètres', href: '/dashboard/settings', icon: Settings, estRoles: ['OWNER'] },
 ];
 
 const estRoleLabels: Record<EstablishmentRole, string> = {

@@ -571,20 +571,14 @@ invoiceRouter.get('/:id/qrcode', authenticate,
       select: { paymentMethod: true, orderNumber: true, tableNumber: true },
     });
 
-    // Also check reservation for paymentMethod (reservations store it in the create response)
-    let reservationPaymentMethod: string | null = null;
-    if (invoice.reservationId) {
-      const reservation = await prisma.reservation.findUnique({
-        where: { id: invoice.reservationId },
-        select: { id: true },
-      });
-      // The paymentMethod from reservations is passed as query param
-      if (req.query.paymentMethod) {
-        reservationPaymentMethod = req.query.paymentMethod as string;
-      }
-    }
+    // Check existing payments to detect paymentMethod (e.g., FEDAPAY payment already recorded)
+    const existingPayment = await prisma.payment.findFirst({
+      where: { invoiceId: invoice.id },
+      select: { method: true },
+      orderBy: { paidAt: 'desc' },
+    });
 
-    const paymentMethod = order?.paymentMethod || reservationPaymentMethod || (req.query.paymentMethod as string) || 'MOBILE_MONEY';
+    const paymentMethod = order?.paymentMethod || existingPayment?.method || (req.query.paymentMethod as string) || 'MOBILE_MONEY';
 
     // FedaPay: create a transaction and get checkout URL
     let fedapayCheckoutUrl: string | undefined;
@@ -1102,6 +1096,52 @@ supplierRouter.delete('/:id', authenticate, requireDAF,
 // =============================================================================
 // INTEGRATION ENDPOINTS
 // =============================================================================
+
+/** Notify WordPress/external system when a payment is recorded for a channel-manager reservation */
+async function notifyExternalPayment(tenantId: string, invoiceId: string, paymentMethod: string, amount: number) {
+  try {
+    // Find the reservation linked to this invoice
+    const invoice = await prisma.invoice.findFirst({
+      where: { id: invoiceId, tenantId },
+      select: { reservationId: true },
+    });
+    if (!invoice?.reservationId) return;
+
+    const reservation = await prisma.reservation.findFirst({
+      where: { id: invoice.reservationId, source: { in: ['CHANNEL_MANAGER', 'BOOKING_COM', 'EXPEDIA', 'AIRBNB'] } },
+      select: { id: true, externalRef: true, guestName: true, checkIn: true, checkOut: true, source: true },
+    });
+    if (!reservation?.externalRef) return;
+
+    // Get tenant webhook URL from settings
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { settings: true },
+    });
+    const settings = (tenant?.settings as Record<string, any>) || {};
+    const webhookUrl = settings.paymentWebhookUrl;
+    if (!webhookUrl) return;
+
+    // Send payment notification to external system
+    await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event: 'payment.completed',
+        reservationId: reservation.id,
+        externalRef: reservation.externalRef,
+        guestName: reservation.guestName,
+        checkIn: reservation.checkIn,
+        checkOut: reservation.checkOut,
+        paymentMethod,
+        amount,
+        invoiceId,
+        paidAt: new Date().toISOString(),
+      }),
+    }).catch(() => {}); // Fire and forget
+  } catch {}
+}
+
 export const integrationRouter = Router();
 
 // GET /api/availability.json
@@ -1421,6 +1461,7 @@ tenantSettingsRouter.get('/', authenticate, requireOwner,
         isSandbox: settings.fedapaySandbox !== false,
         callbackUrl: settings.fedapayCallbackUrl || '',
       },
+      paymentWebhookUrl: settings.paymentWebhookUrl || '',
     };
 
     res.json({ success: true, data: safeSettings });
@@ -1430,7 +1471,7 @@ tenantSettingsRouter.get('/', authenticate, requireOwner,
 // PATCH /api/tenant/settings/fedapay — configure FedaPay for this tenant
 tenantSettingsRouter.patch('/fedapay', authenticate, requireOwner,
   asyncHandler(async (req, res) => {
-    const { secretKey, isSandbox, callbackUrl } = req.body;
+    const { secretKey, isSandbox, callbackUrl, paymentWebhookUrl } = req.body;
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: req.user!.tenantId },
@@ -1465,6 +1506,10 @@ tenantSettingsRouter.patch('/fedapay', authenticate, requireOwner,
 
     if (callbackUrl !== undefined) {
       updatedSettings.fedapayCallbackUrl = callbackUrl;
+    }
+
+    if (paymentWebhookUrl !== undefined) {
+      updatedSettings.paymentWebhookUrl = paymentWebhookUrl;
     }
 
     await prisma.tenant.update({

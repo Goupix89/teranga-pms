@@ -149,11 +149,26 @@ app.post('/api/webhooks/fedapay', async (req: express.Request, res: express.Resp
           invoice = await prisma.invoice.findFirst({
             where: { id: invoiceIdFromMeta, status: { not: 'CANCELLED' } },
           });
-        } else if (reservationId) {
+        }
+        if (!invoice && reservationId) {
+          // Try by reservation ID (PMS-generated)
           invoice = await prisma.invoice.findFirst({
             where: { reservationId, status: { not: 'CANCELLED' } },
             orderBy: { createdAt: 'desc' },
           });
+        }
+        if (!invoice && reservationId) {
+          // Try by externalRef on the reservation (WordPress BA sync uses ba_order_XXX)
+          const reservation = await prisma.reservation.findFirst({
+            where: { externalRef: reservationId },
+            select: { id: true },
+          });
+          if (reservation) {
+            invoice = await prisma.invoice.findFirst({
+              where: { reservationId: reservation.id, status: { not: 'CANCELLED' } },
+              orderBy: { createdAt: 'desc' },
+            });
+          }
         }
 
         if (invoice) {
@@ -175,6 +190,41 @@ app.post('/api/webhooks/fedapay', async (req: express.Request, res: express.Resp
             where: { id: invoice.id },
             data: { status: 'PAID', paidAt: new Date() },
           });
+
+          // Notify external system (WordPress) about the payment
+          try {
+            const tenantData = await prisma.tenant.findUnique({
+              where: { id: invoice.tenantId },
+              select: { settings: true },
+            });
+            const tenantSettings = (tenantData?.settings as Record<string, any>) || {};
+            const webhookUrl = tenantSettings.paymentWebhookUrl;
+
+            if (webhookUrl && invoice.reservationId) {
+              const reservation = await prisma.reservation.findUnique({
+                where: { id: invoice.reservationId },
+                select: { externalRef: true, guestName: true, checkIn: true, checkOut: true },
+              });
+              if (reservation?.externalRef) {
+                fetch(webhookUrl, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    event: 'payment.completed',
+                    reservationId: invoice.reservationId,
+                    externalRef: reservation.externalRef,
+                    guestName: reservation.guestName,
+                    checkIn: reservation.checkIn,
+                    checkOut: reservation.checkOut,
+                    paymentMethod: 'FEDAPAY',
+                    amount,
+                    invoiceId: invoice.id,
+                    paidAt: new Date().toISOString(),
+                  }),
+                }).catch(() => {});
+              }
+            }
+          } catch {}
 
           logger.info('FedaPay payment recorded via webhook', {
             invoiceId: invoice.id,

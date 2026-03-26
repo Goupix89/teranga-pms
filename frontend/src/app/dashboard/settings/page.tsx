@@ -62,6 +62,7 @@ function FedaPayConfig({ settings, isLoading }: { settings: any; isLoading: bool
   const [secretKey, setSecretKey] = useState('');
   const [isSandbox, setIsSandbox] = useState(true);
   const [callbackUrl, setCallbackUrl] = useState('');
+  const [paymentWebhookUrl, setPaymentWebhookUrl] = useState('');
   const [editing, setEditing] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -109,6 +110,7 @@ function FedaPayConfig({ settings, isLoading }: { settings: any; isLoading: bool
     if (secretKey) body.secretKey = secretKey;
     body.isSandbox = isSandbox;
     if (callbackUrl) body.callbackUrl = callbackUrl;
+    body.paymentWebhookUrl = paymentWebhookUrl;
     saveMutation.mutate(body);
   };
 
@@ -168,6 +170,12 @@ function FedaPayConfig({ settings, isLoading }: { settings: any; isLoading: bool
                 <span className="text-xs font-mono truncate max-w-[200px]">{fedapay.callbackUrl}</span>
               </div>
             )}
+            {settings?.paymentWebhookUrl && (
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Webhook WordPress</span>
+                <span className="text-xs font-mono truncate max-w-[200px]">{settings.paymentWebhookUrl}</span>
+              </div>
+            )}
           </div>
 
           {/* Test result */}
@@ -187,7 +195,7 @@ function FedaPayConfig({ settings, isLoading }: { settings: any; isLoading: bool
               {testMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
               Tester la connexion
             </button>
-            <button onClick={() => { setEditing(true); setIsSandbox(fedapay.isSandbox); setCallbackUrl(fedapay.callbackUrl || ''); }} className="btn-secondary text-sm">
+            <button onClick={() => { setEditing(true); setIsSandbox(fedapay.isSandbox); setCallbackUrl(fedapay.callbackUrl || ''); setPaymentWebhookUrl(settings?.paymentWebhookUrl || ''); }} className="btn-secondary text-sm">
               Modifier
             </button>
             <button
@@ -270,6 +278,18 @@ function FedaPayConfig({ settings, isLoading }: { settings: any; isLoading: bool
               className="input w-full"
             />
             <p className="text-xs text-gray-400 mt-1">Page vers laquelle le client sera redirige apres le paiement</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Webhook paiement WordPress (optionnel)</label>
+            <input
+              type="url"
+              value={paymentWebhookUrl}
+              onChange={(e) => setPaymentWebhookUrl(e.target.value)}
+              placeholder="https://monsite.com/wp-json/teranga-ba-sync/v1/payment-webhook"
+              className="input w-full"
+            />
+            <p className="text-xs text-gray-400 mt-1">URL pour notifier WordPress quand un paiement est effectue sur Teranga PMS</p>
           </div>
 
           <div className="flex gap-2 pt-2">
