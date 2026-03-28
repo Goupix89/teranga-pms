@@ -11,6 +11,8 @@ import fs from 'fs';
 
 import { config } from './config';
 import { logger } from './utils/logger';
+import { prisma } from './utils/prisma';
+import { seedPlans } from './utils/seed-plans';
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware';
 import { extractTenantFromSubdomain } from './middlewares/tenant.middleware';
 import { registerCronJobs } from './jobs/cron';
@@ -389,8 +391,11 @@ app.use(errorHandler);
 
 const PORT = config.port;
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   logger.info(`🚀 Hotel PMS API running on port ${PORT} (${config.nodeEnv})`);
+
+  // Ensure subscription plans exist
+  await seedPlans();
 
   // Register cron jobs
   if (config.isProd || process.env.ENABLE_CRON === 'true') {
