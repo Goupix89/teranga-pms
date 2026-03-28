@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs';
 import { prisma } from './prisma';
 import { logger } from './logger';
 
@@ -49,8 +50,12 @@ const PLANS = [
   },
 ];
 
+const SUPERADMIN_EMAIL = 'superadmin@hoteldemo.com';
+const SUPERADMIN_PASSWORD = 'Admin123!';
+
 export async function seedPlans() {
   try {
+    // Seed subscription plans
     for (const plan of PLANS) {
       await prisma.subscriptionPlan.upsert({
         where: { slug: plan.slug },
@@ -65,7 +70,42 @@ export async function seedPlans() {
       });
     }
     logger.info(`✅ ${PLANS.length} subscription plans ensured`);
+
+    // Seed platform tenant + superadmin
+    const tenant = await prisma.tenant.upsert({
+      where: { slug: 'platform' },
+      update: {},
+      create: {
+        name: 'Platform',
+        slug: 'platform',
+        plan: 'enterprise',
+        isActive: true,
+        settings: {},
+      },
+    });
+
+    const existing = await prisma.user.findFirst({
+      where: { email: SUPERADMIN_EMAIL, tenantId: tenant.id },
+    });
+
+    if (!existing) {
+      const passwordHash = await bcrypt.hash(SUPERADMIN_PASSWORD, 12);
+      await prisma.user.create({
+        data: {
+          tenantId: tenant.id,
+          email: SUPERADMIN_EMAIL,
+          passwordHash,
+          firstName: 'Super',
+          lastName: 'Admin',
+          role: 'SUPERADMIN',
+          phone: '+22890001234',
+        },
+      });
+      logger.info(`✅ Superadmin created (${SUPERADMIN_EMAIL})`);
+    } else {
+      logger.info(`✅ Superadmin already exists`);
+    }
   } catch (err) {
-    logger.error('Failed to seed subscription plans', { error: err });
+    logger.error('Failed to seed data', { error: err });
   }
 }
