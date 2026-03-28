@@ -155,22 +155,22 @@ establishmentRouter.get('/:id', authenticate, requireAnyEstablishmentRole,
 
 establishmentRouter.post('/', authenticate, requireOwner, checkPlanLimit('establishments'), validate(v.createEstablishmentSchema),
   asyncHandler(async (req, res) => {
-    const data = await establishmentService.create(req.user!.tenantId, req.body);
+    const data = await establishmentService.create(req.user!.tenantId, req.body, req.user!.id);
     res.status(201).json({ success: true, data });
   })
 );
 
-establishmentRouter.patch('/:id', authenticate, requireSuperAdmin, validate(v.updateEstablishmentSchema),
+establishmentRouter.patch('/:id', authenticate, requireOwner, validate(v.updateEstablishmentSchema),
   asyncHandler(async (req, res) => {
     const data = await establishmentService.update(req.user!.tenantId, req.params.id, req.body);
     res.json({ success: true, data });
   })
 );
 
-establishmentRouter.delete('/:id', authenticate, requireSuperAdmin,
+establishmentRouter.delete('/:id', authenticate, requireOwner,
   asyncHandler(async (req, res) => {
     await establishmentService.delete(req.user!.tenantId, req.params.id);
-    res.json({ success: true, message: 'Établissement désactivé' });
+    res.json({ success: true, message: 'Établissement supprimé' });
   })
 );
 

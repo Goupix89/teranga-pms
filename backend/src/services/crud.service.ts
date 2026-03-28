@@ -353,10 +353,21 @@ export class EstablishmentService {
     name: string; address: string; city: string; country: string;
     phone?: string; email?: string; website?: string; starRating?: number;
     timezone?: string; currency?: string;
-  }) {
+  }, creatorUserId?: string) {
     const establishment = await prisma.establishment.create({
       data: { tenantId, ...data },
     });
+
+    // Add the creator as OWNER member of the new establishment
+    if (creatorUserId) {
+      await prisma.establishmentMember.create({
+        data: {
+          userId: creatorUserId,
+          establishmentId: establishment.id,
+          role: 'OWNER',
+        },
+      });
+    }
 
     // Create default article categories for the new establishment
     const defaultCategories = ['Restaurant', 'Boissons', 'Fournitures'];
