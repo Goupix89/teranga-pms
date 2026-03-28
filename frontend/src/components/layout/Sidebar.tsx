@@ -24,7 +24,7 @@ type NavItem = {
 
 const navigation: NavItem[] = [
   { name: 'Tableau de bord', href: '/dashboard', icon: LayoutDashboard, estRoles: ['OWNER', 'DAF', 'MANAGER', 'SERVER', 'POS', 'COOK', 'CLEANER'] },
-  { name: 'Établissements', href: '/dashboard/establishments', icon: Building2, superadminOnly: true },
+  { name: 'Établissements', href: '/dashboard/establishments', icon: Building2, estRoles: ['OWNER'] },
   { name: 'Chambres', href: '/dashboard/rooms', icon: BedDouble, estRoles: ['OWNER', 'DAF', 'MANAGER', 'CLEANER'] },
   { name: 'Réservations', href: '/dashboard/reservations', icon: CalendarCheck, estRoles: ['OWNER', 'DAF', 'MANAGER'] },
   { name: 'Canaux', href: '/dashboard/channels', icon: Globe2, estRoles: ['OWNER', 'DAF', 'MANAGER'] },

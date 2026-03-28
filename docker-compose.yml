@@ -78,6 +78,8 @@ services:
       - backend
     ports:
       - "3001:3000"
+    env_file:
+      - ./frontend/.env
     environment:
       NEXT_PUBLIC_API_URL: "http://localhost:4000"
     volumes:

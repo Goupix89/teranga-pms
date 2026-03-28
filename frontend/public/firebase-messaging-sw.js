@@ -5,15 +5,14 @@
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js');
 
-// Firebase config is injected at build time or via query params
-// For security, use minimal config here (only public keys)
+// Firebase config — these are PUBLIC keys, safe to include in client code
 firebase.initializeApp({
-  apiKey: self.__FIREBASE_CONFIG__?.apiKey || '',
-  authDomain: self.__FIREBASE_CONFIG__?.authDomain || '',
-  projectId: self.__FIREBASE_CONFIG__?.projectId || '',
-  storageBucket: self.__FIREBASE_CONFIG__?.storageBucket || '',
-  messagingSenderId: self.__FIREBASE_CONFIG__?.messagingSenderId || '',
-  appId: self.__FIREBASE_CONFIG__?.appId || '',
+  apiKey: 'AIzaSyA4yieC3vHVif9E77dzWcewljP-f3giTVM',
+  authDomain: 'teranga-pms.firebaseapp.com',
+  projectId: 'teranga-pms',
+  storageBucket: 'teranga-pms.firebasestorage.app',
+  messagingSenderId: '858864118265',
+  appId: '1:858864118265:web:d350bf97b37607a219f528',
 });
 
 const messaging = firebase.messaging();
