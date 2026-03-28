@@ -11,6 +11,8 @@ export default function EstablishmentsPage() {
   const queryClient = useQueryClient();
   const currentUser = useAuthStore((s) => s.user);
   const isSuperAdmin = currentUser?.role === 'SUPERADMIN';
+  const isOwner = currentUser?.memberships?.some((m: any) => m.role === 'OWNER');
+  const canManage = isSuperAdmin || isOwner;
   const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
   const [editEst, setEditEst] = useState<any>(null);
@@ -76,7 +78,7 @@ export default function EstablishmentsPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   {est.starRating && <span className="text-amber-500 text-sm">{'★'.repeat(est.starRating)}</span>}
-                  {isSuperAdmin && (
+                  {canManage && (
                     <>
                       <button onClick={() => openEdit(est)} className="btn-ghost p-1.5 text-gray-500 hover:text-primary-600" title="Modifier">
                         <Pencil className="h-4 w-4" />
@@ -116,7 +118,7 @@ export default function EstablishmentsPage() {
         </form>
       </Modal>
 
-      {/* Edit Establishment Modal (SUPERADMIN only) */}
+      {/* Edit Establishment Modal */}
       <Modal open={!!editEst} onClose={() => setEditEst(null)} title="Modifier l'établissement" size="lg">
         <form onSubmit={(e) => {
           e.preventDefault();
