@@ -4,7 +4,8 @@
       "Bash(curl -s http://localhost:4000/api/health)",
       "Read(//dev/**)",
       "Bash(grep -rn \"userRouter\\\\|establishmentRouter\" /home/user/hotel-pms/backend/src --include=*.ts)",
-      "Bash(npx next:*)"
+      "Bash(npx next:*)",
+      "Bash(find /home/user/hotel-pms -type f \\\\\\(-name nginx.conf -o -name *.conf -o -name Makefile -o -name *.sh \\\\\\))"
     ]
   }
 }
