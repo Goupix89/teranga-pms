@@ -33,6 +33,27 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     // Set tenantId on request for convenience
     req.tenantId = payload.tenantId;
 
+    // Check subscription status — block access if SUSPENDED or CANCELLED
+    const subscription = await prisma.subscription.findUnique({
+      where: { tenantId: payload.tenantId },
+      select: { status: true, gracePeriodEndsAt: true },
+    });
+
+    if (subscription) {
+      if (subscription.status === 'SUSPENDED' || subscription.status === 'CANCELLED') {
+        // Allow access to subscription endpoints so users can renew
+        const isSubscriptionRoute = req.originalUrl.startsWith('/api/subscriptions');
+        const isAuthRoute = req.originalUrl.startsWith('/api/auth');
+        if (!isSubscriptionRoute && !isAuthRoute) {
+          return next(new UnauthorizedError(
+            'Votre abonnement est suspendu. Veuillez renouveler votre abonnement pour continuer.'
+          ));
+        }
+      }
+      // Attach subscription info for downstream use (plan limits, etc.)
+      req.subscriptionStatus = subscription.status;
+    }
+
     // SUPERADMIN has full access — no establishment filtering needed
     if (payload.role === 'SUPERADMIN') {
       return next();

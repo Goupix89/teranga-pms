@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
-import { Loader2, Eye, EyeOff, Check, ArrowLeft, ArrowRight } from 'lucide-react';
+import { Loader2, Eye, EyeOff, Check, ArrowLeft, ArrowRight, CreditCard, Clock } from 'lucide-react';
 
 interface Plan {
   id: string;
@@ -13,6 +13,7 @@ interface Plan {
   slug: string;
   monthlyPrice: number;
   yearlyPrice: number;
+  trialDays?: number;
   features: {
     maxEstablishments: number;
     maxRooms: number;
@@ -46,6 +47,7 @@ function RegisterContent() {
   const [yearly, setYearly] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [skipTrial, setSkipTrial] = useState(false);
 
   // Form state
   const [selectedPlan, setSelectedPlan] = useState('pro');
@@ -117,10 +119,22 @@ function RegisterContent() {
         lastName: form.lastName,
         planSlug: selectedPlan,
         billingInterval: yearly ? 'YEARLY' : 'MONTHLY',
+        skipTrial,
       });
 
-      // Redirect to Stripe Checkout
-      window.location.href = data.data.checkoutUrl;
+      const result = data.data;
+
+      if (result.trial) {
+        // Trial plan — account activated immediately, redirect to login
+        toast.success(result.message || `Essai gratuit de ${result.trialDays} jours activé !`);
+        window.location.href = '/auth/login';
+      } else if (result.checkoutUrl) {
+        // Payment required — redirect to FedaPay checkout
+        window.location.href = result.checkoutUrl;
+      } else {
+        toast.success('Inscription réussie !');
+        window.location.href = '/auth/login';
+      }
     } catch (err: any) {
       const msg = err.response?.data?.error || 'Erreur lors de l\'inscription';
       toast.error(msg);
@@ -427,6 +441,41 @@ function RegisterContent() {
                   <p className="mt-1 font-semibold text-gray-900">{form.firstName} {form.lastName}</p>
                   <p className="text-sm text-gray-500">{form.email}</p>
                 </div>
+
+                {/* Payment method choice when plan has trial */}
+                {currentPlan.trialDays && currentPlan.trialDays > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-700 mb-3">Mode d&apos;activation</h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setSkipTrial(false)}
+                        className={`rounded-xl border-2 p-4 text-left transition-all ${
+                          !skipTrial
+                            ? 'border-primary-600 bg-primary-50 ring-1 ring-primary-600'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <Clock className={`h-5 w-5 mb-2 ${!skipTrial ? 'text-primary-600' : 'text-gray-400'}`} />
+                        <p className="font-medium text-sm text-gray-900">Essai gratuit</p>
+                        <p className="text-xs text-gray-500 mt-1">{currentPlan.trialDays} jours sans engagement</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSkipTrial(true)}
+                        className={`rounded-xl border-2 p-4 text-left transition-all ${
+                          skipTrial
+                            ? 'border-primary-600 bg-primary-50 ring-1 ring-primary-600'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <CreditCard className={`h-5 w-5 mb-2 ${skipTrial ? 'text-primary-600' : 'text-gray-400'}`} />
+                        <p className="font-medium text-sm text-gray-900">Payer maintenant</p>
+                        <p className="text-xs text-gray-500 mt-1">Activation immédiate</p>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <form onSubmit={handleSubmit}>
@@ -440,6 +489,8 @@ function RegisterContent() {
                         <Loader2 className="mr-2 h-4 w-4 animate-spin inline" />
                         Redirection...
                       </>
+                    ) : currentPlan.trialDays && currentPlan.trialDays > 0 && !skipTrial ? (
+                      'Commencer l\'essai gratuit'
                     ) : (
                       'Procéder au paiement'
                     )}
@@ -448,7 +499,9 @@ function RegisterContent() {
               </form>
 
               <p className="mt-4 text-center text-xs text-gray-400">
-                Vous serez redirigé vers Stripe pour le paiement sécurisé.
+                {currentPlan.trialDays && currentPlan.trialDays > 0 && !skipTrial
+                  ? 'Votre essai gratuit commence immédiatement. Aucun paiement requis.'
+                  : 'Vous serez redirigé vers FedaPay pour le paiement sécurisé.'}
               </p>
             </div>
           )}

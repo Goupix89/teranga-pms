@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middlewares/auth.middleware';
 import { notificationService } from '../services/notification.service';
+import { firebaseService } from '../services/firebase.service';
 
 const router = Router();
 
@@ -40,6 +41,33 @@ router.post('/:id/read', authenticate, asyncHandler(async (req, res) => {
 router.post('/read-all', authenticate, asyncHandler(async (req, res) => {
   await notificationService.markAllAsRead(req.user!.id);
   res.json({ success: true });
+}));
+
+/**
+ * POST /api/notifications/device-token — register FCM device token
+ */
+router.post('/device-token', authenticate, asyncHandler(async (req, res) => {
+  const { token, platform } = req.body;
+  if (!token || !platform) {
+    return res.status(400).json({ success: false, error: 'Token et platform requis' });
+  }
+  if (!['WEB', 'ANDROID', 'IOS'].includes(platform)) {
+    return res.status(400).json({ success: false, error: 'Platform invalide (WEB, ANDROID, IOS)' });
+  }
+  await firebaseService.registerToken(req.user!.id, token, platform);
+  res.json({ success: true, message: 'Token enregistré' });
+}));
+
+/**
+ * DELETE /api/notifications/device-token — remove FCM device token
+ */
+router.delete('/device-token', authenticate, asyncHandler(async (req, res) => {
+  const { token } = req.body;
+  if (!token) {
+    return res.status(400).json({ success: false, error: 'Token requis' });
+  }
+  await firebaseService.removeToken(token);
+  res.json({ success: true, message: 'Token supprimé' });
 }));
 
 /**

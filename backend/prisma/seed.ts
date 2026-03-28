@@ -11,10 +11,9 @@ async function main() {
     {
       name: 'Basic',
       slug: 'basic',
-      stripePriceIdMonthly: 'price_basic_monthly',
-      stripePriceIdYearly: 'price_basic_yearly',
       monthlyPrice: 32500,
       yearlyPrice: 325000,
+      trialDays: 14,
       features: {
         maxEstablishments: 1,
         maxRooms: 20,
@@ -27,10 +26,9 @@ async function main() {
     {
       name: 'Pro',
       slug: 'pro',
-      stripePriceIdMonthly: 'price_pro_monthly',
-      stripePriceIdYearly: 'price_pro_yearly',
       monthlyPrice: 65000,
       yearlyPrice: 650000,
+      trialDays: 14,
       features: {
         maxEstablishments: 3,
         maxRooms: 100,
@@ -43,10 +41,9 @@ async function main() {
     {
       name: 'Enterprise',
       slug: 'enterprise',
-      stripePriceIdMonthly: 'price_enterprise_monthly',
-      stripePriceIdYearly: 'price_enterprise_yearly',
       monthlyPrice: 130000,
       yearlyPrice: 1300000,
+      trialDays: 14,
       features: {
         maxEstablishments: -1,
         maxRooms: -1,

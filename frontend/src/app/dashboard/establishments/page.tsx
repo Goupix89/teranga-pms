@@ -1,9 +1,9 @@
 'use client';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiGet, apiPost, apiPatch } from '@/lib/api';
-import { PageHeader, Pagination, Modal, SearchInput, EmptyState, LoadingPage } from '@/components/ui';
-import { Building2, Plus, Loader2, Pencil } from 'lucide-react';
+import { apiGet, apiPost, apiPatch, apiDelete } from '@/lib/api';
+import { PageHeader, Pagination, Modal, SearchInput, EmptyState, LoadingPage, ConfirmDialog } from '@/components/ui';
+import { Building2, Plus, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/hooks/useAuthStore';
 
@@ -14,6 +14,7 @@ export default function EstablishmentsPage() {
   const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
   const [editEst, setEditEst] = useState<any>(null);
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [form, setForm] = useState({ name: '', address: '', city: '', country: 'Togo', phone: '', email: '', website: '', starRating: '', currency: 'XOF' });
   const [editForm, setEditForm] = useState({ name: '', address: '', city: '', country: '', phone: '', email: '', website: '', starRating: '', currency: '' });
 
@@ -31,6 +32,12 @@ export default function EstablishmentsPage() {
   const updateMutation = useMutation({
     mutationFn: ({ id, body }: { id: string; body: any }) => apiPatch(`/establishments/${id}`, body),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['establishments'] }); setEditEst(null); toast.success('Établissement modifié'); },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiDelete(`/establishments/${id}`),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['establishments'] }); setDeleteTarget(null); toast.success('Établissement supprimé'); },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
   });
 
@@ -70,9 +77,14 @@ export default function EstablishmentsPage() {
                 <div className="flex items-center gap-2">
                   {est.starRating && <span className="text-amber-500 text-sm">{'★'.repeat(est.starRating)}</span>}
                   {isSuperAdmin && (
-                    <button onClick={() => openEdit(est)} className="btn-ghost p-1.5 text-gray-500 hover:text-primary-600" title="Modifier">
-                      <Pencil className="h-4 w-4" />
-                    </button>
+                    <>
+                      <button onClick={() => openEdit(est)} className="btn-ghost p-1.5 text-gray-500 hover:text-primary-600" title="Modifier">
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button onClick={() => setDeleteTarget(est)} className="btn-ghost p-1.5 text-gray-500 hover:text-red-600" title="Supprimer">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -139,6 +151,9 @@ export default function EstablishmentsPage() {
           </div>
         </form>
       </Modal>
+
+      <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+        title="Supprimer l'établissement" message={`Supprimer « ${deleteTarget?.name} » ? Cette action désactivera l'établissement et toutes ses données associées.`} confirmLabel="Supprimer" danger loading={deleteMutation.isPending} />
     </div>
   );
 }

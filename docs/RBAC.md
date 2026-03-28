@@ -20,12 +20,13 @@ Accès complet à toutes les fonctionnalités, tous les établissements.
 - Bypass de toutes les restrictions d'établissement
 - Dashboard complet avec toutes les statistiques
 - Gestion des utilisateurs et des établissements
+- **Gestion des abonnements** : voir, renouveler, et activation manuelle (paiements en espèces)
 
 ---
 
 ### Owner (Propriétaire)
 
-Le propriétaire a les mêmes permissions que le DAF, plus la gestion des canaux de réservation et des clés API.
+Le propriétaire a les mêmes permissions que le DAF, plus la gestion des canaux de réservation, des clés API et de l'abonnement.
 
 #### Permissions spécifiques (en plus du DAF)
 
@@ -35,6 +36,7 @@ Le propriétaire a les mêmes permissions que le DAF, plus la gestion des canaux
 | **Canaux iCal** | Connecter / configurer | Oui |
 | **Configuration FedaPay** | Connecter / tester / déconnecter | Oui |
 | **Fournisseurs** | CRUD complet | Oui |
+| **Abonnement** | Voir / renouveler via FedaPay | Oui |
 
 ---
 
@@ -60,6 +62,7 @@ Le DAF est l'administrateur de l'établissement. Il valide les actions sensibles
 | **Cuisine** | Voir le tableau cuisine | Oui (lecture seule) |
 | **Ménage** | Pointage (clock-in/out) | Non |
 | **Clés API** | Créer / modifier / supprimer | Oui |
+| **Abonnement** | Voir / renouveler via FedaPay | Oui |
 | **Dashboard** | Stats Manager + financières | Oui (7 graphiques) |
 
 #### Dashboard DAF

@@ -1,12 +1,14 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { apiGet, apiPost } from '@/lib/api';
-import { Bell, Check, CheckCheck } from 'lucide-react';
+import { apiGet, apiPost, apiDelete } from '@/lib/api';
+import { Bell, Check, CheckCheck, BellRing } from 'lucide-react';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { cn } from '@/lib/utils';
+import { requestNotificationPermission, onForegroundMessage } from '@/lib/firebase';
+import { toast } from 'sonner';
 
 interface Notification {
   id: string;
@@ -81,6 +83,44 @@ export function NotificationBell({ collapsed }: { collapsed: boolean }) {
 
   const notifications: Notification[] = data?.data || [];
   const unreadCount: number = data?.unreadCount || 0;
+
+  // Request push notification permission and register FCM token
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const fcmTokenRef = useRef<string | null>(null);
+
+  const registerPushToken = useCallback(async () => {
+    try {
+      const token = await requestNotificationPermission();
+      if (token) {
+        fcmTokenRef.current = token;
+        await apiPost('/notifications/device-token', { token, platform: 'WEB' });
+        setPushEnabled(true);
+      }
+    } catch (err) {
+      console.error('Push registration failed:', err);
+    }
+  }, []);
+
+  // Auto-register push on mount if permission already granted
+  useEffect(() => {
+    if (!accessToken) return;
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      registerPushToken();
+    }
+  }, [accessToken, registerPushToken]);
+
+  // Listen for foreground FCM messages
+  useEffect(() => {
+    onForegroundMessage((payload) => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      // Show a toast for foreground notifications
+      if (payload.notification) {
+        toast(payload.notification.title, {
+          description: payload.notification.body,
+        });
+      }
+    });
+  }, [queryClient]);
 
   // SSE connection for real-time updates
   useEffect(() => {
@@ -164,14 +204,25 @@ export function NotificationBell({ collapsed }: { collapsed: boolean }) {
           {/* Header */}
           <div className="flex items-center justify-between border-b border-wood-600 px-4 py-2.5">
             <h3 className="text-sm font-semibold text-wood-100">Notifications</h3>
-            {unreadCount > 0 && (
-              <button
-                onClick={() => markAllReadMutation.mutate()}
-                className="flex items-center gap-1 text-xs text-accent-500 hover:text-accent-400"
-              >
-                <CheckCheck className="h-3 w-3" /> Tout lire
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {!pushEnabled && typeof window !== 'undefined' && 'Notification' in window && Notification.permission !== 'denied' && (
+                <button
+                  onClick={registerPushToken}
+                  className="flex items-center gap-1 text-xs text-wood-300 hover:text-wood-100"
+                  title="Activer les notifications push"
+                >
+                  <BellRing className="h-3 w-3" /> Push
+                </button>
+              )}
+              {unreadCount > 0 && (
+                <button
+                  onClick={() => markAllReadMutation.mutate()}
+                  className="flex items-center gap-1 text-xs text-accent-500 hover:text-accent-400"
+                >
+                  <CheckCheck className="h-3 w-3" /> Tout lire
+                </button>
+              )}
+            </div>
           </div>
 
           {/* List */}

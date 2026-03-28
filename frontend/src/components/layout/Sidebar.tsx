@@ -9,7 +9,7 @@ import {
   LayoutDashboard, BedDouble, CalendarCheck, Receipt, CreditCard,
   Package, Truck, Users, Building2, Settings, LogOut, ChevronLeft,
   BarChart3, UtensilsCrossed, SprayCan, ClipboardCheck, AlertTriangle,
-  ChevronDown, UserCircle, Globe2, KeyRound,
+  ChevronDown, UserCircle, Globe2, KeyRound, Crown,
 } from 'lucide-react';
 import { useState } from 'react';
 import { NotificationBell } from './NotificationBell';
@@ -40,6 +40,7 @@ const navigation: NavItem[] = [
   { name: 'Utilisateurs', href: '/dashboard/users', icon: Users, estRoles: ['OWNER', 'DAF', 'MANAGER'] },
   { name: 'Rapports', href: '/dashboard/reports', icon: BarChart3, estRoles: ['OWNER', 'DAF', 'MANAGER'] },
   { name: 'Clés API', href: '/dashboard/api-keys', icon: KeyRound, estRoles: ['OWNER', 'DAF'] },
+  { name: 'Abonnement', href: '/dashboard/subscription', icon: Crown, estRoles: ['OWNER', 'DAF'] },
   { name: 'Paramètres', href: '/dashboard/settings', icon: Settings, estRoles: ['OWNER'] },
 ];
 

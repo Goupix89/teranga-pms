@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
+import { firebaseService } from './firebase.service';
 
 // In-memory SSE connections: userId -> Response[]
 const sseClients = new Map<string, Response[]>();
@@ -32,6 +33,17 @@ export class NotificationService {
 
     // Push to SSE clients
     this.pushToUser(params.userId, notification);
+
+    // Push via FCM (fire-and-forget)
+    firebaseService.sendToUser(params.userId, {
+      title: params.title,
+      body: params.message,
+      data: {
+        notificationId: notification.id,
+        type: params.type,
+        ...(params.establishmentId && { establishmentId: params.establishmentId }),
+      },
+    }).catch(() => {});
 
     return notification;
   }

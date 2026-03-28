@@ -1,15 +1,18 @@
 package com.hotelpms.pos.ui.auth
 
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.messaging.FirebaseMessaging
 import com.hotelpms.pos.data.remote.PmsApiService
 import com.hotelpms.pos.data.repository.PosRepository
 import com.hotelpms.pos.domain.model.Establishment
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
 data class LoginUiState(
@@ -34,6 +37,7 @@ class AuthViewModel @Inject constructor(
     init {
         if (repository.isLoggedIn) {
             fetchEstablishments()
+            registerFcmToken()
         }
     }
 
@@ -46,11 +50,23 @@ class AuthViewModel @Inject constructor(
                 onSuccess = {
                     uiState = uiState.copy(isLoading = false, isLoggedIn = true)
                     fetchEstablishments()
+                    registerFcmToken()
                 },
                 onFailure = { e ->
                     uiState = uiState.copy(isLoading = false, error = e.message ?: "Erreur de connexion")
                 }
             )
+        }
+    }
+
+    private fun registerFcmToken() {
+        viewModelScope.launch {
+            try {
+                val fcmToken = FirebaseMessaging.getInstance().token.await()
+                api.registerDeviceToken(mapOf("token" to fcmToken, "platform" to "ANDROID"))
+            } catch (e: Exception) {
+                Log.w("AuthViewModel", "Failed to register FCM token", e)
+            }
         }
     }
 
@@ -92,6 +108,12 @@ class AuthViewModel @Inject constructor(
     }
 
     fun logout() {
+        viewModelScope.launch {
+            try {
+                val fcmToken = FirebaseMessaging.getInstance().token.await()
+                api.removeDeviceToken(mapOf("token" to fcmToken))
+            } catch (_: Exception) { }
+        }
         repository.logout()
         uiState = LoginUiState()
     }

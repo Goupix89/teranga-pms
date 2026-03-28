@@ -76,10 +76,14 @@ services:
       RATE_LIMIT_MAX: "100"
       ACCESS_TOKEN_EXPIRY: "15m"
       REFRESH_TOKEN_EXPIRY_DAYS: "30"
-      STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY}"
-      STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET}"
-      STRIPE_SUCCESS_URL: "${PUBLIC_URL}/auth/register/success"
-      STRIPE_CANCEL_URL: "${PUBLIC_URL}/auth/register?cancelled=true"
+      # FedaPay (subscriptions + payments)
+      FEDAPAY_SECRET_KEY: "${FEDAPAY_SECRET_KEY}"
+      FEDAPAY_SANDBOX: "${FEDAPAY_SANDBOX:-false}"
+      FEDAPAY_CALLBACK_URL: "${PUBLIC_URL}/dashboard"
+      FEDAPAY_WEBHOOK_SECRET: "${FEDAPAY_WEBHOOK_SECRET}"
+      PUBLIC_URL: "${PUBLIC_URL}"
+      # Encryption key for tenant secrets (FedaPay per-tenant keys)
+      ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
     volumes:
       - prod_uploads:/app/uploads
     deploy:
@@ -106,7 +110,7 @@ services:
         limits:
           memory: 512M
 
-  # Automated daily backups
+  # Automated daily backups (run via cron on host or docker compose run backup)
   backup:
     image: postgres:15-alpine
     container_name: teranga-prod-backup

@@ -125,4 +125,12 @@ interface PmsApiService {
     @Streaming
     @GET("api/orders/{id}/receipt")
     suspend fun getOrderReceipt(@Path("id") id: String): Response<ResponseBody>
+
+    // Push notifications - register FCM device token
+    @POST("api/notifications/device-token")
+    suspend fun registerDeviceToken(@Body body: Map<String, String>): Response<GenericResponse>
+
+    // Push notifications - remove FCM device token
+    @HTTP(method = "DELETE", path = "api/notifications/device-token", hasBody = true)
+    suspend fun removeDeviceToken(@Body body: Map<String, String>): Response<GenericResponse>
 }

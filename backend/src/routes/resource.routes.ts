@@ -16,6 +16,7 @@ import {
   getEstablishmentRole,
 } from '../middlewares/rbac.middleware';
 import { validate, validateQuery } from '../middlewares/validate.middleware';
+import { checkPlanLimit } from '../middlewares/plan-limits.middleware';
 import { parsePagination } from '../utils/helpers';
 import * as v from '../validators';
 
@@ -33,6 +34,7 @@ import { stockAlertService } from '../services/stock-alert.service';
 import { memberService } from '../services/member.service';
 import { channelSyncService } from '../services/channel-sync.service';
 import { receiptService } from '../services/receipt.service';
+import { registrationService } from '../services/registration.service';
 // QR code and prisma for invoice QR endpoint
 const QRCode = require('qrcode');
 import { PrismaClient } from '@prisma/client';
@@ -72,7 +74,7 @@ userRouter.get('/:id', authenticate, requireSelfOrRole('DAF', 'MANAGER'),
 );
 
 // DAF & MANAGER can create users (MANAGER creates under DAF approval)
-userRouter.post('/', authenticate, requireDAFOrManager, validate(v.createUserSchema),
+userRouter.post('/', authenticate, requireDAFOrManager, checkPlanLimit('users'), validate(v.createUserSchema),
   asyncHandler(async (req, res) => {
     // SUPERADMIN bypasses all role restrictions
     const isSuperAdmin = req.user!.role === 'SUPERADMIN';
@@ -108,6 +110,22 @@ userRouter.delete('/:id', authenticate, requireDAF,
   })
 );
 
+// Unarchive a user (SUPERADMIN only)
+userRouter.post('/:id/unarchive', authenticate, requireSuperAdmin,
+  asyncHandler(async (req, res) => {
+    const data = await userService.unarchive(req.params.id);
+    res.json({ success: true, data, message: 'Utilisateur désarchivé' });
+  })
+);
+
+// Hard delete a user (SUPERADMIN only)
+userRouter.delete('/:id/permanent', authenticate, requireSuperAdmin,
+  asyncHandler(async (req, res) => {
+    await userService.hardDelete(req.params.id);
+    res.json({ success: true, message: 'Utilisateur supprimé définitivement' });
+  })
+);
+
 // =============================================================================
 // ESTABLISHMENTS
 // =============================================================================
@@ -116,11 +134,12 @@ export const establishmentRouter = Router();
 establishmentRouter.get('/', authenticate, requireAnyEstablishmentRole,
   asyncHandler(async (req, res) => {
     const params = parsePagination(req);
-    const result = await establishmentService.list(req.user!.tenantId, params, req.user!.establishmentIds);
+    const isSuperAdmin = req.user!.role === 'SUPERADMIN';
+    const result = await establishmentService.list(req.user!.tenantId, params, req.user!.establishmentIds, isSuperAdmin);
     // Inject the current user's establishment role into each establishment
     const memberships = req.user?.memberships || [];
     const data = (result.data || []).map((est: any) => {
-      const membership = memberships.find((m) => m.establishmentId === est.id);
+      const membership = memberships.find((m: any) => m.establishmentId === est.id);
       return { ...est, currentUserRole: membership?.role || null };
     });
     res.json({ success: true, ...result, data });
@@ -134,7 +153,7 @@ establishmentRouter.get('/:id', authenticate, requireAnyEstablishmentRole,
   })
 );
 
-establishmentRouter.post('/', authenticate, requireSuperAdmin, validate(v.createEstablishmentSchema),
+establishmentRouter.post('/', authenticate, requireOwner, checkPlanLimit('establishments'), validate(v.createEstablishmentSchema),
   asyncHandler(async (req, res) => {
     const data = await establishmentService.create(req.user!.tenantId, req.body);
     res.status(201).json({ success: true, data });
@@ -216,7 +235,7 @@ roomRouter.get('/:id', authenticate, requireAnyEstablishmentRole,
   })
 );
 
-roomRouter.post('/', authenticate, requireDAFOrManager, validate(v.createRoomSchema),
+roomRouter.post('/', authenticate, requireDAFOrManager, checkPlanLimit('rooms'), validate(v.createRoomSchema),
   asyncHandler(async (req, res) => {
     const estRole = getEstablishmentRole(req, req.body.establishmentId);
 
@@ -1699,5 +1718,205 @@ tenantSettingsRouter.post('/fedapay/test', authenticate, requireOwner,
         error: `Impossible de joindre FedaPay: ${err.message}`,
       });
     }
+  })
+);
+
+// =============================================================================
+// SUBSCRIPTION MANAGEMENT (SUPERADMIN only)
+// =============================================================================
+export const subscriptionRouter = Router();
+
+// GET /api/subscriptions — View current tenant's subscription + plan
+// Accessible to SUPERADMIN, OWNER, DAF
+subscriptionRouter.get('/', authenticate, requireDAF,
+  asyncHandler(async (req, res) => {
+    const subscription = await prisma.subscription.findUnique({
+      where: { tenantId: req.user!.tenantId },
+      include: {
+        plan: true,
+        payments: {
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+        },
+      },
+    });
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: req.user!.tenantId },
+      select: { name: true, slug: true, plan: true, isActive: true },
+    });
+
+    // Compute current usage for plan limits
+    const [roomCount, userCount, establishmentCount] = await Promise.all([
+      prisma.room.count({ where: { tenantId: req.user!.tenantId } }),
+      prisma.user.count({ where: { tenantId: req.user!.tenantId, status: { not: 'ARCHIVED' } } }),
+      prisma.establishment.count({ where: { tenantId: req.user!.tenantId } }),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        subscription,
+        tenant,
+        usage: { rooms: roomCount, users: userCount, establishments: establishmentCount },
+      },
+    });
+  })
+);
+
+// GET /api/subscriptions/plans — List all available plans
+// Accessible to SUPERADMIN, OWNER, DAF
+subscriptionRouter.get('/plans', authenticate, requireDAF,
+  asyncHandler(async (_req, res) => {
+    const plans = await prisma.subscriptionPlan.findMany({
+      where: { isActive: true },
+      orderBy: { displayOrder: 'asc' },
+    });
+    res.json({ success: true, data: plans });
+  })
+);
+
+// GET /api/subscriptions/all — List all tenants with their subscriptions (SUPERADMIN only)
+subscriptionRouter.get('/all', authenticate, requireSuperAdmin,
+  asyncHandler(async (_req, res) => {
+    const tenants = await prisma.tenant.findMany({
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        plan: true,
+        isActive: true,
+        createdAt: true,
+        subscription: {
+          include: {
+            plan: true,
+            payments: { orderBy: { createdAt: 'desc' }, take: 5 },
+          },
+        },
+        _count: { select: { rooms: true, users: true, establishments: true } },
+      },
+    });
+    res.json({ success: true, data: tenants });
+  })
+);
+
+// POST /api/subscriptions/renew — Generate a renewal payment link (FedaPay)
+// Accessible to SUPERADMIN, OWNER, DAF
+subscriptionRouter.post('/renew', authenticate, requireDAF,
+  asyncHandler(async (req, res) => {
+    const checkoutUrl = await registrationService.generateRenewalLink(req.user!.tenantId);
+    if (!checkoutUrl) {
+      return res.status(400).json({ success: false, error: 'Impossible de générer le lien de paiement' });
+    }
+    res.json({ success: true, data: { checkoutUrl } });
+  })
+);
+
+// POST /api/subscriptions/activate — Manually activate/extend a subscription (SUPERADMIN)
+// Used when a client pays cash/main à main. tenantId in body targets a specific tenant.
+subscriptionRouter.post('/activate', authenticate, requireSuperAdmin,
+  asyncHandler(async (req, res) => {
+    const { planSlug, billingInterval, months, tenantId: targetTenantId } = req.body;
+    const tenantId = targetTenantId || req.user!.tenantId;
+
+    const durationMonths = months || (billingInterval === 'YEARLY' ? 12 : 1);
+    const now = new Date();
+    const periodEnd = new Date(now);
+    periodEnd.setMonth(periodEnd.getMonth() + durationMonths);
+
+    // Resolve plan
+    let planId: string | undefined;
+    if (planSlug) {
+      const plan = await prisma.subscriptionPlan.findUnique({ where: { slug: planSlug } });
+      if (!plan) return res.status(404).json({ success: false, error: 'Plan introuvable' });
+      planId = plan.id;
+    }
+
+    const subscription = await prisma.subscription.findUnique({ where: { tenantId } });
+
+    if (subscription) {
+      await prisma.$transaction(async (tx) => {
+        await tx.subscription.update({
+          where: { tenantId },
+          data: {
+            status: 'ACTIVE',
+            ...(planId && { planId }),
+            ...(billingInterval && { billingInterval }),
+            currentPeriodStart: now,
+            currentPeriodEnd: periodEnd,
+            lastPaymentAt: now,
+            lastPaymentRef: `manual_${Date.now()}`,
+            gracePeriodEndsAt: null,
+            trialEndsAt: null,
+          },
+        });
+
+        await tx.tenant.update({
+          where: { id: tenantId },
+          data: { isActive: true, ...(planSlug && { plan: planSlug }) },
+        });
+
+        await tx.user.updateMany({
+          where: { tenantId, status: 'LOCKED' },
+          data: { status: 'ACTIVE' },
+        });
+
+        await tx.subscriptionPayment.create({
+          data: {
+            subscriptionId: subscription.id,
+            amount: 0,
+            currency: 'XOF',
+            status: 'PAID',
+            periodStart: now,
+            periodEnd,
+            paidAt: now,
+          },
+        });
+      });
+    } else {
+      const plan = planId
+        ? await prisma.subscriptionPlan.findUnique({ where: { id: planId } })
+        : await prisma.subscriptionPlan.findFirst({ where: { isActive: true }, orderBy: { displayOrder: 'asc' } });
+
+      if (!plan) return res.status(404).json({ success: false, error: 'Aucun plan disponible' });
+
+      await prisma.$transaction(async (tx) => {
+        const sub = await tx.subscription.create({
+          data: {
+            tenantId,
+            planId: plan.id,
+            status: 'ACTIVE',
+            billingInterval: billingInterval || 'MONTHLY',
+            currentPeriodStart: now,
+            currentPeriodEnd: periodEnd,
+            lastPaymentAt: now,
+            lastPaymentRef: `manual_${Date.now()}`,
+          },
+        });
+
+        await tx.tenant.update({
+          where: { id: tenantId },
+          data: { isActive: true, plan: plan.slug },
+        });
+
+        await tx.subscriptionPayment.create({
+          data: {
+            subscriptionId: sub.id,
+            amount: 0,
+            currency: 'XOF',
+            status: 'PAID',
+            periodStart: now,
+            periodEnd,
+            paidAt: now,
+          },
+        });
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Abonnement activé jusqu'au ${periodEnd.toLocaleDateString('fr-FR')}`,
+    });
   })
 );

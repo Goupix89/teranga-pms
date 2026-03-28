@@ -18,9 +18,12 @@ export class UserService {
     role?: UserRole; status?: UserStatus; search?: string;
     establishmentIds?: string[]; requestingRole?: UserRole;
   } = {}) {
-    const db = createTenantClient(tenantId);
+    // SUPERADMIN sees all users across all tenants
+    const isSuperAdmin = filters.requestingRole === 'SUPERADMIN';
 
     const where: Prisma.UserWhereInput = {
+      // SUPERADMIN: no tenant filter; others: filter by tenant
+      ...(!isSuperAdmin && { tenantId }),
       ...(filters.role && { role: filters.role }),
       ...(filters.status && { status: filters.status }),
       ...(filters.search && {
@@ -31,7 +34,7 @@ export class UserService {
         ],
       }),
       // Non-SUPERADMIN users only see users from their establishments
-      ...(filters.requestingRole !== 'SUPERADMIN' && filters.establishmentIds && {
+      ...(!isSuperAdmin && filters.establishmentIds && {
         memberships: { some: { establishmentId: { in: filters.establishmentIds } } },
       }),
     };
@@ -40,6 +43,8 @@ export class UserService {
       id: true, email: true, firstName: true, lastName: true,
       role: true, status: true, phone: true,
       lastLoginAt: true, lastActiveAt: true, createdAt: true,
+      tenantId: true,
+      tenant: isSuperAdmin ? { select: { id: true, name: true, slug: true } } : false,
       memberships: {
         select: {
           establishmentId: true,
@@ -50,8 +55,8 @@ export class UserService {
     };
 
     const [data, total] = await Promise.all([
-      db.user.findMany({ where, select, ...toSkipTake(params) }),
-      db.user.count({ where }),
+      prisma.user.findMany({ where, select, ...toSkipTake(params), orderBy: { createdAt: 'desc' } }),
+      prisma.user.count({ where }),
     ]);
 
     return paginate(data, total, params);
@@ -257,6 +262,41 @@ export class UserService {
       data: { status: 'ARCHIVED', archivedAt: new Date() },
     });
   }
+
+  async unarchive(id: string) {
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundError('Utilisateur');
+
+    if (user.status !== 'ARCHIVED') {
+      throw new ValidationError('Cet utilisateur n\'est pas archivé');
+    }
+
+    return prisma.user.update({
+      where: { id },
+      data: { status: 'ACTIVE', archivedAt: null },
+      select: {
+        id: true, email: true, firstName: true, lastName: true,
+        role: true, status: true, createdAt: true,
+      },
+    });
+  }
+
+  async hardDelete(id: string) {
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundError('Utilisateur');
+
+    if (user.role === 'SUPERADMIN') {
+      throw new ValidationError('Impossible de supprimer un super administrateur');
+    }
+
+    // Delete related data in transaction
+    await prisma.$transaction([
+      prisma.refreshToken.deleteMany({ where: { userId: id } }),
+      prisma.notification.deleteMany({ where: { userId: id } }),
+      prisma.establishmentMember.deleteMany({ where: { userId: id } }),
+      prisma.user.delete({ where: { id } }),
+    ]);
+  }
 }
 
 export const userService = new UserService();
@@ -266,21 +306,25 @@ export const userService = new UserService();
 // =============================================================================
 
 export class EstablishmentService {
-  async list(tenantId: string, params: PaginationParams, establishmentIds?: string[]) {
-    const db = createTenantClient(tenantId);
-
+  async list(tenantId: string, params: PaginationParams, establishmentIds?: string[], isSuperAdmin = false) {
     const where: Prisma.EstablishmentWhereInput = {
       isActive: true,
-      ...(establishmentIds && { id: { in: establishmentIds } }),
+      // SUPERADMIN sees all establishments; others: filter by tenant + memberships
+      ...(!isSuperAdmin && { tenantId }),
+      ...(!isSuperAdmin && establishmentIds && { id: { in: establishmentIds } }),
     };
 
     const [data, total] = await Promise.all([
-      db.establishment.findMany({
+      prisma.establishment.findMany({
         where,
-        include: { _count: { select: { rooms: true } } },
+        include: {
+          _count: { select: { rooms: true } },
+          ...(isSuperAdmin && { tenant: { select: { id: true, name: true, slug: true } } }),
+        },
         ...toSkipTake(params),
+        orderBy: { createdAt: 'desc' },
       }),
-      db.establishment.count({ where }),
+      prisma.establishment.count({ where }),
     ]);
 
     return paginate(data, total, params);

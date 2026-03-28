@@ -24,6 +24,7 @@ RUN npm ci --omit=dev && \
 FROM node:20-alpine
 
 RUN apk add --no-cache openssl
+
 WORKDIR /app
 
 COPY --from=builder /prod_modules ./node_modules
@@ -41,4 +42,5 @@ EXPOSE 4000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -qO- http://localhost:4000/health || exit 1
 
-CMD ["sh", "-c", "npx prisma db push --skip-generate --accept-data-loss && node dist/server.js"]
+# Use prisma migrate deploy (safe) instead of db push --accept-data-loss
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]

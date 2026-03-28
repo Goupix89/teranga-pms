@@ -1,9 +1,9 @@
-import Stripe from 'stripe';
 import bcrypt from 'bcryptjs';
 import { config } from '../config';
 import { prisma } from '../utils/prisma';
 import { ConflictError, AppError, NotFoundError } from '../utils/errors';
 import { logger } from '../utils/logger';
+import { decrypt } from '../utils/encryption';
 
 const RESERVED_SLUGS = new Set([
   'api', 'admin', 'www', 'mail', 'app', 'static', 'cdn',
@@ -11,9 +11,8 @@ const RESERVED_SLUGS = new Set([
   'support', 'help', 'docs', 'status', 'health',
 ]);
 
-const stripe = config.stripe.secretKey
-  ? new Stripe(config.stripe.secretKey, { apiVersion: '2025-02-24.acacia' })
-  : null;
+/** Grace period after expiration before suspension (days) */
+const GRACE_PERIOD_DAYS = 7;
 
 export class RegistrationService {
   /**
@@ -31,13 +30,15 @@ export class RegistrationService {
         yearlyPrice: true,
         features: true,
         displayOrder: true,
+        trialDays: true,
       },
     });
   }
 
   /**
-   * Register a new tenant with an admin user, create a Stripe customer,
-   * and return a Stripe Checkout URL for payment.
+   * Register a new tenant with an admin user.
+   * Creates a FedaPay transaction for the first payment.
+   * If the plan has a trial, the tenant is activated immediately.
    */
   async register(data: {
     tenantName: string;
@@ -48,8 +49,9 @@ export class RegistrationService {
     lastName: string;
     planSlug: string;
     billingInterval: 'MONTHLY' | 'YEARLY';
+    skipTrial?: boolean;
   }) {
-    const { tenantName, slug, email, password, firstName, lastName, planSlug, billingInterval } = data;
+    const { tenantName, slug, email, password, firstName, lastName, planSlug, billingInterval, skipTrial } = data;
 
     // Validate slug
     if (RESERVED_SLUGS.has(slug)) {
@@ -76,65 +78,103 @@ export class RegistrationService {
       throw new NotFoundError('Plan');
     }
 
-    // Create Stripe customer
-    if (!stripe) throw new AppError('Stripe non configuré', 503, 'STRIPE_NOT_CONFIGURED');
-    const stripeCustomer = await stripe.customers.create({
-      email: email.toLowerCase().trim(),
-      name: tenantName,
-      metadata: { tenantSlug: slug },
-    });
+    const hasTrial = plan.trialDays > 0 && !skipTrial;
+    const now = new Date();
 
-    // Create tenant + admin user + subscription in a transaction
+    // Create tenant + owner user + default establishment + subscription in a transaction
     const result = await prisma.$transaction(async (tx) => {
       const tenant = await tx.tenant.create({
         data: {
           name: tenantName,
           slug,
           plan: planSlug,
-          isActive: false,
+          isActive: hasTrial, // Active immediately if trial
           settings: { currency: 'XOF', language: 'fr' },
         },
       });
 
       const passwordHash = await bcrypt.hash(password, config.bcrypt.saltRounds);
 
-      await tx.user.create({
+      const user = await tx.user.create({
         data: {
           tenantId: tenant.id,
           email: email.toLowerCase().trim(),
           passwordHash,
           firstName,
           lastName,
-          role: 'SUPERADMIN',
-          status: 'LOCKED',
+          role: 'EMPLOYEE',
+          status: hasTrial ? 'ACTIVE' : 'LOCKED',
         },
       });
+
+      // Create a default establishment for the owner
+      const establishment = await tx.establishment.create({
+        data: {
+          tenantId: tenant.id,
+          name: tenantName,
+          address: '',
+          city: '',
+          country: 'BJ',
+          timezone: 'Africa/Porto-Novo',
+          currency: 'XOF',
+        },
+      });
+
+      // Assign OWNER role on the default establishment
+      await tx.establishmentMember.create({
+        data: {
+          userId: user.id,
+          establishmentId: establishment.id,
+          role: 'OWNER',
+        },
+      });
+
+      const trialEndsAt = hasTrial
+        ? new Date(now.getTime() + plan.trialDays * 24 * 60 * 60 * 1000)
+        : null;
 
       await tx.subscription.create({
         data: {
           tenantId: tenant.id,
           planId: plan.id,
-          stripeCustomerId: stripeCustomer.id,
-          status: 'PENDING',
+          status: hasTrial ? 'TRIAL' : 'PENDING',
           billingInterval,
+          currentPeriodStart: now,
+          currentPeriodEnd: trialEndsAt || undefined,
+          trialEndsAt,
         },
       });
 
       return tenant;
     });
 
-    // Create Stripe Checkout Session
-    const priceId = billingInterval === 'MONTHLY'
-      ? plan.stripePriceIdMonthly
-      : plan.stripePriceIdYearly;
+    // If trial: no payment needed yet, return success
+    if (hasTrial) {
+      logger.info('New tenant registered with trial', {
+        tenantId: result.id,
+        slug,
+        planSlug,
+        trialDays: plan.trialDays,
+      });
 
-    const session = await stripe.checkout.sessions.create({
-      customer: stripeCustomer.id,
-      mode: 'subscription',
-      line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${config.stripe.successUrl}?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: config.stripe.cancelUrl,
-      metadata: { tenantId: result.id },
+      return {
+        tenantId: result.id,
+        trial: true,
+        trialDays: plan.trialDays,
+        message: `Votre essai gratuit de ${plan.trialDays} jours a commencé. Bienvenue !`,
+      };
+    }
+
+    // No trial: create FedaPay transaction for first payment
+    const price = billingInterval === 'MONTHLY'
+      ? Number(plan.monthlyPrice)
+      : Number(plan.yearlyPrice);
+
+    const checkoutUrl = await this.createFedapayCheckout({
+      tenantId: result.id,
+      amount: price,
+      description: `Abonnement ${plan.name} — ${billingInterval === 'MONTHLY' ? 'Mensuel' : 'Annuel'}`,
+      billingInterval,
     });
 
     logger.info('New tenant registered, awaiting payment', {
@@ -143,127 +183,242 @@ export class RegistrationService {
       planSlug,
     });
 
-    return { tenantId: result.id, checkoutUrl: session.url };
+    return { tenantId: result.id, checkoutUrl };
   }
 
   /**
-   * Handle Stripe webhook events.
+   * Create a FedaPay transaction and return the checkout URL.
    */
-  async handleWebhook(rawBody: Buffer, signature: string) {
-    let event: Stripe.Event;
+  async createFedapayCheckout(params: {
+    tenantId: string;
+    amount: number;
+    description: string;
+    billingInterval: 'MONTHLY' | 'YEARLY';
+    isRenewal?: boolean;
+  }): Promise<string> {
+    const { tenantId, amount, description, billingInterval, isRenewal } = params;
 
-    try {
-      if (!stripe) throw new AppError('Stripe non configuré', 503, 'STRIPE_NOT_CONFIGURED');
-      event = stripe.webhooks.constructEvent(
-        rawBody,
-        signature,
-        config.stripe.webhookSecret,
-      );
-    } catch (err: any) {
-      logger.error('Stripe webhook signature verification failed', { error: err.message });
-      throw new AppError('Signature webhook invalide', 400, 'WEBHOOK_ERROR');
+    const fedapayKey = config.fedapay.secretKey;
+    if (!fedapayKey) {
+      throw new AppError('FedaPay non configuré', 503, 'FEDAPAY_NOT_CONFIGURED');
     }
 
-    switch (event.type) {
-      case 'checkout.session.completed':
-        await this.handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
-        break;
+    const isSandbox = config.fedapay.isSandbox;
+    const apiBase = isSandbox
+      ? 'https://sandbox-api.fedapay.com'
+      : 'https://api.fedapay.com';
 
-      case 'invoice.payment_succeeded':
-        await this.handlePaymentSucceeded(event.data.object as Stripe.Invoice);
-        break;
-
-      case 'invoice.payment_failed':
-        await this.handlePaymentFailed(event.data.object as Stripe.Invoice);
-        break;
-
-      case 'customer.subscription.deleted':
-        await this.handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
-        break;
-
-      default:
-        logger.info(`Stripe webhook ignored: ${event.type}`);
+    // Calculate billing period
+    const now = new Date();
+    const periodStart = now;
+    const periodEnd = new Date(now);
+    if (billingInterval === 'MONTHLY') {
+      periodEnd.setMonth(periodEnd.getMonth() + 1);
+    } else {
+      periodEnd.setFullYear(periodEnd.getFullYear() + 1);
     }
+
+    // Create FedaPay transaction
+    const txnResponse = await fetch(`${apiBase}/v1/transactions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${fedapayKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        description,
+        amount,
+        currency: { iso: 'XOF' },
+        callback_url: `${config.fedapay.callbackUrl}${isRenewal ? '?renewal=true' : ''}`,
+        custom_metadata: {
+          type: 'subscription',
+          tenant_id: tenantId,
+          billing_interval: billingInterval,
+          period_start: periodStart.toISOString(),
+          period_end: periodEnd.toISOString(),
+          is_renewal: isRenewal ? 'true' : 'false',
+        },
+      }),
+    });
+
+    const txnData = await txnResponse.json() as any;
+    logger.info('FedaPay subscription txn response', {
+      status: txnResponse.status,
+      body: JSON.stringify(txnData).substring(0, 500),
+    });
+
+    if (!txnResponse.ok && txnResponse.status !== 201) {
+      throw new AppError('Erreur lors de la création de la transaction FedaPay', 502, 'FEDAPAY_ERROR');
+    }
+
+    // Extract transaction ID
+    let transactionId: string | number | undefined;
+    if (txnData?.['v1/transaction']?.id) {
+      transactionId = txnData['v1/transaction'].id;
+    } else if (txnData?.transaction?.id) {
+      transactionId = txnData.transaction.id;
+    } else {
+      for (const [k, v] of Object.entries(txnData || {})) {
+        if (k.includes('transaction') && typeof v === 'object' && (v as any)?.id) {
+          transactionId = (v as any).id;
+          break;
+        }
+      }
+    }
+
+    if (!transactionId) {
+      throw new AppError('Impossible d\'extraire l\'ID de transaction FedaPay', 502, 'FEDAPAY_ERROR');
+    }
+
+    // Record pending subscription payment
+    const subscription = await prisma.subscription.findUnique({ where: { tenantId } });
+    if (subscription) {
+      await prisma.subscriptionPayment.create({
+        data: {
+          subscriptionId: subscription.id,
+          amount,
+          currency: 'XOF',
+          fedapayTxnId: String(transactionId),
+          status: 'PENDING',
+          periodStart,
+          periodEnd,
+        },
+      });
+    }
+
+    // Get checkout token/URL
+    const tokenResponse = await fetch(`${apiBase}/v1/transactions/${transactionId}/token`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${fedapayKey}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const tokenData = await tokenResponse.json() as any;
+
+    let checkoutUrl = tokenData?.url;
+    const token = tokenData?.token;
+    if (!checkoutUrl && !token) {
+      for (const [, v] of Object.entries(tokenData || {})) {
+        if (typeof v === 'object') {
+          if (!checkoutUrl && (v as any)?.url) checkoutUrl = (v as any).url;
+        }
+      }
+    }
+
+    if (checkoutUrl) return checkoutUrl;
+    if (token) {
+      return isSandbox
+        ? `https://sandbox-process.fedapay.com/${token}`
+        : `https://process.fedapay.com/${token}`;
+    }
+
+    throw new AppError('Impossible de générer l\'URL de paiement FedaPay', 502, 'FEDAPAY_ERROR');
   }
 
-  private async handleCheckoutCompleted(session: Stripe.Checkout.Session) {
-    const tenantId = session.metadata?.tenantId;
-    if (!tenantId) return;
+  /**
+   * Handle FedaPay webhook for subscription payments.
+   */
+  async handleSubscriptionPayment(fedapayTxnId: string, metadata: any) {
+    const tenantId = metadata?.tenant_id;
+    if (!tenantId) {
+      logger.warn('FedaPay subscription webhook: missing tenant_id in metadata');
+      return;
+    }
 
-    const subscription = await prisma.subscription.findUnique({
-      where: { tenantId },
+    // Find the pending subscription payment
+    const subPayment = await prisma.subscriptionPayment.findUnique({
+      where: { fedapayTxnId: String(fedapayTxnId) },
+      include: { subscription: true },
     });
-    if (!subscription || subscription.status === 'ACTIVE') return;
+
+    if (!subPayment) {
+      logger.warn('FedaPay subscription webhook: no pending payment found', { fedapayTxnId });
+      return;
+    }
+
+    if (subPayment.status === 'PAID') {
+      logger.info('FedaPay subscription payment already processed', { fedapayTxnId });
+      return;
+    }
+
+    const now = new Date();
 
     await prisma.$transaction(async (tx) => {
+      // Mark payment as paid
+      await tx.subscriptionPayment.update({
+        where: { id: subPayment.id },
+        data: { status: 'PAID', paidAt: now },
+      });
+
+      // Update subscription
       await tx.subscription.update({
         where: { tenantId },
         data: {
-          stripeSubscriptionId: session.subscription as string,
           status: 'ACTIVE',
+          currentPeriodStart: subPayment.periodStart,
+          currentPeriodEnd: subPayment.periodEnd,
+          lastPaymentAt: now,
+          lastPaymentRef: String(fedapayTxnId),
+          gracePeriodEndsAt: null,
         },
       });
 
+      // Activate tenant
       await tx.tenant.update({
         where: { id: tenantId },
         data: { isActive: true },
       });
 
-      // Unlock the superadmin user
+      // Unlock all locked users of this tenant
       await tx.user.updateMany({
-        where: { tenantId, role: 'SUPERADMIN', status: 'LOCKED' },
+        where: { tenantId, status: 'LOCKED' },
         data: { status: 'ACTIVE' },
       });
     });
 
-    logger.info('Tenant activated after payment', { tenantId });
-  }
-
-  private async handlePaymentSucceeded(invoice: Stripe.Invoice) {
-    const stripeSubscriptionId = invoice.subscription as string;
-    if (!stripeSubscriptionId) return;
-
-    await prisma.subscription.updateMany({
-      where: { stripeSubscriptionId },
-      data: {
-        status: 'ACTIVE',
-        currentPeriodStart: new Date((invoice.lines.data[0]?.period?.start ?? 0) * 1000),
-        currentPeriodEnd: new Date((invoice.lines.data[0]?.period?.end ?? 0) * 1000),
-      },
+    logger.info('Subscription payment confirmed via FedaPay', {
+      tenantId,
+      fedapayTxnId,
+      periodEnd: subPayment.periodEnd,
     });
   }
 
-  private async handlePaymentFailed(invoice: Stripe.Invoice) {
-    const stripeSubscriptionId = invoice.subscription as string;
-    if (!stripeSubscriptionId) return;
-
-    await prisma.subscription.updateMany({
-      where: { stripeSubscriptionId },
-      data: { status: 'PAST_DUE' },
-    });
-
-    logger.warn('Subscription payment failed', { stripeSubscriptionId });
-  }
-
-  private async handleSubscriptionDeleted(sub: Stripe.Subscription) {
+  /**
+   * Generate a renewal payment link for an expiring subscription.
+   */
+  async generateRenewalLink(tenantId: string): Promise<string | null> {
     const subscription = await prisma.subscription.findUnique({
-      where: { stripeSubscriptionId: sub.id },
-    });
-    if (!subscription) return;
-
-    await prisma.$transaction(async (tx) => {
-      await tx.subscription.update({
-        where: { id: subscription.id },
-        data: { status: 'CANCELLED' },
-      });
-
-      await tx.tenant.update({
-        where: { id: subscription.tenantId },
-        data: { isActive: false },
-      });
+      where: { tenantId },
+      include: { plan: true },
     });
 
-    logger.info('Subscription cancelled', { tenantId: subscription.tenantId });
+    if (!subscription || !subscription.plan) return null;
+
+    const price = subscription.billingInterval === 'MONTHLY'
+      ? Number(subscription.plan.monthlyPrice)
+      : Number(subscription.plan.yearlyPrice);
+
+    try {
+      const checkoutUrl = await this.createFedapayCheckout({
+        tenantId,
+        amount: price,
+        description: `Renouvellement ${subscription.plan.name} — ${subscription.billingInterval === 'MONTHLY' ? 'Mensuel' : 'Annuel'}`,
+        billingInterval: subscription.billingInterval,
+        isRenewal: true,
+      });
+
+      await prisma.subscription.update({
+        where: { tenantId },
+        data: { lastRenewalLinkSentAt: new Date() },
+      });
+
+      return checkoutUrl;
+    } catch (err) {
+      logger.error('Failed to generate renewal link', { tenantId, error: String(err) });
+      return null;
+    }
   }
 }
 

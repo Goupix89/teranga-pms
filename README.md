@@ -23,11 +23,11 @@ hotel-pms/
 | ORM / DB | Prisma + PostgreSQL 15+ |
 | Cache | Redis 7 |
 | Auth | JWT (access + refresh tokens), bcryptjs, RBAC 2 niveaux |
-| Paiement | Stripe (abonnements), Flooz/Yas via QR code, FedaPay (gateway intégrée + WordPress) |
+| Paiement | FedaPay (abonnements + gateway intégrée + WordPress), Flooz/Yas via QR code |
 | QR Code | `qrcode` npm (génération data URL côté serveur) |
 | Upload | Multer (images articles, max 5 Mo, JPG/PNG/WebP) |
 | Mobile | Kotlin, Jetpack Compose, Room DB, Retrofit, Hilt DI |
-| DevOps | Docker, Docker Compose |
+| DevOps | Docker, Docker Compose, GitHub Actions CI/CD |
 
 ## Design System
 
@@ -55,7 +55,7 @@ hotel-pms/
 14. **Ménage** — Pointage début/fin (clock-in/clock-out), chambre indisponible pendant nettoyage, démarrage direct depuis notification
 15. **Rapports** — Taux d'occupation, revenus, performance par serveur, export CSV, graphiques
 16. **Intégrations** — API disponibilité (JSON/iCal), Channel Manager, POS Android, WordPress + FedaPay
-17. **Inscription & Abonnements** — Inscription self-service avec paiement Stripe, plans Basic/Pro/Enterprise
+17. **Inscription & Abonnements** — Inscription self-service avec essai gratuit (14 jours) et paiement FedaPay, plans Basic/Pro/Enterprise, cycle de vie complet (essai → actif → retard → suspendu → annulé), activation manuelle par le SUPERADMIN pour paiements en espèces, limites de plan (chambres, utilisateurs, établissements)
 18. **Notifications temps réel** — SSE + polling, alertes par rôle (checkout, ménage, commandes, approbations, stock), navigation contextuelle (clic → page concernée)
 19. **Synchronisation calendrier (iCal)** — Sync bidirectionnelle des disponibilités avec Airbnb, Booking.com, Expedia via iCal (intervalle configurable : 1 min à 24h)
 20. **Profil utilisateur** — Modification des informations personnelles, changement de mot de passe
@@ -124,26 +124,30 @@ docker compose exec backend npx tsx prisma/seed.ts
 # Health :   http://localhost:4000/health
 ```
 
-### Configuration Stripe (abonnements)
+### Configuration FedaPay (abonnements)
 
 Pour activer le module d'inscription avec paiement :
 
-1. Créer un compte [Stripe](https://stripe.com) et récupérer les clés API
-2. Créer les Products/Prices dans le Stripe Dashboard (Basic, Pro, Enterprise en mensuel et annuel)
-3. Configurer les variables d'environnement avant de lancer `docker compose up` :
+1. Créer un compte [FedaPay](https://app.fedapay.com) et récupérer les clés API
+2. Configurer les variables d'environnement avant de lancer `docker compose up` :
 
 ```bash
-export STRIPE_SECRET_KEY="sk_test_..."
-export STRIPE_WEBHOOK_SECRET="whsec_..."
+export FEDAPAY_SECRET_KEY="sk_sandbox_..."
+export FEDAPAY_SANDBOX="true"                     # "false" en production
+export FEDAPAY_CALLBACK_URL="http://localhost:3001/auth/login"
 ```
 
-4. Pour le développement local, utiliser le Stripe CLI pour recevoir les webhooks :
+3. Configurer le webhook dans FedaPay Dashboard :
+   - URL : `https://votre-api/api/webhooks/fedapay`
+   - Événement : `transaction.approved`
+
+4. Exécuter le seed pour créer les plans d'abonnement :
 
 ```bash
-stripe listen --forward-to localhost:4000/api/webhooks/stripe
+docker compose exec backend npx tsx prisma/seed.ts
 ```
 
-5. Mettre à jour les `stripePriceId*` dans le seed (`prisma/seed.ts`) avec les Price IDs Stripe réels, puis relancer le seed.
+Tous les plans incluent un **essai gratuit de 14 jours** — aucun paiement n'est requis à l'inscription.
 
 ### Sans Docker (développement local)
 
@@ -224,6 +228,8 @@ Le système utilise un **RBAC à 2 niveaux** :
 | Stock & Inventaire | X | X | X | X | | | | |
 | Alertes stock | X | X | X | X | | | | |
 | Canaux (iCal sync) | X | X | X | X | | | | |
+| Abonnement (voir/renouveler) | X | X | X | | | | | |
+| Abonnement (activation manuelle) | X | | | | | | | |
 | Clés API | X | X | X | | | | | |
 | Factures & Paiements | X | X | X | X | X | X | | |
 | Reçus & Factures PDF | X | X | X | X | X | | | |
@@ -281,8 +287,12 @@ Le système utilise un **RBAC à 2 niveaux** :
 
 ### Inscription & Abonnements
 - `GET /api/registration/plans` — Liste des plans (public)
-- `POST /api/registration/register` — Inscription + Stripe Checkout
-- `POST /api/webhooks/stripe` — Webhook Stripe
+- `POST /api/registration/register` — Inscription (essai gratuit ou FedaPay Checkout)
+- `GET /api/subscriptions` — Abonnement du tenant (SUPERADMIN, OWNER, DAF)
+- `GET /api/subscriptions/plans` — Plans disponibles (SUPERADMIN, OWNER, DAF)
+- `POST /api/subscriptions/renew` — Générer un lien de renouvellement FedaPay (SUPERADMIN, OWNER, DAF)
+- `POST /api/subscriptions/activate` — Activation manuelle (SUPERADMIN uniquement, paiements en espèces)
+- `POST /api/webhooks/fedapay` — Webhook FedaPay (public)
 
 ### Notifications
 - `GET /api/notifications` — Liste des notifications (+ `?unread=true`)
@@ -414,6 +424,41 @@ Les plateformes proposent toutes un export/import iCal dans leurs paramètres de
 ## Fonctionnalités à venir
 
 - **Calendrier de disponibilité par chambre** — Vue calendrier visuelle des disponibilités de chaque chambre, synchronisée en temps réel entre tous les canaux connectés (Airbnb, Booking.com, Expedia, PMS). Permettra de visualiser d'un coup d'oeil les réservations PMS et externes sur un calendrier interactif.
+
+## Cycle de vie des abonnements
+
+```
+Inscription → TRIAL (14 jours, accès complet)
+  → Paiement FedaPay ou activation manuelle → ACTIVE
+  → Expiration sans paiement → PAST_DUE (grâce 7 jours)
+    → Rappels J-7, J-3 avant expiration
+    → Paiement reçu → ACTIVE
+    → Pas de paiement → SUSPENDED (accès bloqué)
+      → Paiement reçu → ACTIVE
+      → 30 jours sans paiement → CANCELLED
+```
+
+### Limites de plan
+
+Chaque plan définit des limites sur les ressources :
+
+| Ressource | Basic | Pro | Enterprise |
+|-----------|-------|-----|------------|
+| Établissements | 1 | 3 | Illimité |
+| Chambres | 20 | 100 | Illimité |
+| Utilisateurs | 5 | 20 | Illimité |
+| Channel Manager | Non | Oui | Oui |
+| App POS | Non | Oui | Oui |
+
+Les limites sont vérifiées automatiquement lors de la création de chambres, utilisateurs et établissements. Le SUPERADMIN peut activer/modifier manuellement un abonnement pour les paiements en espèces.
+
+### Accès à la page Abonnement
+
+| Rôle | Voir l'abonnement | Renouveler | Activation manuelle |
+|------|:-:|:-:|:-:|
+| SUPERADMIN | X | X | X |
+| OWNER | X | X | |
+| DAF | X | X | |
 
 ## App Mobile Android
 

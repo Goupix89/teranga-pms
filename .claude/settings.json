@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(curl -s http://localhost:4000/api/health)",
-      "Read(//dev/**)"
+      "Read(//dev/**)",
+      "Bash(grep -rn \"userRouter\\\\|establishmentRouter\" /home/user/hotel-pms/backend/src --include=*.ts)",
+      "Bash(npx next:*)"
     ]
   }
 }

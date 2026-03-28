@@ -6,6 +6,7 @@ declare global {
     interface Request {
       user?: AuthUser;
       tenantId?: string;
+      subscriptionStatus?: string;
     }
   }
 }

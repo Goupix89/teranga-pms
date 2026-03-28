@@ -103,10 +103,11 @@ enum BookingSource {
 
 enum SubscriptionStatus {
   PENDING
+  TRIAL
   ACTIVE
   PAST_DUE
+  SUSPENDED
   CANCELLED
-  UNPAID
 }
 
 enum BillingInterval {
@@ -227,6 +228,7 @@ model User {
   cleaningSessions    CleaningSession[]
   articlesCreated     Article[]             @relation("ArticleCreator")
   notifications       Notification[]
+  deviceTokens        DeviceToken[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -738,18 +740,17 @@ model ChannelSyncLog {
 // =============================================================================
 
 model SubscriptionPlan {
-  id                   String   @id @default(uuid())
-  name                 String
-  slug                 String   @unique
-  stripePriceIdMonthly String   @map("stripe_price_id_monthly")
-  stripePriceIdYearly  String   @map("stripe_price_id_yearly")
-  monthlyPrice         Decimal  @map("monthly_price") @db.Decimal(10, 2)
-  yearlyPrice          Decimal  @map("yearly_price") @db.Decimal(10, 2)
-  features             Json     @default("{}")
-  isActive             Boolean  @default(true) @map("is_active")
-  displayOrder         Int      @default(0) @map("display_order")
-  createdAt            DateTime @default(now()) @map("created_at")
-  updatedAt            DateTime @updatedAt @map("updated_at")
+  id           String   @id @default(uuid())
+  name         String
+  slug         String   @unique
+  monthlyPrice Decimal  @map("monthly_price") @db.Decimal(10, 2)
+  yearlyPrice  Decimal  @map("yearly_price") @db.Decimal(10, 2)
+  features     Json     @default("{}")
+  isActive     Boolean  @default(true) @map("is_active")
+  displayOrder Int      @default(0) @map("display_order")
+  trialDays    Int      @default(14) @map("trial_days")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   subscriptions Subscription[]
 
@@ -760,19 +761,60 @@ model Subscription {
   id                     String             @id @default(uuid())
   tenantId               String             @unique @map("tenant_id")
   planId                 String             @map("plan_id")
-  stripeCustomerId       String             @unique @map("stripe_customer_id")
-  stripeSubscriptionId   String?            @unique @map("stripe_subscription_id")
   status                 SubscriptionStatus @default(PENDING)
   billingInterval        BillingInterval    @map("billing_interval")
   currentPeriodStart     DateTime?          @map("current_period_start")
   currentPeriodEnd       DateTime?          @map("current_period_end")
+  trialEndsAt            DateTime?          @map("trial_ends_at")
+  gracePeriodEndsAt      DateTime?          @map("grace_period_ends_at")
+  lastPaymentAt          DateTime?          @map("last_payment_at")
+  lastPaymentRef         String?            @map("last_payment_ref")
+  lastRenewalLinkSentAt  DateTime?          @map("last_renewal_link_sent_at")
   cancelAtPeriodEnd      Boolean            @default(false) @map("cancel_at_period_end")
   createdAt              DateTime           @default(now()) @map("created_at")
   updatedAt              DateTime           @updatedAt @map("updated_at")
 
-  tenant Tenant           @relation(fields: [tenantId], references: [id])
-  plan   SubscriptionPlan @relation(fields: [planId], references: [id])
+  tenant   Tenant             @relation(fields: [tenantId], references: [id])
+  plan     SubscriptionPlan   @relation(fields: [planId], references: [id])
+  payments SubscriptionPayment[]
 
   @@index([status])
+  @@index([currentPeriodEnd])
   @@map("subscriptions")
+}
+
+model SubscriptionPayment {
+  id               String   @id @default(uuid())
+  subscriptionId   String   @map("subscription_id")
+  amount           Decimal  @db.Decimal(10, 2)
+  currency         String   @default("XOF")
+  fedapayTxnId     String?  @unique @map("fedapay_txn_id")
+  status           String   @default("PENDING")
+  periodStart      DateTime @map("period_start")
+  periodEnd        DateTime @map("period_end")
+  paidAt           DateTime? @map("paid_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+
+  @@index([subscriptionId])
+  @@map("subscription_payments")
+}
+
+// =============================================================================
+// DEVICE TOKENS (FCM Push Notifications)
+// =============================================================================
+
+model DeviceToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  platform  String   // WEB, ANDROID, IOS
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("device_tokens")
 }

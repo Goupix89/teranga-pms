@@ -353,6 +353,7 @@ export const registerTenantSchema = z.object({
   lastName: z.string().min(1).max(50),
   planSlug: z.enum(['basic', 'pro', 'enterprise']),
   billingInterval: z.enum(['MONTHLY', 'YEARLY']),
+  skipTrial: z.boolean().optional(),
 });
 
 // =============================================================================

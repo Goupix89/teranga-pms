@@ -232,12 +232,46 @@ export interface SubscriptionPlan {
   slug: string;
   monthlyPrice: number;
   yearlyPrice: number;
-  features: Record<string, unknown>;
+  features: {
+    maxEstablishments?: number;
+    maxRooms?: number;
+    maxUsers?: number;
+    channelManager?: boolean;
+    posApp?: boolean;
+  };
   displayOrder: number;
+  trialDays?: number;
 }
 
 export type BillingInterval = 'MONTHLY' | 'YEARLY';
-export type SubscriptionStatus = 'PENDING' | 'ACTIVE' | 'PAST_DUE' | 'CANCELLED' | 'UNPAID';
+export type SubscriptionStatus = 'PENDING' | 'TRIAL' | 'ACTIVE' | 'PAST_DUE' | 'SUSPENDED' | 'CANCELLED';
+
+export interface SubscriptionPayment {
+  id: string;
+  amount: number;
+  currency: string;
+  status: string;
+  periodStart: string;
+  periodEnd: string;
+  paidAt: string | null;
+  createdAt: string;
+  fedapayTxnId?: string;
+}
+
+export interface Subscription {
+  id: string;
+  tenantId: string;
+  status: SubscriptionStatus;
+  billingInterval: BillingInterval;
+  currentPeriodStart: string | null;
+  currentPeriodEnd: string | null;
+  trialEndsAt: string | null;
+  gracePeriodEndsAt: string | null;
+  lastPaymentAt: string | null;
+  lastPaymentRef: string | null;
+  plan: SubscriptionPlan;
+  payments: SubscriptionPayment[];
+}
 
 export interface StockMovement {
   id: string;

@@ -45,17 +45,18 @@ export const config = {
     varianceThresholdPercent: parseFloat(process.env.STOCK_VARIANCE_THRESHOLD_PERCENT || '10'),
   },
 
-  stripe: {
-    secretKey: process.env.STRIPE_SECRET_KEY || '',
-    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
-    successUrl: process.env.STRIPE_SUCCESS_URL || 'http://localhost:3001/auth/register/success',
-    cancelUrl: process.env.STRIPE_CANCEL_URL || 'http://localhost:3001/auth/register?cancelled=true',
-  },
-
   fedapay: {
     secretKey: process.env.FEDAPAY_SECRET_KEY || '',
     isSandbox: process.env.FEDAPAY_SANDBOX !== 'false',
     callbackUrl: process.env.FEDAPAY_CALLBACK_URL || 'http://localhost:3001/dashboard',
+    webhookSecret: process.env.FEDAPAY_WEBHOOK_SECRET || '',
+  },
+
+  publicUrl: process.env.PUBLIC_URL || 'http://localhost:3001',
+
+  firebase: {
+    serviceAccountPath: process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '',
+    projectId: process.env.FIREBASE_PROJECT_ID || '',
   },
 } as const;
 

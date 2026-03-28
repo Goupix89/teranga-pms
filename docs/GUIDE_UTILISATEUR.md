@@ -24,9 +24,10 @@ Ce guide vous accompagne dans l'utilisation quotidienne de la plateforme Teranga
 16. [Profil utilisateur](#16-profil-utilisateur)
 17. [Rapports et exports](#17-rapports-et-exports)
 18. [Gestion des utilisateurs](#18-gestion-des-utilisateurs)
-19. [Application mobile](#19-application-mobile)
-20. [Fonctionnalités à venir](#20-fonctionnalités-à-venir)
-21. [Questions fréquentes](#21-questions-fréquentes)
+19. [Abonnement](#19-abonnement)
+20. [Application mobile](#20-application-mobile)
+21. [Fonctionnalités à venir](#21-fonctionnalités-à-venir)
+22. [Questions fréquentes](#22-questions-fréquentes)
 
 ---
 
@@ -725,7 +726,65 @@ Une fois approuvé, l'employé peut se connecter avec ses identifiants.
 
 ---
 
-## 19. Application mobile
+## 19. Abonnement
+
+La page **Abonnement** permet de consulter et gérer l'abonnement de l'établissement.
+
+### Rôles autorisés
+
+| Action | SUPERADMIN | Owner | DAF |
+|--------|:----------:|:-----:|:---:|
+| Voir l'abonnement | Oui | Oui | Oui |
+| Renouveler via FedaPay | Oui | Oui | Oui |
+| Activation manuelle | Oui | Non | Non |
+
+### Consulter l'abonnement
+
+1. Allez dans **Abonnement** dans la barre latérale
+2. La page affiche :
+   - **Plan actuel** : nom, statut (Essai, Actif, En retard, Suspendu, Annulé), prix
+   - **Période en cours** : dates de début et de fin, jours restants
+   - **Utilisation du plan** : barres de progression pour les chambres, utilisateurs et établissements vs les limites du plan
+   - **Historique des paiements** : tableau avec date, montant, période, statut et référence
+
+### Renouveler l'abonnement (Owner, DAF, SUPERADMIN)
+
+1. Cliquez sur **Renouveler via FedaPay** dans la section Actions
+2. Un nouvel onglet s'ouvre avec la page de paiement FedaPay
+3. Effectuez le paiement (Mobile Money, carte bancaire, etc.)
+4. L'abonnement est automatiquement mis à jour après confirmation du paiement
+
+### Activation manuelle (SUPERADMIN uniquement)
+
+Pour les paiements en espèces ou par virement direct :
+
+1. Cliquez sur **Activation manuelle**
+2. Sélectionnez le plan
+3. Choisissez la fréquence (Mensuel / Annuel)
+4. Indiquez la durée en mois
+5. Cliquez sur **Activer**
+
+L'abonnement est immédiatement activé sans nécessiter de paiement en ligne.
+
+### Cycle de vie de l'abonnement
+
+| Statut | Description |
+|--------|-------------|
+| **Essai gratuit** | 14 jours d'essai après inscription, accès complet |
+| **Actif** | Abonnement payé et en cours de validité |
+| **Paiement en retard** | Abonnement expiré, période de grâce de 7 jours |
+| **Suspendu** | Accès bloqué après la période de grâce |
+| **Annulé** | Annulation définitive après 30 jours de suspension |
+
+Des notifications de rappel sont envoyées 7 jours et 3 jours avant l'expiration.
+
+### Alertes
+
+Si l'abonnement est en retard ou suspendu, un bandeau d'alerte s'affiche en haut de la page avec un bouton **Payer maintenant**.
+
+---
+
+## 20. Application mobile
 
 ### Installation
 
@@ -777,7 +836,7 @@ L'application se connecte au serveur backend via l'URL configurée. Si vous renc
 
 ---
 
-## 20. Fonctionnalités à venir
+## 21. Fonctionnalités à venir
 
 ### Calendrier de disponibilité par chambre
 
@@ -790,7 +849,7 @@ Un calendrier visuel sera ajouté pour afficher les disponibilités de chaque ch
 
 ---
 
-## 21. Questions fréquentes
+## 22. Questions fréquentes
 
 ### Je n'arrive pas à créer un article
 
@@ -875,4 +934,4 @@ La clé n'est affichée qu'une seule fois à la création. Si vous l'avez perdue
 
 ---
 
-*Document mis à jour le 26 mars 2026 — Teranga PMS v2.4*
+*Document mis à jour le 28 mars 2026 — Teranga PMS v2.5*

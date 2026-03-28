@@ -3,6 +3,7 @@ import { prisma } from '../utils/prisma';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { channelSyncService } from '../services/channel-sync.service';
+import { registrationService } from '../services/registration.service';
 
 /**
  * Archive inactive users.
@@ -139,6 +140,183 @@ async function syncExternalCalendars() {
 }
 
 /**
+ * Subscription lifecycle management.
+ * Runs daily at 7:00 AM.
+ *
+ * Timeline when subscription is NOT renewed:
+ *   J-7  → Send renewal reminder email + generate FedaPay payment link
+ *   J-3  → Second reminder
+ *   J    → Status → PAST_DUE, grace period starts (7 days)
+ *   J+7  → Status → SUSPENDED, tenant deactivated
+ *   J+30 → Status → CANCELLED
+ */
+async function manageSubscriptions() {
+  try {
+    const now = new Date();
+
+    // ── 1. TRIAL EXPIRING → convert to PENDING or extend ──
+    const expiringTrials = await prisma.subscription.findMany({
+      where: {
+        status: 'TRIAL',
+        trialEndsAt: { lte: now },
+      },
+      include: { tenant: true, plan: true },
+    });
+
+    for (const sub of expiringTrials) {
+      try {
+        // Trial expired → generate payment link and move to PENDING
+        const checkoutUrl = await registrationService.generateRenewalLink(sub.tenantId);
+        await prisma.$transaction(async (tx) => {
+          await tx.subscription.update({
+            where: { id: sub.id },
+            data: {
+              status: 'PAST_DUE',
+              gracePeriodEndsAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+            },
+          });
+          // Notify the tenant owner(s)
+          const owners = await tx.establishmentMember.findMany({
+            where: { role: 'OWNER', establishment: { tenantId: sub.tenantId } },
+            select: { userId: true },
+          });
+          for (const owner of owners) {
+            await tx.notification.create({
+              data: {
+                tenantId: sub.tenantId,
+                userId: owner.userId,
+                type: 'SYSTEM',
+                title: 'Période d\'essai terminée',
+                message: `Votre essai gratuit est terminé. Veuillez procéder au paiement pour continuer à utiliser Teranga PMS.${checkoutUrl ? ' Lien de paiement: ' + checkoutUrl : ''}`,
+              },
+            });
+          }
+        });
+        logger.info('Trial expired, moved to PAST_DUE', { tenantId: sub.tenantId });
+      } catch (err) {
+        logger.error('Failed to handle trial expiration', { tenantId: sub.tenantId, error: String(err) });
+      }
+    }
+
+    // ── 2. RENEWAL REMINDERS (J-7 and J-3) ──
+    const reminderDays = [7, 3];
+    for (const daysBeforeExpiry of reminderDays) {
+      const targetDate = new Date(now.getTime() + daysBeforeExpiry * 24 * 60 * 60 * 1000);
+      const dayStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+      const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+
+      const expiringSubs = await prisma.subscription.findMany({
+        where: {
+          status: 'ACTIVE',
+          currentPeriodEnd: { gte: dayStart, lt: dayEnd },
+          cancelAtPeriodEnd: false,
+        },
+        include: { tenant: true, plan: true },
+      });
+
+      for (const sub of expiringSubs) {
+        try {
+          // Only send if we haven't sent a reminder today
+          if (sub.lastRenewalLinkSentAt && sub.lastRenewalLinkSentAt > dayStart) continue;
+
+          const checkoutUrl = await registrationService.generateRenewalLink(sub.tenantId);
+          const owners = await prisma.establishmentMember.findMany({
+            where: { role: 'OWNER', establishment: { tenantId: sub.tenantId } },
+            select: { userId: true },
+          });
+          for (const owner of owners) {
+            await prisma.notification.create({
+              data: {
+                tenantId: sub.tenantId,
+                userId: owner.userId,
+                type: 'SYSTEM',
+                title: `Renouvellement dans ${daysBeforeExpiry} jours`,
+                message: `Votre abonnement ${sub.plan.name} expire dans ${daysBeforeExpiry} jours.${checkoutUrl ? ' Renouvelez maintenant: ' + checkoutUrl : ''}`,
+              },
+            });
+          }
+          logger.info('Renewal reminder sent', { tenantId: sub.tenantId, daysBeforeExpiry });
+        } catch (err) {
+          logger.error('Failed to send renewal reminder', { tenantId: sub.tenantId, error: String(err) });
+        }
+      }
+    }
+
+    // ── 3. ACTIVE → PAST_DUE (period expired, not yet paid) ──
+    const expiredActive = await prisma.subscription.findMany({
+      where: {
+        status: 'ACTIVE',
+        currentPeriodEnd: { lte: now },
+      },
+    });
+
+    for (const sub of expiredActive) {
+      try {
+        await prisma.subscription.update({
+          where: { id: sub.id },
+          data: {
+            status: 'PAST_DUE',
+            gracePeriodEndsAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+          },
+        });
+        logger.info('Subscription moved to PAST_DUE', { tenantId: sub.tenantId });
+      } catch (err) {
+        logger.error('Failed to move subscription to PAST_DUE', { tenantId: sub.tenantId, error: String(err) });
+      }
+    }
+
+    // ── 4. PAST_DUE → SUSPENDED (grace period ended) ──
+    const pastDueSubs = await prisma.subscription.findMany({
+      where: {
+        status: 'PAST_DUE',
+        gracePeriodEndsAt: { lte: now },
+      },
+    });
+
+    for (const sub of pastDueSubs) {
+      try {
+        await prisma.$transaction(async (tx) => {
+          await tx.subscription.update({
+            where: { id: sub.id },
+            data: { status: 'SUSPENDED' },
+          });
+          await tx.tenant.update({
+            where: { id: sub.tenantId },
+            data: { isActive: false },
+          });
+        });
+        logger.info('Subscription SUSPENDED, tenant deactivated', { tenantId: sub.tenantId });
+      } catch (err) {
+        logger.error('Failed to suspend subscription', { tenantId: sub.tenantId, error: String(err) });
+      }
+    }
+
+    // ── 5. SUSPENDED → CANCELLED (30 days after suspension) ──
+    const cancelCutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const longSuspended = await prisma.subscription.findMany({
+      where: {
+        status: 'SUSPENDED',
+        updatedAt: { lte: cancelCutoff },
+      },
+    });
+
+    for (const sub of longSuspended) {
+      try {
+        await prisma.subscription.update({
+          where: { id: sub.id },
+          data: { status: 'CANCELLED' },
+        });
+        logger.info('Subscription CANCELLED after 30 days suspended', { tenantId: sub.tenantId });
+      } catch (err) {
+        logger.error('Failed to cancel subscription', { tenantId: sub.tenantId, error: String(err) });
+      }
+    }
+  } catch (err) {
+    logger.error('Subscription management job failed', { error: err });
+  }
+}
+
+/**
  * Register all cron jobs.
  */
 export function registerCronJobs() {
@@ -154,6 +332,11 @@ export function registerCronJobs() {
 
   // Daily at 6:00 AM — mark overdue invoices
   cron.schedule('0 6 * * *', markOverdueInvoices, {
+    timezone: 'Africa/Lome',
+  });
+
+  // Daily at 7:00 AM — subscription lifecycle management
+  cron.schedule('0 7 * * *', manageSubscriptions, {
     timezone: 'Africa/Lome',
   });
 

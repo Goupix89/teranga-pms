@@ -40,6 +40,7 @@ import {
   channelRouter,
   apiKeyRouter,
   tenantSettingsRouter,
+  subscriptionRouter,
 } from './routes/resource.routes';
 import { channelSyncService } from './services/channel-sync.service';
 
@@ -84,15 +85,9 @@ app.use(cors({
 
 app.use(compression());
 
-// Stripe webhook needs raw body BEFORE express.json() parses it
-app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  try {
-    const signature = req.headers['stripe-signature'] as string;
-    await registrationService.handleWebhook(req.body, signature);
-    res.json({ received: true });
-  } catch (err) {
-    next(err);
-  }
+// Legacy Stripe webhook endpoint (kept for backwards compatibility, returns 410 Gone)
+app.post('/api/webhooks/stripe', (_req: express.Request, res: express.Response) => {
+  res.status(410).json({ error: 'Stripe webhooks are no longer supported. Use FedaPay.' });
 });
 
 app.use(express.json({ limit: '2mb' }));
@@ -131,6 +126,15 @@ app.post('/api/webhooks/fedapay', async (req: express.Request, res: express.Resp
     if (event?.name === 'transaction.approved' && event?.entity) {
       const txn = event.entity;
       const fedapayTxnId = String(txn.id || txn.reference);
+
+      // ── SUBSCRIPTION PAYMENT ──
+      if (txn.custom_metadata?.type === 'subscription') {
+        await registrationService.handleSubscriptionPayment(fedapayTxnId, txn.custom_metadata);
+        res.json({ received: true });
+        return;
+      }
+
+      // ── INVOICE / ORDER PAYMENT ──
       const transactionUuid = `fedapay_${fedapayTxnId}`;
 
       // Check if payment already recorded (idempotence)
@@ -140,7 +144,6 @@ app.post('/api/webhooks/fedapay', async (req: express.Request, res: express.Resp
 
       if (!existing) {
         // Find the invoice linked to this FedaPay transaction via custom metadata
-        // PMS transactions send invoice_id directly; WordPress plugin sends reservation_id
         const invoiceIdFromMeta = txn.custom_metadata?.invoice_id;
         const reservationId = txn.custom_metadata?.reservation_id;
 
@@ -151,14 +154,12 @@ app.post('/api/webhooks/fedapay', async (req: express.Request, res: express.Resp
           });
         }
         if (!invoice && reservationId) {
-          // Try by reservation ID (PMS-generated)
           invoice = await prisma.invoice.findFirst({
             where: { reservationId, status: { not: 'CANCELLED' } },
             orderBy: { createdAt: 'desc' },
           });
         }
         if (!invoice && reservationId) {
-          // Try by externalRef on the reservation (WordPress BA sync uses ba_order_XXX)
           const reservation = await prisma.reservation.findFirst({
             where: { externalRef: reservationId },
             select: { id: true },
@@ -172,8 +173,7 @@ app.post('/api/webhooks/fedapay', async (req: express.Request, res: express.Resp
         }
 
         if (invoice) {
-          // Record the payment
-          const amount = (txn.amount || invoice.totalAmount.toNumber()) / 1; // FedaPay amounts are in base currency
+          const amount = (txn.amount || invoice.totalAmount.toNumber()) / 1;
           await prisma.payment.create({
             data: {
               tenantId: invoice.tenantId,
@@ -185,13 +185,12 @@ app.post('/api/webhooks/fedapay', async (req: express.Request, res: express.Resp
             },
           });
 
-          // Mark invoice as PAID
           await prisma.invoice.update({
             where: { id: invoice.id },
             data: { status: 'PAID', paidAt: new Date() },
           });
 
-          // Notify external system (WordPress) about the payment
+          // Notify external system (WordPress)
           try {
             const tenantData = await prisma.tenant.findUnique({
               where: { id: invoice.tenantId },
@@ -370,6 +369,9 @@ app.use('/api/api-keys', apiKeyRouter);
 
 // Tenant settings (FedaPay config, etc.) — OWNER only
 app.use('/api/tenant/settings', tenantSettingsRouter);
+
+// Subscription management — SUPERADMIN only
+app.use('/api/subscriptions', subscriptionRouter);
 
 // Integration endpoints (availability, external bookings, POS)
 app.use('/api', integrationRouter);

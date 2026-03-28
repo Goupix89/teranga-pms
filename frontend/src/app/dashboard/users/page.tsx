@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/lib/api';
 import { PageHeader, StatusBadge, Pagination, Modal, SearchInput, EmptyState, LoadingPage, ConfirmDialog } from '@/components/ui';
-import { Users as UsersIcon, Plus, Pencil, Archive, Loader2, Building2, CheckCircle } from 'lucide-react';
+import { Users as UsersIcon, Plus, Pencil, Archive, ArchiveRestore, Trash2, Loader2, Building2, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDate, statusLabels } from '@/lib/utils';
 import { useAuthStore } from '@/hooks/useAuthStore';
@@ -37,6 +37,7 @@ export default function UsersPage() {
   const [showModal, setShowModal] = useState(false);
   const [editTarget, setEditTarget] = useState<any>(null);
   const [archiveTarget, setArchiveTarget] = useState<any>(null);
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
 
   const defaultForm = { email: '', password: '', firstName: '', lastName: '', phone: '', establishmentIds: [] as string[], establishmentRole: 'SERVER' as EstablishmentRole };
   const [form, setForm] = useState(defaultForm);
@@ -74,6 +75,18 @@ export default function UsersPage() {
   const approveMutation = useMutation({
     mutationFn: (id: string) => apiPost(`/users/${id}/approve`, {}),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['users'] }); toast.success('Utilisateur approuvé'); },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
+  });
+
+  const unarchiveMutation = useMutation({
+    mutationFn: (id: string) => apiPost(`/users/${id}/unarchive`, {}),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['users'] }); toast.success('Utilisateur désarchivé'); },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
+  });
+
+  const hardDeleteMutation = useMutation({
+    mutationFn: (id: string) => apiDelete(`/users/${id}/permanent`),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['users'] }); setDeleteTarget(null); toast.success('Utilisateur supprimé définitivement'); },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
   });
 
@@ -155,8 +168,14 @@ export default function UsersPage() {
                           <CheckCircle className="h-4 w-4" />
                         </button>
                       )}
+                      {isSuperAdmin && u.status === 'ARCHIVED' && (
+                        <button onClick={() => unarchiveMutation.mutate(u.id)} className="btn-ghost p-1.5 text-blue-600" title="Désarchiver">
+                          <ArchiveRestore className="h-4 w-4" />
+                        </button>
+                      )}
                       {canEditUser && u.role !== 'SUPERADMIN' && <button onClick={() => openEdit(u)} className="btn-ghost p-1.5 text-gray-500"><Pencil className="h-4 w-4" /></button>}
-                      {canArchiveUser && u.id !== currentUser?.id && u.role !== 'SUPERADMIN' && <button onClick={() => setArchiveTarget(u)} className="btn-ghost p-1.5 text-red-500"><Archive className="h-4 w-4" /></button>}
+                      {canArchiveUser && u.id !== currentUser?.id && u.role !== 'SUPERADMIN' && u.status !== 'ARCHIVED' && <button onClick={() => setArchiveTarget(u)} className="btn-ghost p-1.5 text-orange-500" title="Archiver"><Archive className="h-4 w-4" /></button>}
+                      {isSuperAdmin && u.id !== currentUser?.id && u.role !== 'SUPERADMIN' && <button onClick={() => setDeleteTarget(u)} className="btn-ghost p-1.5 text-red-500" title="Supprimer définitivement"><Trash2 className="h-4 w-4" /></button>}
                     </td>
                   </tr>
                 ))}
@@ -260,6 +279,9 @@ export default function UsersPage() {
 
       <ConfirmDialog open={!!archiveTarget} onClose={() => setArchiveTarget(null)} onConfirm={() => archiveTarget && archiveMutation.mutate(archiveTarget.id)}
         title="Archiver l'utilisateur" message={`Archiver ${archiveTarget?.firstName} ${archiveTarget?.lastName} ? Cette action révoquera toutes ses sessions.`} confirmLabel="Archiver" danger loading={archiveMutation.isPending} />
+
+      <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={() => deleteTarget && hardDeleteMutation.mutate(deleteTarget.id)}
+        title="Supprimer définitivement" message={`Supprimer définitivement ${deleteTarget?.firstName} ${deleteTarget?.lastName} ? Cette action est irréversible et supprimera toutes les données associées.`} confirmLabel="Supprimer" danger loading={hardDeleteMutation.isPending} />
     </div>
   );
 }

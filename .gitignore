@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+.next/
+
+# Environment files with secrets
+.env.prod
+.env.local
+*.env.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Firebase (sensitive)
+teranga-pms-firebase-adminsdk-fbsvc-0a2b2d0077.json
+*-firebase-adminsdk-*.json
+google-services.json
