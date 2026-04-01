@@ -109,8 +109,8 @@ export const requireDAF = requireEstablishmentRole('OWNER', 'DAF');
 /** OWNER, DAF or Manager */
 export const requireDAFOrManager = requireEstablishmentRole('OWNER', 'DAF', 'MANAGER');
 
-/** OWNER, DAF, Manager, or Server */
-export const requireDAFOrManagerOrServer = requireEstablishmentRole('OWNER', 'DAF', 'MANAGER', 'MAITRE_HOTEL', 'SERVER');
+/** OWNER, DAF, Manager, Server, or POS */
+export const requireDAFOrManagerOrServer = requireEstablishmentRole('OWNER', 'DAF', 'MANAGER', 'MAITRE_HOTEL', 'SERVER', 'POS');
 
 /** OWNER, DAF, Manager, Server, POS (payment-related operations) */
 export const requirePaymentRole = requireEstablishmentRole('OWNER', 'DAF', 'MANAGER', 'MAITRE_HOTEL', 'SERVER', 'POS');

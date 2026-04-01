@@ -9,7 +9,7 @@ import {
   LayoutDashboard, BedDouble, CalendarCheck, Receipt, CreditCard,
   Package, Truck, Users, Building2, Settings, LogOut, ChevronLeft,
   BarChart3, UtensilsCrossed, SprayCan, ClipboardCheck, AlertTriangle,
-  ChevronDown, UserCircle, Globe2, KeyRound, Crown,
+  ChevronDown, UserCircle, Globe2, KeyRound, Crown, ShoppingCart,
 } from 'lucide-react';
 import { useState } from 'react';
 import { NotificationBell } from './NotificationBell';
@@ -28,11 +28,12 @@ const navigation: NavItem[] = [
   { name: 'Chambres', href: '/dashboard/rooms', icon: BedDouble, estRoles: ['OWNER', 'DAF', 'MANAGER', 'CLEANER'] },
   { name: 'Réservations', href: '/dashboard/reservations', icon: CalendarCheck, estRoles: ['OWNER', 'DAF', 'MANAGER'] },
   { name: 'Canaux', href: '/dashboard/channels', icon: Globe2, estRoles: ['OWNER', 'DAF', 'MANAGER'] },
-  { name: 'Commandes', href: '/dashboard/orders', icon: UtensilsCrossed, estRoles: ['OWNER', 'DAF', 'MANAGER', 'SERVER'] },
+  { name: 'Point de Vente', href: '/dashboard/pos', icon: ShoppingCart, estRoles: ['OWNER', 'DAF', 'MANAGER', 'SERVER', 'POS'] },
+  { name: 'Commandes', href: '/dashboard/orders', icon: UtensilsCrossed, estRoles: ['OWNER', 'DAF', 'MANAGER', 'SERVER', 'POS'] },
   { name: 'Cuisine', href: '/dashboard/kitchen', icon: UtensilsCrossed, estRoles: ['OWNER', 'DAF', 'MANAGER', 'COOK'] },
-  { name: 'Factures', href: '/dashboard/invoices', icon: Receipt, estRoles: ['OWNER', 'DAF', 'MANAGER', 'SERVER'] },
+  { name: 'Factures', href: '/dashboard/invoices', icon: Receipt, estRoles: ['OWNER', 'DAF', 'MANAGER', 'SERVER', 'POS'] },
   { name: 'Paiements', href: '/dashboard/payments', icon: CreditCard, estRoles: ['OWNER', 'DAF', 'MANAGER', 'SERVER', 'POS'] },
-  { name: 'Menu & Articles', href: '/dashboard/stock', icon: Package, estRoles: ['OWNER', 'DAF', 'MANAGER'] },
+  { name: 'Menu & Articles', href: '/dashboard/stock', icon: Package, estRoles: ['OWNER', 'DAF', 'MANAGER', 'POS'] },
   { name: 'Alertes Stock', href: '/dashboard/stock-alerts', icon: AlertTriangle, estRoles: ['OWNER', 'DAF', 'MANAGER'] },
   { name: 'Fournisseurs', href: '/dashboard/suppliers', icon: Truck, estRoles: ['OWNER', 'DAF'] },
   { name: 'Ménage', href: '/dashboard/cleaning', icon: SprayCan, estRoles: ['OWNER', 'DAF', 'MANAGER', 'CLEANER'] },
@@ -48,6 +49,7 @@ const estRoleLabels: Record<EstablishmentRole, string> = {
   OWNER: 'Propriétaire',
   DAF: 'DAF',
   MANAGER: 'Manager',
+  MAITRE_HOTEL: 'Maître d\'hôtel',
   SERVER: 'Serveur',
   POS: 'Point de vente',
   COOK: 'Cuisinier',
