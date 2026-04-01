@@ -119,6 +119,7 @@ export const statusLabels: Record<string, string> = {
   // Establishment roles
   DAF: 'DAF',
   MANAGER: 'Manager',
+  MAITRE_HOTEL: 'Maître d\'hôtel',
   SERVER: 'Serveur',
   POS: 'Point de vente',
   COOK: 'Cuisinier',

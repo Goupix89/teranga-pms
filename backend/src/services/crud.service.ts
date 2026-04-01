@@ -62,10 +62,8 @@ export class UserService {
     return paginate(data, total, params);
   }
 
-  async getById(tenantId: string, id: string) {
-    const db = createTenantClient(tenantId);
-
-    const user = await db.user.findFirst({
+  async getById(_tenantId: string, id: string) {
+    const user = await prisma.user.findFirst({
       where: { id },
       select: {
         id: true, email: true, firstName: true, lastName: true,
@@ -193,7 +191,7 @@ export class UserService {
     establishmentIds?: string[];
     establishmentRole?: EstablishmentRole;
   }, requestingEstRole: EstablishmentRole | null) {
-    const user = await prisma.user.findFirst({ where: { id, tenantId } });
+    const user = await prisma.user.findFirst({ where: { id } });
     if (!user) throw new NotFoundError('Utilisateur');
 
     // Can't demote a SUPERADMIN
@@ -238,7 +236,7 @@ export class UserService {
   }
 
   async archive(tenantId: string, id: string) {
-    const user = await prisma.user.findFirst({ where: { id, tenantId } });
+    const user = await prisma.user.findFirst({ where: { id } });
     if (!user) throw new NotFoundError('Utilisateur');
 
     if (user.role === 'SUPERADMIN') {

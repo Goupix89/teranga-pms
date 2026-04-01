@@ -27,7 +27,7 @@ export interface PaginatedResponse<T> {
 // =============================================================================
 
 export type UserRole = 'SUPERADMIN' | 'EMPLOYEE';
-export type EstablishmentRole = 'OWNER' | 'DAF' | 'MANAGER' | 'SERVER' | 'POS' | 'COOK' | 'CLEANER';
+export type EstablishmentRole = 'OWNER' | 'DAF' | 'MANAGER' | 'MAITRE_HOTEL' | 'SERVER' | 'POS' | 'COOK' | 'CLEANER';
 export type UserStatus = 'ACTIVE' | 'PENDING_APPROVAL' | 'LOCKED' | 'ARCHIVED';
 export type RoomType = 'SINGLE' | 'DOUBLE' | 'SUITE' | 'FAMILY' | 'DELUXE';
 export type RoomStatus = 'AVAILABLE' | 'OCCUPIED' | 'MAINTENANCE' | 'OUT_OF_ORDER' | 'CLEANING';

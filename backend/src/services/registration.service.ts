@@ -50,8 +50,19 @@ export class RegistrationService {
     planSlug: string;
     billingInterval: 'MONTHLY' | 'YEARLY';
     skipTrial?: boolean;
+    // Establishment fields
+    address?: string;
+    city?: string;
+    country?: string;
+    phone?: string;
+    establishmentEmail?: string;
+    website?: string;
+    starRating?: number;
+    timezone?: string;
+    currency?: string;
   }) {
-    const { tenantName, slug, email, password, firstName, lastName, planSlug, billingInterval, skipTrial } = data;
+    const { tenantName, slug, email, password, firstName, lastName, planSlug, billingInterval, skipTrial,
+      address, city, country, phone, establishmentEmail, website, starRating, timezone, currency } = data;
 
     // Validate slug
     if (RESERVED_SLUGS.has(slug)) {
@@ -112,11 +123,15 @@ export class RegistrationService {
         data: {
           tenantId: tenant.id,
           name: tenantName,
-          address: '',
-          city: '',
-          country: 'BJ',
-          timezone: 'Africa/Porto-Novo',
-          currency: 'XOF',
+          address: address || '',
+          city: city || '',
+          country: country || 'BJ',
+          timezone: timezone || 'Africa/Porto-Novo',
+          currency: currency || 'XOF',
+          ...(phone && { phone }),
+          ...(establishmentEmail && { email: establishmentEmail }),
+          ...(website && { website }),
+          ...(starRating && { starRating }),
         },
       });
 
@@ -128,6 +143,16 @@ export class RegistrationService {
           role: 'OWNER',
         },
       });
+
+      // Create default article categories
+      const defaultCategories = ['Restaurant', 'Boissons', 'Fournitures'];
+      for (const name of defaultCategories) {
+        await tx.articleCategory.upsert({
+          where: { tenantId_establishmentId_name: { tenantId: tenant.id, establishmentId: establishment.id, name } },
+          update: {},
+          create: { tenantId: tenant.id, establishmentId: establishment.id, name },
+        });
+      }
 
       const trialEndsAt = hasTrial
         ? new Date(now.getTime() + plan.trialDays * 24 * 60 * 60 * 1000)

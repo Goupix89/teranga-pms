@@ -5,7 +5,58 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
-import { Loader2, Eye, EyeOff, Check, ArrowLeft, ArrowRight, CreditCard, Clock } from 'lucide-react';
+import { Loader2, Eye, EyeOff, Check, ArrowLeft, ArrowRight, CreditCard, Clock, Star } from 'lucide-react';
+
+const TIMEZONES = [
+  { value: 'Africa/Porto-Novo', label: 'Bénin (UTC+1)' },
+  { value: 'Africa/Abidjan', label: 'Côte d\'Ivoire (UTC+0)' },
+  { value: 'Africa/Dakar', label: 'Sénégal (UTC+0)' },
+  { value: 'Africa/Lagos', label: 'Nigéria (UTC+1)' },
+  { value: 'Africa/Douala', label: 'Cameroun (UTC+1)' },
+  { value: 'Africa/Bamako', label: 'Mali (UTC+0)' },
+  { value: 'Africa/Ouagadougou', label: 'Burkina Faso (UTC+0)' },
+  { value: 'Africa/Lome', label: 'Togo (UTC+0)' },
+  { value: 'Africa/Accra', label: 'Ghana (UTC+0)' },
+  { value: 'Africa/Libreville', label: 'Gabon (UTC+1)' },
+  { value: 'Europe/Paris', label: 'France (UTC+1/+2)' },
+];
+
+const CURRENCIES = [
+  { value: 'XOF', label: 'FCFA (XOF)' },
+  { value: 'XAF', label: 'FCFA Centrafrique (XAF)' },
+  { value: 'GHS', label: 'Cedi ghanéen (GHS)' },
+  { value: 'NGN', label: 'Naira nigérian (NGN)' },
+  { value: 'EUR', label: 'Euro (EUR)' },
+  { value: 'USD', label: 'Dollar américain (USD)' },
+];
+
+const COUNTRIES = [
+  { value: 'BJ', label: 'Bénin' },
+  { value: 'CI', label: 'Côte d\'Ivoire' },
+  { value: 'SN', label: 'Sénégal' },
+  { value: 'TG', label: 'Togo' },
+  { value: 'BF', label: 'Burkina Faso' },
+  { value: 'ML', label: 'Mali' },
+  { value: 'NG', label: 'Nigéria' },
+  { value: 'GH', label: 'Ghana' },
+  { value: 'CM', label: 'Cameroun' },
+  { value: 'GA', label: 'Gabon' },
+  { value: 'FR', label: 'France' },
+];
+
+function KubaPattern() {
+  return (
+    <svg className="absolute inset-0 w-full h-full opacity-20" preserveAspectRatio="none">
+      <defs>
+        <pattern id="kuba-reg" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
+          <path d="M0 12L12 0L24 12L12 24Z" fill="none" stroke="#D4A857" strokeWidth="0.5" />
+          <circle cx="12" cy="12" r="1.5" fill="#B85042" opacity="0.5" />
+        </pattern>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#kuba-reg)" />
+    </svg>
+  );
+}
 
 interface Plan {
   id: string;
@@ -59,6 +110,16 @@ function RegisterContent() {
     confirmPassword: '',
     firstName: '',
     lastName: '',
+    // Establishment fields
+    address: '',
+    city: '',
+    country: 'BJ',
+    phone: '',
+    establishmentEmail: '',
+    website: '',
+    starRating: 0,
+    timezone: 'Africa/Porto-Novo',
+    currency: 'XOF',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -120,6 +181,15 @@ function RegisterContent() {
         planSlug: selectedPlan,
         billingInterval: yearly ? 'YEARLY' : 'MONTHLY',
         skipTrial,
+        address: form.address,
+        city: form.city,
+        country: form.country,
+        phone: form.phone || undefined,
+        establishmentEmail: form.establishmentEmail || undefined,
+        website: form.website || undefined,
+        starRating: form.starRating > 0 ? form.starRating : undefined,
+        timezone: form.timezone,
+        currency: form.currency,
       });
 
       const result = data.data;
@@ -146,35 +216,55 @@ function RegisterContent() {
 
   return (
     <div className="flex min-h-screen">
-      {/* Left panel — branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-primary-700 via-primary-600 to-primary-800 items-center justify-center p-12">
-        <div className="max-w-md text-white">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm mb-8">
-            <span className="text-2xl font-bold">H</span>
+      {/* Left panel — branding (same as login) */}
+      <div className="hidden lg:flex lg:w-1/2 bg-wood-800 items-center justify-center p-12 relative overflow-hidden">
+        <KubaPattern />
+        <div className="max-w-md relative z-10">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-500/20 backdrop-blur-sm mb-8">
+            <span className="text-2xl font-bold text-accent-500">T</span>
           </div>
-          <h1 className="text-4xl font-bold leading-tight">Hotel PMS</h1>
-          <p className="mt-4 text-lg text-primary-100 leading-relaxed">
-            Créez votre compte et commencez à gérer votre hôtel en quelques minutes.
+          <h1 className="font-display text-4xl font-bold leading-tight text-accent-500">
+            TERANGA
+          </h1>
+          <p className="mt-2 text-lg text-wood-400 font-display italic">
+            L&apos;hospitalit&eacute; connect&eacute;e
           </p>
-          <div className="mt-10 space-y-4">
-            {['Gestion complète multi-établissements', 'Réservations & facturation intégrées', 'App POS Android incluse', 'Support & mises à jour continues'].map((item) => (
-              <div key={item} className="flex items-center gap-3">
-                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-white/20">
-                  <Check className="h-3.5 w-3.5" />
-                </div>
-                <span className="text-primary-100">{item}</span>
+          <p className="mt-4 text-base text-wood-400 leading-relaxed">
+            Plateforme compl&egrave;te de gestion h&ocirc;teli&egrave;re. G&eacute;rez vos chambres, r&eacute;servations, commandes
+            et stocks depuis une interface unique.
+          </p>
+          <div className="mt-10 grid grid-cols-2 gap-4">
+            {[
+              { n: '8+', l: 'Modules intégrés' },
+              { n: '100%', l: 'Multi-tenant' },
+              { n: 'POS', l: 'App Android incluse' },
+              { n: 'API', l: 'Channel Manager' },
+            ].map((s) => (
+              <div key={s.l} className="rounded-xl bg-white/5 backdrop-blur-sm p-4 border border-accent-500/10">
+                <p className="text-2xl font-bold text-accent-500">{s.n}</p>
+                <p className="text-sm text-wood-400">{s.l}</p>
               </div>
             ))}
+          </div>
+          <div className="mt-12 flex justify-center opacity-30">
+            <svg width="80" height="80" viewBox="0 0 80 80">
+              <rect x="24" y="12" width="32" height="44" rx="16" fill="none" stroke="#D4A857" strokeWidth="1.5"/>
+              <circle cx="34" cy="30" r="4" fill="none" stroke="#B85042" strokeWidth="1.5"/>
+              <circle cx="46" cy="30" r="4" fill="none" stroke="#B85042" strokeWidth="1.5"/>
+              <line x1="40" y1="38" x2="40" y2="48" stroke="#A7BEAE" strokeWidth="1.5"/>
+              <line x1="34" y1="48" x2="46" y2="48" stroke="#A7BEAE" strokeWidth="1.5"/>
+              <path d="M28 60L40 72L52 60" fill="none" stroke="#D4A857" strokeWidth="1" strokeDasharray="3 2"/>
+            </svg>
           </div>
         </div>
       </div>
 
       {/* Right panel — registration form */}
-      <div className="flex w-full lg:w-1/2 items-start justify-center p-8 overflow-y-auto">
+      <div className="flex w-full lg:w-1/2 items-start justify-center p-8 bg-wood-50 overflow-y-auto">
         <div className="w-full max-w-lg py-8">
           <div className="lg:hidden mb-8">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-600 text-white font-bold">
-              H
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-500 text-white font-bold">
+              T
             </div>
           </div>
 
@@ -200,8 +290,9 @@ function RegisterContent() {
           {/* Step 1: Choose Plan */}
           {step === 1 && (
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">Choisissez votre plan</h2>
-              <p className="mt-1 text-sm text-gray-500">Sélectionnez le plan adapté à vos besoins</p>
+              <h2 className="font-display text-2xl font-bold text-wood-800">Choisissez votre plan</h2>
+              <p className="mt-1 text-sm text-wood-500">Sélectionnez le plan adapté à vos besoins</p>
+              <div className="divider-teranga my-6" />
 
               {/* Billing toggle */}
               <div className="mt-6 flex items-center justify-center gap-3">
@@ -297,12 +388,16 @@ function RegisterContent() {
           {/* Step 2: Account Details */}
           {step === 2 && (
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">Créez votre compte</h2>
-              <p className="mt-1 text-sm text-gray-500">Informations de votre organisation et administrateur</p>
+              <h2 className="font-display text-2xl font-bold text-wood-800">Créez votre compte</h2>
+              <p className="mt-1 text-sm text-wood-500">Informations de votre organisation et administrateur</p>
+              <div className="divider-teranga my-6" />
 
               <div className="mt-6 space-y-4">
+                {/* Organisation */}
+                <p className="text-xs font-semibold uppercase tracking-wide text-wood-400">Établissement</p>
+
                 <div>
-                  <label className="label">Nom de l&apos;hôtel / organisation</label>
+                  <label className="label">Nom de l&apos;hôtel / organisation <span className="text-red-500">*</span></label>
                   <input
                     type="text"
                     value={form.tenantName}
@@ -314,7 +409,7 @@ function RegisterContent() {
                 </div>
 
                 <div>
-                  <label className="label">Identifiant unique (slug)</label>
+                  <label className="label">Identifiant unique (slug) <span className="text-red-500">*</span></label>
                   <input
                     type="text"
                     value={form.slug}
@@ -326,9 +421,115 @@ function RegisterContent() {
                   {errors.slug && <p className="mt-1 text-xs text-red-600">{errors.slug}</p>}
                 </div>
 
+                {/* Star rating */}
+                <div>
+                  <label className="label">Classification (étoiles)</label>
+                  <div className="flex items-center gap-1 mt-1">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        type="button"
+                        onClick={() => setForm({ ...form, starRating: form.starRating === star ? 0 : star })}
+                        className="focus:outline-none"
+                      >
+                        <Star
+                          className={`h-6 w-6 transition-colors ${
+                            star <= form.starRating ? 'text-amber-400 fill-amber-400' : 'text-gray-300'
+                          }`}
+                        />
+                      </button>
+                    ))}
+                    {form.starRating > 0 && (
+                      <span className="ml-2 text-sm text-gray-500">{form.starRating} étoile{form.starRating > 1 ? 's' : ''}</span>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="label">Adresse</label>
+                  <input
+                    type="text"
+                    value={form.address}
+                    onChange={(e) => setForm({ ...form, address: e.target.value })}
+                    className="input"
+                    placeholder="123 Rue de l'Hôtel"
+                  />
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="label">Prénom</label>
+                    <label className="label">Ville</label>
+                    <input
+                      type="text"
+                      value={form.city}
+                      onChange={(e) => setForm({ ...form, city: e.target.value })}
+                      className="input"
+                      placeholder="Cotonou"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Pays</label>
+                    <select value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} className="input">
+                      {COUNTRIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="label">Téléphone</label>
+                    <input
+                      type="tel"
+                      value={form.phone}
+                      onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                      className="input"
+                      placeholder="+229 97 00 00 00"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Email de l&apos;établissement</label>
+                    <input
+                      type="email"
+                      value={form.establishmentEmail}
+                      onChange={(e) => setForm({ ...form, establishmentEmail: e.target.value })}
+                      className="input"
+                      placeholder="contact@mon-hotel.com"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="label">Site web</label>
+                  <input
+                    type="url"
+                    value={form.website}
+                    onChange={(e) => setForm({ ...form, website: e.target.value })}
+                    className="input"
+                    placeholder="https://www.mon-hotel.com"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="label">Fuseau horaire</label>
+                    <select value={form.timezone} onChange={(e) => setForm({ ...form, timezone: e.target.value })} className="input">
+                      {TIMEZONES.map((tz) => <option key={tz.value} value={tz.value}>{tz.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Devise</label>
+                    <select value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })} className="input">
+                      {CURRENCIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Admin account */}
+                <p className="text-xs font-semibold uppercase tracking-wide text-wood-400 pt-2">Compte administrateur</p>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="label">Prénom <span className="text-red-500">*</span></label>
                     <input
                       type="text"
                       value={form.firstName}
@@ -339,7 +540,7 @@ function RegisterContent() {
                     {errors.firstName && <p className="mt-1 text-xs text-red-600">{errors.firstName}</p>}
                   </div>
                   <div>
-                    <label className="label">Nom</label>
+                    <label className="label">Nom <span className="text-red-500">*</span></label>
                     <input
                       type="text"
                       value={form.lastName}
@@ -352,7 +553,7 @@ function RegisterContent() {
                 </div>
 
                 <div>
-                  <label className="label">Adresse email</label>
+                  <label className="label">Adresse email <span className="text-red-500">*</span></label>
                   <input
                     type="email"
                     value={form.email}
@@ -365,7 +566,7 @@ function RegisterContent() {
                 </div>
 
                 <div>
-                  <label className="label">Mot de passe</label>
+                  <label className="label">Mot de passe <span className="text-red-500">*</span></label>
                   <div className="relative">
                     <input
                       type={showPassword ? 'text' : 'password'}
@@ -388,7 +589,7 @@ function RegisterContent() {
                 </div>
 
                 <div>
-                  <label className="label">Confirmer le mot de passe</label>
+                  <label className="label">Confirmer le mot de passe <span className="text-red-500">*</span></label>
                   <input
                     type="password"
                     value={form.confirmPassword}
@@ -419,8 +620,9 @@ function RegisterContent() {
           {/* Step 3: Confirmation */}
           {step === 3 && currentPlan && (
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">Confirmation</h2>
-              <p className="mt-1 text-sm text-gray-500">Vérifiez vos informations avant de procéder au paiement</p>
+              <h2 className="font-display text-2xl font-bold text-wood-800">Confirmation</h2>
+              <p className="mt-1 text-sm text-wood-500">Vérifiez vos informations avant de procéder au paiement</p>
+              <div className="divider-teranga my-6" />
 
               <div className="mt-6 space-y-4">
                 <div className="rounded-xl border border-gray-200 p-5">
@@ -431,9 +633,20 @@ function RegisterContent() {
                 </div>
 
                 <div className="rounded-xl border border-gray-200 p-5">
-                  <h3 className="text-sm font-medium text-gray-500">Organisation</h3>
+                  <h3 className="text-sm font-medium text-gray-500">Établissement</h3>
                   <p className="mt-1 font-semibold text-gray-900">{form.tenantName}</p>
                   <p className="text-sm text-gray-500">{form.slug}.hotelpms.com</p>
+                  {form.starRating > 0 && (
+                    <div className="mt-1 flex items-center gap-0.5">
+                      {Array.from({ length: form.starRating }).map((_, i) => (
+                        <Star key={i} className="h-3 w-3 text-amber-400 fill-amber-400" />
+                      ))}
+                    </div>
+                  )}
+                  {(form.city || form.country) && (
+                    <p className="text-sm text-gray-500">{[form.city, form.country].filter(Boolean).join(', ')}</p>
+                  )}
+                  <p className="text-xs text-gray-400 mt-1">{form.timezone} · {form.currency}</p>
                 </div>
 
                 <div className="rounded-xl border border-gray-200 p-5">

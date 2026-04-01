@@ -33,6 +33,11 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     // Set tenantId on request for convenience
     req.tenantId = payload.tenantId;
 
+    // SUPERADMIN has full access — skip subscription and establishment checks
+    if (payload.role === 'SUPERADMIN') {
+      return next();
+    }
+
     // Check subscription status — block access if SUSPENDED or CANCELLED
     const subscription = await prisma.subscription.findUnique({
       where: { tenantId: payload.tenantId },
@@ -52,11 +57,6 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
       }
       // Attach subscription info for downstream use (plan limits, etc.)
       req.subscriptionStatus = subscription.status;
-    }
-
-    // SUPERADMIN has full access — no establishment filtering needed
-    if (payload.role === 'SUPERADMIN') {
-      return next();
     }
 
     // Load user's establishment memberships with roles

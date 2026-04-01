@@ -31,6 +31,7 @@ enum EstablishmentRole {
   OWNER
   DAF
   MANAGER
+  MAITRE_HOTEL
   SERVER
   POS
   COOK

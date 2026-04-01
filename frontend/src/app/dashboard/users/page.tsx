@@ -14,6 +14,7 @@ const estRoleOptions: Array<{ value: EstablishmentRole; label: string }> = [
   { value: 'OWNER', label: 'Propriétaire' },
   { value: 'DAF', label: 'DAF' },
   { value: 'MANAGER', label: 'Manager' },
+  { value: 'MAITRE_HOTEL', label: 'Maître d\'hôtel' },
   { value: 'SERVER', label: 'Serveur' },
   { value: 'POS', label: 'Point de vente' },
   { value: 'COOK', label: 'Cuisinier' },
@@ -121,8 +122,8 @@ export default function UsersPage() {
     if (currentEstRole === 'OWNER') return estRoleOptions.filter((o) => o.value !== 'OWNER');
     // DAF can create MANAGER, SERVER, POS, COOK, CLEANER
     if (currentEstRole === 'DAF') return estRoleOptions.filter((o) => !['OWNER', 'DAF'].includes(o.value));
-    // MANAGER can only create SERVER, COOK, CLEANER
-    return estRoleOptions.filter((o) => ['SERVER', 'COOK', 'CLEANER'].includes(o.value));
+    // MANAGER can only create MAITRE_HOTEL, SERVER, COOK, CLEANER
+    return estRoleOptions.filter((o) => ['MAITRE_HOTEL', 'SERVER', 'COOK', 'CLEANER'].includes(o.value));
   };
 
   const users = data?.data || [];

@@ -110,19 +110,19 @@ export const requireDAF = requireEstablishmentRole('OWNER', 'DAF');
 export const requireDAFOrManager = requireEstablishmentRole('OWNER', 'DAF', 'MANAGER');
 
 /** OWNER, DAF, Manager, or Server */
-export const requireDAFOrManagerOrServer = requireEstablishmentRole('OWNER', 'DAF', 'MANAGER', 'SERVER');
+export const requireDAFOrManagerOrServer = requireEstablishmentRole('OWNER', 'DAF', 'MANAGER', 'MAITRE_HOTEL', 'SERVER');
 
 /** OWNER, DAF, Manager, Server, POS (payment-related operations) */
-export const requirePaymentRole = requireEstablishmentRole('OWNER', 'DAF', 'MANAGER', 'SERVER', 'POS');
+export const requirePaymentRole = requireEstablishmentRole('OWNER', 'DAF', 'MANAGER', 'MAITRE_HOTEL', 'SERVER', 'POS');
 
 /** Cook + kitchen supervisors */
-export const requireKitchenAccess = requireEstablishmentRole('OWNER', 'DAF', 'MANAGER', 'COOK');
+export const requireKitchenAccess = requireEstablishmentRole('OWNER', 'DAF', 'MANAGER', 'MAITRE_HOTEL', 'COOK');
 
 /** Cleaning staff + supervisors */
 export const requireCleaningAccess = requireEstablishmentRole('OWNER', 'DAF', 'MANAGER', 'CLEANER');
 
 /** All establishment roles (any member) */
-export const requireAnyEstablishmentRole = requireEstablishmentRole('OWNER', 'DAF', 'MANAGER', 'SERVER', 'POS', 'COOK', 'CLEANER');
+export const requireAnyEstablishmentRole = requireEstablishmentRole('OWNER', 'DAF', 'MANAGER', 'MAITRE_HOTEL', 'SERVER', 'POS', 'COOK', 'CLEANER');
 
 /**
  * Helper: get user's role in a specific establishment.

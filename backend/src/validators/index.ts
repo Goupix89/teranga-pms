@@ -339,6 +339,7 @@ export const availabilityQuerySchema = z.object({
 // =============================================================================
 
 export const registerTenantSchema = z.object({
+  // Tenant / compte admin
   tenantName: z.string().min(2, 'Nom trop court').max(100),
   slug: z.string().min(3, 'Slug trop court').max(63).regex(
     /^[a-z0-9][a-z0-9-]*[a-z0-9]$/,
@@ -354,6 +355,16 @@ export const registerTenantSchema = z.object({
   planSlug: z.enum(['basic', 'pro', 'enterprise']),
   billingInterval: z.enum(['MONTHLY', 'YEARLY']),
   skipTrial: z.boolean().optional(),
+  // Établissement par défaut
+  address: z.string().min(2).max(500).optional().default(''),
+  city: z.string().min(1).max(100).optional().default(''),
+  country: z.string().min(2).max(100).optional().default('BJ'),
+  phone: z.string().optional(),
+  establishmentEmail: z.string().email().optional().or(z.literal('')).transform(v => v === '' ? undefined : v),
+  website: z.string().url('URL invalide').optional().or(z.literal('')).transform(v => v === '' ? undefined : v),
+  starRating: z.number().int().min(1).max(5).optional(),
+  timezone: z.string().optional().default('Africa/Porto-Novo'),
+  currency: z.string().length(3).optional().default('XOF'),
 });
 
 // =============================================================================
