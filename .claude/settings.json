@@ -6,7 +6,8 @@
       "Bash(grep -rn \"userRouter\\\\|establishmentRouter\" /home/user/hotel-pms/backend/src --include=*.ts)",
       "Bash(npx next:*)",
       "Bash(find /home/user/hotel-pms -type f \\\\\\(-name nginx.conf -o -name *.conf -o -name Makefile -o -name *.sh \\\\\\))",
-      "Bash(grep -E \"\\\\.ts$\")"
+      "Bash(grep -E \"\\\\.ts$\")",
+      "Bash(ls -la /home/user/hotel-pms/android/app/src/main/res/mipmap*)"
     ]
   }
 }

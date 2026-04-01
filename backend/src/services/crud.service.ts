@@ -287,13 +287,42 @@ export class UserService {
       throw new ValidationError('Impossible de supprimer un super administrateur');
     }
 
-    // Delete related data in transaction
-    await prisma.$transaction([
-      prisma.refreshToken.deleteMany({ where: { userId: id } }),
-      prisma.notification.deleteMany({ where: { userId: id } }),
-      prisma.establishmentMember.deleteMany({ where: { userId: id } }),
-      prisma.user.delete({ where: { id } }),
-    ]);
+    // Delete related data in transaction (order matters for FK constraints)
+    await prisma.$transaction(async (tx) => {
+      // Approval requests
+      await tx.approvalRequest.deleteMany({ where: { requestedById: id } });
+      await tx.approvalRequest.deleteMany({ where: { reviewedById: id } });
+      // Nullify stock movement approver references
+      await tx.stockMovement.updateMany({ where: { approvedById: id }, data: { approvedById: null } });
+      // Stock movements performed by user
+      await tx.stockMovement.deleteMany({ where: { performedById: id } });
+      // Articles created by user — unlink instead of delete
+      await tx.article.updateMany({ where: { createdById: id }, data: { createdById: null } });
+      // Order items then orders
+      const userOrders = await tx.order.findMany({ where: { createdById: id }, select: { id: true } });
+      if (userOrders.length > 0) {
+        const orderIds = userOrders.map((o) => o.id);
+        await tx.orderItem.deleteMany({ where: { orderId: { in: orderIds } } });
+        await tx.order.deleteMany({ where: { id: { in: orderIds } } });
+      }
+      // Invoice items then invoices
+      const userInvoices = await tx.invoice.findMany({ where: { createdById: id }, select: { id: true } });
+      if (userInvoices.length > 0) {
+        const invoiceIds = userInvoices.map((i) => i.id);
+        await tx.invoiceItem.deleteMany({ where: { invoiceId: { in: invoiceIds } } });
+        await tx.invoice.deleteMany({ where: { id: { in: invoiceIds } } });
+      }
+      // Cleaning sessions
+      await tx.cleaningSession.deleteMany({ where: { cleanerId: id } });
+      // Notifications & device tokens
+      await tx.notification.deleteMany({ where: { userId: id } });
+      await tx.deviceToken.deleteMany({ where: { userId: id } });
+      // Sessions & memberships
+      await tx.refreshToken.deleteMany({ where: { userId: id } });
+      await tx.establishmentMember.deleteMany({ where: { userId: id } });
+      // Finally the user
+      await tx.user.delete({ where: { id } });
+    });
   }
 }
 
