@@ -18,6 +18,7 @@ import androidx.compose.material.icons.outlined.KingBed
 import androidx.compose.material.icons.outlined.LocalDining
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.PointOfSale
+import androidx.compose.material.icons.outlined.ReceiptLong
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -33,6 +34,7 @@ import com.hotelpms.pos.ui.auth.AuthViewModel
 import com.hotelpms.pos.ui.auth.LoginScreen
 import com.hotelpms.pos.ui.cleaning.CleaningScreen
 import com.hotelpms.pos.ui.dashboard.DashboardScreen
+import com.hotelpms.pos.ui.invoices.InvoicesScreen
 import com.hotelpms.pos.ui.kitchen.KitchenScreen
 import com.hotelpms.pos.ui.notifications.NotificationsScreen
 import com.hotelpms.pos.ui.orders.OrdersScreen
@@ -68,9 +70,10 @@ val allNavItems = listOf(
     NavItem("orders", "Commandes", Icons.Default.ShoppingCart),
     NavItem("kitchen", "Cuisine", Icons.Outlined.LocalDining),
     NavItem("rooms", "Chambres", Icons.Outlined.KingBed),
-    NavItem("reservations", "Réservations", Icons.Outlined.CalendarMonth),
-    NavItem("cleaning", "Ménage", Icons.Outlined.CleaningServices),
+    NavItem("reservations", "Reservations", Icons.Outlined.CalendarMonth),
+    NavItem("cleaning", "Menage", Icons.Outlined.CleaningServices),
     NavItem("stock", "Stock", Icons.Outlined.Inventory),
+    NavItem("invoices", "Factures", Icons.Outlined.ReceiptLong),
     NavItem("approvals", "Approbations", Icons.Default.CheckCircle),
     NavItem("pos", "POS", Icons.Outlined.PointOfSale),
     NavItem("notifications", "Notifs", Icons.Outlined.Notifications)
@@ -79,13 +82,15 @@ val allNavItems = listOf(
 fun navItemsForRole(role: String): List<NavItem> {
     val allowedRoutes = when (role.uppercase()) {
         "COOK" -> listOf("dashboard", "kitchen", "notifications")
-        "SERVER" -> listOf("dashboard", "orders", "pos", "notifications")
+        "SERVER" -> listOf("dashboard", "orders", "invoices", "pos", "notifications")
         "CLEANER" -> listOf("dashboard", "cleaning", "notifications")
-        "MANAGER" -> listOf("dashboard", "rooms", "reservations", "orders", "stock", "approvals", "pos", "notifications")
-        "DAF" -> listOf("dashboard", "rooms", "reservations", "orders", "stock", "approvals", "notifications")
-        "OWNER" -> listOf("dashboard", "rooms", "reservations", "orders", "stock", "approvals", "notifications")
-        "SUPERADMIN" -> listOf("dashboard", "orders", "kitchen", "rooms", "reservations", "cleaning", "stock", "approvals", "pos", "notifications")
-        else -> listOf("dashboard", "orders", "pos", "notifications")
+        "POS" -> listOf("dashboard", "orders", "invoices", "pos", "notifications")
+        "MAITRE_HOTEL" -> listOf("dashboard", "orders", "invoices", "pos", "notifications")
+        "MANAGER" -> listOf("dashboard", "rooms", "reservations", "orders", "invoices", "stock", "approvals", "pos", "notifications")
+        "DAF" -> listOf("dashboard", "rooms", "reservations", "orders", "invoices", "stock", "approvals", "notifications")
+        "OWNER" -> listOf("dashboard", "rooms", "reservations", "orders", "invoices", "stock", "approvals", "notifications")
+        "SUPERADMIN" -> listOf("dashboard", "orders", "kitchen", "rooms", "reservations", "cleaning", "invoices", "stock", "approvals", "pos", "notifications")
+        else -> listOf("dashboard", "orders", "invoices", "pos", "notifications")
     }
     return allNavItems.filter { it.route in allowedRoutes }
 }
@@ -256,6 +261,7 @@ fun MainScaffold(
 
             composable("orders") {
                 OrdersScreen(
+                    userRole = role,
                     establishment = authViewModel.uiState.currentEstablishment
                 )
             }
@@ -278,6 +284,12 @@ fun MainScaffold(
 
             composable("stock") {
                 StockScreen()
+            }
+
+            composable("invoices") {
+                InvoicesScreen(
+                    establishment = authViewModel.uiState.currentEstablishment
+                )
             }
 
             composable("approvals") {

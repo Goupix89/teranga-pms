@@ -47,12 +47,17 @@ class PosViewModel @Inject constructor(
     val articles: StateFlow<List<CachedArticle>> = _searchQuery
         .debounce(300)
         .flatMapLatest { query ->
-            if (query.isBlank()) {
-                repository.getArticlesFlow()
-            } else {
-                repository.searchArticlesFlow(query)
+            try {
+                if (query.isBlank()) {
+                    repository.getArticlesFlow()
+                } else {
+                    repository.searchArticlesFlow(query)
+                }
+            } catch (_: Exception) {
+                kotlinx.coroutines.flow.flowOf(emptyList())
             }
         }
+        .catch { emit(emptyList()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Cart
@@ -73,11 +78,17 @@ class PosViewModel @Inject constructor(
 
     init {
         refreshArticles()
-        startRealtimeSync()
+        try {
+            startRealtimeSync()
+        } catch (_: Exception) {
+            // SSE sync is optional — don't crash if it fails
+        }
     }
 
     private fun startRealtimeSync() {
-        orderSyncService.connect()
+        try {
+            orderSyncService.connect()
+        } catch (_: Exception) { }
         orderSyncService.orderEvents
             .onEach { event ->
                 if (event == "ORDER_UPDATE") {

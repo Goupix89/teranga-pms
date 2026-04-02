@@ -126,6 +126,15 @@ interface PmsApiService {
     @GET("api/orders/{id}/receipt")
     suspend fun getOrderReceipt(@Path("id") id: String): Response<ResponseBody>
 
+    // Invoices - list
+    @GET("api/invoices")
+    suspend fun getInvoices(
+        @Query("page") page: Int = 1,
+        @Query("limit") limit: Int = 50,
+        @Query("status") status: String? = null,
+        @Query("search") search: String? = null
+    ): Response<InvoicesResponse>
+
     // Invoice PDF
     @Streaming
     @GET("api/invoices/{id}/pdf")

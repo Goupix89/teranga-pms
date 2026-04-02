@@ -67,7 +67,7 @@ interface CachedArticleDao {
 
 @Database(
     entities = [PendingTransaction::class, CachedArticle::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

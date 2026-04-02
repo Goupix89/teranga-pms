@@ -385,8 +385,48 @@ data class UnreadCountData(
 )
 
 // =============================================================================
-// Invoice Merge
+// Invoices
 // =============================================================================
+
+data class Invoice(
+    val id: String,
+    val invoiceNumber: String,
+    val status: String,
+    val subtotal: Double = 0.0,
+    val taxRate: Double = 0.0,
+    val taxAmount: Double = 0.0,
+    val totalAmount: Double = 0.0,
+    val paymentMethod: String? = null,
+    val currency: String? = "XOF",
+    val notes: String? = null,
+    val createdAt: String? = null,
+    val orders: List<InvoiceOrderRef>? = null,
+    val createdBy: UserSummary? = null,
+    val reservation: InvoiceReservationRef? = null,
+    val _count: InvoiceCount? = null
+)
+
+data class InvoiceOrderRef(
+    val id: String,
+    val orderNumber: String? = null,
+    val establishmentId: String? = null
+)
+
+data class InvoiceReservationRef(
+    val id: String,
+    val guestName: String? = null
+)
+
+data class InvoiceCount(
+    val payments: Int = 0,
+    val items: Int = 0
+)
+
+data class InvoicesResponse(
+    val success: Boolean,
+    val data: List<Invoice>,
+    val meta: PaginationMeta? = null
+)
 
 data class MergeInvoicesRequest(
     val invoiceIds: List<String>,
@@ -427,11 +467,11 @@ data class CachedArticle(
     @PrimaryKey
     val id: String,
     val name: String,
-    val sku: String?,
-    val unitPrice: Double,
-    val currentStock: Int,
-    val unit: String,
-    val categoryName: String?,
+    val sku: String? = null,
+    val unitPrice: Double = 0.0,
+    val currentStock: Int = 0,
+    val unit: String = "piece",
+    val categoryName: String? = null,
     val description: String? = null,
     val imageUrl: String? = null,
     val cachedAt: Long = System.currentTimeMillis()
