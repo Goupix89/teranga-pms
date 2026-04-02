@@ -2,11 +2,11 @@
 
 import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiGet, apiPost } from '@/lib/api';
+import { apiGet, apiPost, apiPatch } from '@/lib/api';
 import { api } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 import { PageHeader, StatusBadge, Pagination, Modal, SearchInput, EmptyState, LoadingPage } from '@/components/ui';
-import { Package, Plus, CheckCircle, AlertTriangle, Loader2, Clock, ImageIcon, Upload, X } from 'lucide-react';
+import { Package, Plus, CheckCircle, AlertTriangle, Loader2, Clock, ImageIcon, Upload, X, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/hooks/useAuthStore';
 
@@ -31,8 +31,16 @@ export default function StockPage() {
   const [movementForm, setMovementForm] = useState({ articleId: '', type: 'PURCHASE', quantity: '', unitCost: '', reason: '' });
 
   const currentEstId = useAuthStore((s) => s.currentEstablishmentId);
+  const currentUser = useAuthStore((s) => s.user);
+  const isSuperAdmin = currentUser?.role === 'SUPERADMIN';
   const isDAF = currentEstablishmentRole === 'DAF';
   const isManager = currentEstablishmentRole === 'MANAGER';
+  const isMaitreHotel = currentEstablishmentRole === 'MAITRE_HOTEL';
+  const isOwner = currentEstablishmentRole === 'OWNER';
+  const canEditArticles = isSuperAdmin || isOwner || isDAF || isManager || isMaitreHotel;
+
+  const [editingArticle, setEditingArticle] = useState<any>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<any>(null);
 
   const { data: categories } = useQuery({
     queryKey: ['categories', currentEstId],
@@ -116,6 +124,40 @@ export default function StockPage() {
     },
   });
 
+  const updateArticleMutation = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: any }) => apiPatch(`/articles/${id}`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['articles'] });
+      setEditingArticle(null);
+      setShowCreate(false);
+      setArticleForm(defaultForm);
+      setFieldErrors({});
+      setImagePreview(null);
+      toast.success('Article mis à jour');
+    },
+    onError: (err: any) => {
+      const details = err.response?.data?.details;
+      if (details && Array.isArray(details)) {
+        const errors: Record<string, string> = {};
+        details.forEach((d: any) => { if (d.field) errors[d.field] = d.message; });
+        setFieldErrors(errors);
+        toast.error(`Veuillez corriger : ${details.map((d: any) => d.message).join(', ')}`);
+      } else {
+        toast.error(err.response?.data?.error || 'Erreur lors de la mise à jour');
+      }
+    },
+  });
+
+  const deactivateArticleMutation = useMutation({
+    mutationFn: (id: string) => apiPatch(`/articles/${id}`, { isActive: false }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['articles'] });
+      setShowDeleteConfirm(null);
+      toast.success('Article désactivé');
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
+  });
+
   const createMovementMutation = useMutation({
     mutationFn: (body: any) => apiPost('/stock-movements', body),
     onSuccess: (data: any) => {
@@ -155,7 +197,7 @@ export default function StockPage() {
       return;
     }
 
-    createArticleMutation.mutate({
+    const body = {
       name: articleForm.name,
       sku: articleForm.sku || undefined,
       unitPrice: Number(articleForm.unitPrice),
@@ -167,7 +209,13 @@ export default function StockPage() {
       description: articleForm.description || undefined,
       imageUrl: articleForm.imageUrl || undefined,
       establishmentId: currentEstId || undefined,
-    });
+    };
+
+    if (editingArticle) {
+      updateArticleMutation.mutate({ id: editingArticle.id, body });
+    } else {
+      createArticleMutation.mutate(body);
+    }
   };
 
   const isLoading = tab === 'articles' ? articlesLoading : movementsLoading;
@@ -191,7 +239,7 @@ export default function StockPage() {
             {(isDAF || isManager) && (
               <button onClick={() => setShowMovement(true)} className="btn-secondary"><Plus className="mr-2 h-4 w-4" /> Mouvement</button>
             )}
-            <button onClick={() => { setShowCreate(true); setFieldErrors({}); setImagePreview(null); }} className="btn-primary"><Plus className="mr-2 h-4 w-4" /> Article</button>
+            <button onClick={() => { setEditingArticle(null); setArticleForm(defaultForm); setShowCreate(true); setFieldErrors({}); setImagePreview(null); }} className="btn-primary"><Plus className="mr-2 h-4 w-4" /> Article</button>
           </div>
         }
       />
@@ -243,6 +291,7 @@ export default function StockPage() {
                       <th>Min</th>
                       <th>Niveau</th>
                       <th>Approbation</th>
+                      {canEditArticles && <th>Actions</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -292,6 +341,43 @@ export default function StockPage() {
                             </span>
                           )}
                         </td>
+                        {canEditArticles && (
+                          <td>
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => {
+                                  setEditingArticle(art);
+                                  setArticleForm({
+                                    name: art.name || '',
+                                    sku: art.sku || '',
+                                    unitPrice: String(art.unitPrice || ''),
+                                    costPrice: String(art.costPrice || ''),
+                                    currentStock: String(art.currentStock || ''),
+                                    minimumStock: String(art.minimumStock || ''),
+                                    unit: art.unit || 'plat',
+                                    description: art.description || '',
+                                    imageUrl: art.imageUrl || '',
+                                    categoryId: art.category?.id || '',
+                                  });
+                                  setImagePreview(art.imageUrl ? resolveImageUrl(art.imageUrl) : null);
+                                  setFieldErrors({});
+                                  setShowCreate(true);
+                                }}
+                                className="btn-ghost p-1.5 text-primary-600"
+                                title="Modifier"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => setShowDeleteConfirm(art)}
+                                className="btn-ghost p-1.5 text-red-500"
+                                title="Désactiver"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -341,7 +427,7 @@ export default function StockPage() {
       )}
 
       {/* Create Article Modal */}
-      <Modal open={showCreate} onClose={() => { setShowCreate(false); setFieldErrors({}); }} title="Nouvel article de menu" size="lg">
+      <Modal open={showCreate} onClose={() => { setShowCreate(false); setEditingArticle(null); setArticleForm(defaultForm); setFieldErrors({}); setImagePreview(null); }} title={editingArticle ? 'Modifier l\'article' : 'Nouvel article de menu'} size="lg">
         <form onSubmit={handleSubmitArticle} className="space-y-4">
           {isManager && (
             <div className="rounded-lg bg-accent-50 border border-accent-200 p-3 text-sm text-accent-800">
@@ -490,13 +576,33 @@ export default function StockPage() {
           </details>
 
           <div className="flex justify-end gap-3">
-            <button type="button" onClick={() => { setShowCreate(false); setFieldErrors({}); }} className="btn-secondary">Annuler</button>
-            <button type="submit" className="btn-primary" disabled={createArticleMutation.isPending || isUploading}>
-              {(createArticleMutation.isPending || isUploading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Créer l'article
+            <button type="button" onClick={() => { setShowCreate(false); setEditingArticle(null); setArticleForm(defaultForm); setFieldErrors({}); setImagePreview(null); }} className="btn-secondary">Annuler</button>
+            <button type="submit" className="btn-primary" disabled={createArticleMutation.isPending || updateArticleMutation.isPending || isUploading}>
+              {(createArticleMutation.isPending || updateArticleMutation.isPending || isUploading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {editingArticle ? 'Enregistrer' : 'Créer l\'article'}
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Delete confirmation modal */}
+      <Modal open={!!showDeleteConfirm} onClose={() => setShowDeleteConfirm(null)} title="Désactiver l'article" size="sm">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Êtes-vous sûr de vouloir désactiver l'article <strong>{showDeleteConfirm?.name}</strong> ? Il ne sera plus visible au menu.
+          </p>
+          <div className="flex justify-end gap-3">
+            <button type="button" onClick={() => setShowDeleteConfirm(null)} className="btn-secondary">Annuler</button>
+            <button
+              onClick={() => deactivateArticleMutation.mutate(showDeleteConfirm.id)}
+              className="btn-primary bg-red-600 hover:bg-red-700"
+              disabled={deactivateArticleMutation.isPending}
+            >
+              {deactivateArticleMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Désactiver
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {/* Stock Movement Modal */}

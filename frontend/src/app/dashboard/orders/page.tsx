@@ -17,8 +17,8 @@ export default function OrdersPage() {
   const currentEstId = useAuthStore((s) => s.currentEstablishmentId);
   const currentEstRole = useAuthStore((s) => s.currentEstablishmentRole);
   const isSuperAdmin = currentUser?.role === 'SUPERADMIN';
-  const canCreate = isSuperAdmin || ['DAF', 'MANAGER', 'SERVER'].includes(currentEstRole || '');
-  const canDownloadReceipt = isSuperAdmin || ['OWNER', 'DAF', 'MANAGER', 'SERVER'].includes(currentEstRole || '');
+  const canCreate = isSuperAdmin || ['DAF', 'MANAGER', 'MAITRE_HOTEL', 'SERVER'].includes(currentEstRole || '');
+  const canDownloadReceipt = isSuperAdmin || ['OWNER', 'DAF', 'MANAGER', 'MAITRE_HOTEL', 'SERVER'].includes(currentEstRole || '');
 
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState('');

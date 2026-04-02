@@ -7,13 +7,13 @@ import { PageHeader, StatCard, StatusBadge, LoadingPage } from '@/components/ui'
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import {
-  BarChart3, BedDouble, TrendingUp, Users, Download,
-  CalendarCheck, UtensilsCrossed, DollarSign, Clock,
+  BedDouble, TrendingUp, Download,
+  UtensilsCrossed, DollarSign, Clock,
+  Package, ShoppingCart, Wallet,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer,
-  LineChart, Line,
 } from 'recharts';
 
 const COLORS = {
@@ -67,12 +67,25 @@ export default function ReportsPage() {
     enabled: !!currentEstablishmentId,
   });
 
+  const { data: stockMovements } = useQuery({
+    queryKey: ['report-stock-movements'],
+    queryFn: () => apiGet<any>('/stock-movements?limit=500'),
+    enabled: isDAF,
+  });
+
+  const { data: articles } = useQuery({
+    queryKey: ['report-articles'],
+    queryFn: () => apiGet<any>('/articles?limit=500'),
+  });
+
   const roomList = rooms?.data || [];
   const orderList = orders?.data || [];
   const reservationList = reservations?.data || [];
   const invoiceList = invoices?.data || [];
   const userList = usersData?.data || [];
   const stats = orderStats?.data || {};
+  const movementList = stockMovements?.data || [];
+  const articleList = articles?.data || [];
 
   // --- Computed metrics ---
 
@@ -134,8 +147,48 @@ export default function ReportsPage() {
     name: paymentLabels[key] || key, value,
   }));
 
+  // --- Purchases (stock movements of type PURCHASE) ---
+  const purchases = movementList.filter((m: any) => m.type === 'PURCHASE');
+  const totalPurchasesCost = purchases.reduce((sum: number, m: any) => sum + (Number(m.unitCost) || 0) * Math.abs(m.quantity), 0);
+  const purchasesByArticle: Record<string, { name: string; quantity: number; cost: number }> = {};
+  purchases.forEach((m: any) => {
+    const name = m.article?.name || 'Inconnu';
+    const key = m.articleId || name;
+    if (!purchasesByArticle[key]) purchasesByArticle[key] = { name, quantity: 0, cost: 0 };
+    purchasesByArticle[key].quantity += Math.abs(m.quantity);
+    purchasesByArticle[key].cost += (Number(m.unitCost) || 0) * Math.abs(m.quantity);
+  });
+  const purchasesChartData = Object.values(purchasesByArticle).sort((a, b) => b.cost - a.cost);
+
+  // --- Stock report ---
+  const stockAlerts = articleList.filter((a: any) => a.isApproved !== false && a.currentStock <= a.minimumStock);
+  const totalStockValue = articleList.reduce((sum: number, a: any) => sum + (Number(a.costPrice) || 0) * (a.currentStock || 0), 0);
+  const stockByCategory: Record<string, { name: string; count: number; value: number }> = {};
+  articleList.forEach((a: any) => {
+    const cat = a.category?.name || 'Sans catégorie';
+    if (!stockByCategory[cat]) stockByCategory[cat] = { name: cat, count: 0, value: 0 };
+    stockByCategory[cat].count += a.currentStock || 0;
+    stockByCategory[cat].value += (Number(a.costPrice) || 0) * (a.currentStock || 0);
+  });
+  const stockCategoryData = Object.values(stockByCategory);
+
+  // --- Cash register (caisse) ---
+  const cashOrders = orderList.filter((o: any) => o.paymentMethod === 'CASH' && o.status !== 'CANCELLED');
+  const totalCash = cashOrders.reduce((sum: number, o: any) => sum + (Number(o.totalAmount) || 0), 0);
+  const cardOrders = orderList.filter((o: any) => o.paymentMethod === 'CARD' && o.status !== 'CANCELLED');
+  const totalCard = cardOrders.reduce((sum: number, o: any) => sum + (Number(o.totalAmount) || 0), 0);
+  const mobileOrders = orderList.filter((o: any) => ['MOBILE_MONEY', 'MOOV_MONEY', 'MIXX_BY_YAS', 'FEDAPAY'].includes(o.paymentMethod) && o.status !== 'CANCELLED');
+  const totalMobile = mobileOrders.reduce((sum: number, o: any) => sum + (Number(o.totalAmount) || 0), 0);
+  const totalCaisse = totalCash + totalCard + totalMobile;
+
+  const caisseData = [
+    { name: 'Espèces', value: totalCash, count: cashOrders.length },
+    { name: 'Carte', value: totalCard, count: cardOrders.length },
+    { name: 'Mobile / FedaPay', value: totalMobile, count: mobileOrders.length },
+  ];
+
   // Export CSV
-  const exportCSV = (type: 'orders' | 'rooms' | 'servers') => {
+  const exportCSV = (type: 'orders' | 'rooms' | 'servers' | 'purchases' | 'stock' | 'caisse') => {
     let csv = '';
     if (type === 'orders') {
       csv = 'N° Commande,Date,Serveur,Total,Statut,Paiement\n';
@@ -151,6 +204,25 @@ export default function ReportsPage() {
       csv = 'Serveur,Commandes,Revenus générés\n';
       serverChartData.forEach((s) => {
         csv += `${s.name},${s.count},${s.revenue}\n`;
+      });
+    } else if (type === 'purchases') {
+      csv = 'Article,Quantité,Coût total\n';
+      purchasesChartData.forEach((p) => {
+        csv += `${p.name},${p.quantity},${p.cost}\n`;
+      });
+    } else if (type === 'stock') {
+      csv = 'Article,Catégorie,Stock actuel,Stock minimum,Unité,Prix achat,Valeur stock\n';
+      articleList.forEach((a: any) => {
+        csv += `${a.name},${a.category?.name || ''},${a.currentStock},${a.minimumStock},${a.unit},${Number(a.costPrice) || 0},${(Number(a.costPrice) || 0) * (a.currentStock || 0)}\n`;
+      });
+    } else if (type === 'caisse') {
+      csv = 'Mode,Nombre transactions,Montant total\n';
+      caisseData.forEach((c) => {
+        csv += `${c.name},${c.count},${c.value}\n`;
+      });
+      csv += `\nDétail des transactions\nN° Commande,Date,Montant,Mode paiement,Serveur\n`;
+      orderList.filter((o: any) => o.status !== 'CANCELLED' && o.paymentMethod).forEach((o: any) => {
+        csv += `${o.orderNumber},${o.createdAt},${o.totalAmount},${paymentLabels[o.paymentMethod] || o.paymentMethod},${o.createdBy?.firstName || ''} ${o.createdBy?.lastName || ''}\n`;
       });
     }
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -168,18 +240,29 @@ export default function ReportsPage() {
         title="Rapports d'activité"
         subtitle="Analyse de performance de l'établissement"
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button onClick={() => exportCSV('orders')} className="btn-secondary text-sm">
               <Download className="mr-1.5 h-4 w-4" /> Commandes
             </button>
+            <button onClick={() => exportCSV('caisse')} className="btn-secondary text-sm">
+              <Download className="mr-1.5 h-4 w-4" /> Caisse
+            </button>
+            <button onClick={() => exportCSV('stock')} className="btn-secondary text-sm">
+              <Download className="mr-1.5 h-4 w-4" /> Stock
+            </button>
+            {isDAF && (
+              <>
+                <button onClick={() => exportCSV('purchases')} className="btn-secondary text-sm">
+                  <Download className="mr-1.5 h-4 w-4" /> Achats
+                </button>
+                <button onClick={() => exportCSV('servers')} className="btn-secondary text-sm">
+                  <Download className="mr-1.5 h-4 w-4" /> Serveurs
+                </button>
+              </>
+            )}
             <button onClick={() => exportCSV('rooms')} className="btn-secondary text-sm">
               <Download className="mr-1.5 h-4 w-4" /> Chambres
             </button>
-            {isDAF && (
-              <button onClick={() => exportCSV('servers')} className="btn-secondary text-sm">
-                <Download className="mr-1.5 h-4 w-4" /> Serveurs
-              </button>
-            )}
           </div>
         }
       />
@@ -420,6 +503,173 @@ export default function ReportsPage() {
           </div>
         </div>
       </div>
+
+      {/* ═══════════ CAISSE (Cash Register) ═══════════ */}
+      <div className="card-accent p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h4 className="font-display text-sm font-bold text-wood-700 flex items-center gap-2">
+            <Wallet className="h-4 w-4" /> Rapport de caisse
+          </h4>
+          <button onClick={() => exportCSV('caisse')} className="text-xs text-primary-600 hover:text-primary-700 font-medium">
+            Exporter CSV
+          </button>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-4 mb-4">
+          <div className="rounded-lg bg-sage-50/50 border border-sage-200 p-4 text-center">
+            <p className="text-2xl font-bold text-sage-800">{formatCurrency(totalCaisse)}</p>
+            <p className="text-xs text-sage-600 mt-1">Total encaissé</p>
+          </div>
+          {caisseData.map((c, i) => (
+            <div key={i} className="rounded-lg bg-wood-50 border border-wood-200 p-4 text-center">
+              <p className="text-xl font-bold text-wood-800">{formatCurrency(c.value)}</p>
+              <p className="text-xs text-wood-600 mt-1">{c.name} ({c.count})</p>
+            </div>
+          ))}
+        </div>
+        <ResponsiveContainer width="100%" height={250}>
+          <BarChart data={caisseData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#E7E8D1" />
+            <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#9C8B7E' }} />
+            <YAxis tick={{ fontSize: 11, fill: '#9C8B7E' }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+            <Tooltip formatter={(value: number) => formatCurrency(value)} />
+            <Bar dataKey="value" name="Montant" fill={COLORS.accent} radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* ═══════════ STOCK ═══════════ */}
+      <div className="card-accent p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h4 className="font-display text-sm font-bold text-wood-700 flex items-center gap-2">
+            <Package className="h-4 w-4" /> État du stock
+          </h4>
+          <button onClick={() => exportCSV('stock')} className="text-xs text-primary-600 hover:text-primary-700 font-medium">
+            Exporter CSV
+          </button>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-3 mb-4">
+          <div className="rounded-lg bg-accent-50/50 border border-accent-200 p-4 text-center">
+            <p className="text-2xl font-bold text-accent-800">{articleList.length}</p>
+            <p className="text-xs text-accent-600 mt-1">Articles en catalogue</p>
+          </div>
+          <div className="rounded-lg bg-sage-50/50 border border-sage-200 p-4 text-center">
+            <p className="text-2xl font-bold text-sage-800">{formatCurrency(totalStockValue)}</p>
+            <p className="text-xs text-sage-600 mt-1">Valeur totale du stock</p>
+          </div>
+          <div className="rounded-lg bg-primary-50/50 border border-primary-200 p-4 text-center">
+            <p className="text-2xl font-bold text-primary-800">{stockAlerts.length}</p>
+            <p className="text-xs text-primary-600 mt-1">Alertes stock bas</p>
+          </div>
+        </div>
+
+        {stockCategoryData.length > 0 && (
+          <div className="grid gap-6 lg:grid-cols-2">
+            <ResponsiveContainer width="100%" height={250}>
+              <RechartsPieChart>
+                <Pie
+                  data={stockCategoryData}
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={90}
+                  paddingAngle={3}
+                  dataKey="count"
+                  label={({ name, count }) => `${name}: ${count}`}
+                >
+                  {stockCategoryData.map((_, i) => (
+                    <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+              </RechartsPieChart>
+            </ResponsiveContainer>
+
+            {stockAlerts.length > 0 && (
+              <div>
+                <h5 className="text-sm font-medium text-primary-700 mb-2">Articles en stock bas</h5>
+                <div className="space-y-1 max-h-60 overflow-y-auto">
+                  {stockAlerts.map((a: any) => (
+                    <div key={a.id} className="flex items-center justify-between rounded bg-primary-50 border border-primary-100 px-3 py-2 text-sm">
+                      <span className="font-medium text-primary-800">{a.name}</span>
+                      <span className="text-primary-600">{a.currentStock} / {a.minimumStock} {a.unit}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ═══════════ ACHATS (Purchases) ═══════════ */}
+      {isDAF && (
+        <div className="card-accent p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="font-display text-sm font-bold text-wood-700 flex items-center gap-2">
+              <ShoppingCart className="h-4 w-4" /> Rapport des achats
+            </h4>
+            <button onClick={() => exportCSV('purchases')} className="text-xs text-primary-600 hover:text-primary-700 font-medium">
+              Exporter CSV
+            </button>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3 mb-4">
+            <div className="rounded-lg bg-primary-50/50 border border-primary-200 p-4 text-center">
+              <p className="text-2xl font-bold text-primary-800">{formatCurrency(totalPurchasesCost)}</p>
+              <p className="text-xs text-primary-600 mt-1">Total des achats</p>
+            </div>
+            <div className="rounded-lg bg-accent-50/50 border border-accent-200 p-4 text-center">
+              <p className="text-2xl font-bold text-accent-800">{purchases.length}</p>
+              <p className="text-xs text-accent-600 mt-1">Mouvements d'achat</p>
+            </div>
+            <div className="rounded-lg bg-sage-50/50 border border-sage-200 p-4 text-center">
+              <p className="text-2xl font-bold text-sage-800">{purchasesChartData.length}</p>
+              <p className="text-xs text-sage-600 mt-1">Articles approvisionnés</p>
+            </div>
+          </div>
+
+          {purchasesChartData.length > 0 ? (
+            <>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={purchasesChartData.slice(0, 15)}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E7E8D1" />
+                  <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#9C8B7E' }} angle={-30} textAnchor="end" height={60} />
+                  <YAxis tick={{ fontSize: 11, fill: '#9C8B7E' }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+                  <Tooltip formatter={(value: number, name: string) => [name === 'cost' ? formatCurrency(value) : value, name === 'cost' ? 'Coût' : 'Quantité']} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="quantity" name="Quantité" fill={COLORS.sage} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="cost" name="Coût" fill={COLORS.primary} radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+
+              <div className="mt-4">
+                <div className="table-container">
+                  <table>
+                    <thead>
+                      <tr><th>Article</th><th>Quantité achetée</th><th>Coût total</th></tr>
+                    </thead>
+                    <tbody>
+                      {purchasesChartData.map((p, i) => (
+                        <tr key={i}>
+                          <td className="font-medium text-gray-900">{p.name}</td>
+                          <td className="font-semibold">{p.quantity}</td>
+                          <td className="font-semibold text-primary-700">{formatCurrency(p.cost)}</td>
+                        </tr>
+                      ))}
+                      <tr className="bg-wood-50 font-bold">
+                        <td>Total</td>
+                        <td>{purchasesChartData.reduce((s, x) => s + x.quantity, 0)}</td>
+                        <td className="text-primary-700">{formatCurrency(totalPurchasesCost)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className="text-center text-sm text-wood-400 py-8">Aucun achat enregistré</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

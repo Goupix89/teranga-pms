@@ -85,7 +85,7 @@ fun navItemsForRole(role: String): List<NavItem> {
         "SERVER" -> listOf("dashboard", "orders", "invoices", "pos", "notifications")
         "CLEANER" -> listOf("dashboard", "cleaning", "notifications")
         "POS" -> listOf("dashboard", "orders", "invoices", "pos", "notifications")
-        "MAITRE_HOTEL" -> listOf("dashboard", "orders", "invoices", "pos", "notifications")
+        "MAITRE_HOTEL" -> listOf("dashboard", "orders", "invoices", "stock", "pos", "notifications")
         "MANAGER" -> listOf("dashboard", "rooms", "reservations", "orders", "invoices", "stock", "approvals", "pos", "notifications")
         "DAF" -> listOf("dashboard", "rooms", "reservations", "orders", "invoices", "stock", "approvals", "notifications")
         "OWNER" -> listOf("dashboard", "rooms", "reservations", "orders", "invoices", "stock", "approvals", "notifications")

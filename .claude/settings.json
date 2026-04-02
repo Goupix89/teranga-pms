@@ -9,7 +9,8 @@
       "Bash(grep -E \"\\\\.ts$\")",
       "Bash(ls -la /home/user/hotel-pms/android/app/src/main/res/mipmap*)",
       "Bash(grep -n \"mode.*insensitive\" backend/src/routes/resource.routes.ts backend/src/services/*.ts)",
-      "Bash([ -f /home/user/hotel-pms/backend/.env ])"
+      "Bash([ -f /home/user/hotel-pms/backend/.env ])",
+      "Bash(node_modules/.bin/tsc --noEmit --pretty src/app/dashboard/reports/page.tsx)"
     ]
   }
 }

@@ -443,6 +443,9 @@ export class ReceiptService {
       doc.text(`Arrivée: ${formatDate(checkIn)}`);
       doc.text(`Départ: ${formatDate(checkOut)}`);
       doc.text(`Personnes: ${reservation.numberOfGuests}`);
+      if (reservation.notes) {
+        doc.text(`Notes: ${reservation.notes}`);
+      }
 
       doc.moveDown(0.3);
       this.drawSeparator(doc, margin, contentWidth);
