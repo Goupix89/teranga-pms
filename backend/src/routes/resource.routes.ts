@@ -941,7 +941,7 @@ articleRouter.post('/', authenticate, requireDAFOrManager, validate(v.createArti
   })
 );
 
-articleRouter.patch('/:id', authenticate, requireDAF, validate(v.updateArticleSchema),
+articleRouter.patch('/:id', authenticate, requireDAFOrManager, validate(v.updateArticleSchema),
   asyncHandler(async (req, res) => {
     const data = await articleService.update(req.user!.tenantId, req.params.id, req.body);
     res.json({ success: true, data });

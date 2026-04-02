@@ -377,8 +377,74 @@ export class InvoiceService {
         include: { items: true },
       });
 
-      // Relink all orders to the new invoice
+      // Collect all source orders with their items for the combined order
       const allOrderIds = invoices.flatMap((inv) => inv.orders.map((o) => o.id));
+      const sourceOrders = allOrderIds.length > 0
+        ? await tx.order.findMany({
+            where: { id: { in: allOrderIds } },
+            include: { items: true },
+          })
+        : [];
+
+      // Determine the establishment and table from source orders
+      const firstOrder = sourceOrders[0];
+      const establishmentId = firstOrder?.establishmentId;
+      const resolvedTable = tableNumber || sourceOrders.find((o) => o.tableNumber)?.tableNumber;
+
+      // Generate a combined order number: CMD-YYYYMMDD-NNNN
+      let combinedOrder: any = null;
+      if (establishmentId) {
+        const orderDateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+        const lastOrder = await tx.order.findFirst({
+          where: { tenantId, createdAt: { gte: todayStart, lt: todayEnd } },
+          orderBy: { orderNumber: 'desc' },
+          select: { orderNumber: true },
+        });
+        const lastOrdNum = lastOrder ? parseInt(lastOrder.orderNumber.split('-').pop() || '0', 10) : 0;
+        const combinedOrderNumber = `CMD-${orderDateStr}-${String(lastOrdNum + 1).padStart(4, '0')}`;
+
+        // Collect all order items for the combined order
+        const combinedItems = sourceOrders.flatMap((o) =>
+          o.items.map((item) => ({
+            articleId: item.articleId,
+            quantity: item.quantity,
+            unitPrice: Number(item.unitPrice),
+          }))
+        );
+
+        // Create the combined order linked to the merged invoice
+        combinedOrder = await tx.order.create({
+          data: {
+            tenantId,
+            establishmentId,
+            createdById: createdById,
+            orderNumber: combinedOrderNumber,
+            tableNumber: resolvedTable,
+            paymentMethod: invoices[0].paymentMethod as any || null,
+            notes: `Regroupement: ${sourceOrders.map((o) => o.orderNumber).join(', ')}`,
+            totalAmount,
+            status: 'SERVED',
+            invoiceId: merged.id,
+            items: {
+              create: combinedItems,
+            },
+          },
+          include: {
+            items: { include: { article: { select: { id: true, name: true } } } },
+            createdBy: { select: { id: true, firstName: true, lastName: true } },
+          },
+        });
+
+        // Mark source orders as SERVED (they are now part of the combined order)
+        await tx.order.updateMany({
+          where: { id: { in: allOrderIds }, status: { notIn: ['CANCELLED', 'SERVED'] } },
+          data: { status: 'SERVED', servedAt: now },
+        });
+      }
+
+      // Relink source orders to the merged invoice (keep traceability)
       if (allOrderIds.length > 0) {
         await tx.order.updateMany({
           where: { id: { in: allOrderIds } },
@@ -386,7 +452,7 @@ export class InvoiceService {
         });
       }
 
-      // Mark source invoices as MERGED (not cancelled) and keep their items for traceability
+      // Mark source invoices as MERGED
       for (const inv of invoices) {
         await tx.invoice.update({
           where: { id: inv.id },
@@ -398,6 +464,7 @@ export class InvoiceService {
         tenantId,
         sourceIds: invoiceIds,
         mergedInvoiceId: merged.id,
+        combinedOrderId: combinedOrder?.id,
         invoiceNumber,
         totalAmount,
       });
@@ -410,6 +477,12 @@ export class InvoiceService {
         totalAmount: Number(merged.totalAmount),
         orderCount: allOrderIds.length,
         sourceInvoices: sourceNumbers,
+        combinedOrder: combinedOrder ? {
+          id: combinedOrder.id,
+          orderNumber: combinedOrder.orderNumber,
+          totalAmount: Number(combinedOrder.totalAmount),
+          invoiceId: merged.id,
+        } : null,
       };
     });
   }

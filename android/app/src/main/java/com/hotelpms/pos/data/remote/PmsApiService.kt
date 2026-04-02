@@ -121,6 +121,13 @@ interface PmsApiService {
     @POST("api/articles")
     suspend fun createArticle(@Body body: Map<String, Any>): GenericResponse
 
+    @PATCH("api/articles/{id}")
+    suspend fun updateArticle(@Path("id") id: String, @Body body: Map<String, Any>): GenericResponse
+
+    // Categories
+    @GET("api/categories")
+    suspend fun getCategories(): Response<CategoriesResponse>
+
     // Receipt PDF
     @Streaming
     @GET("api/orders/{id}/receipt")

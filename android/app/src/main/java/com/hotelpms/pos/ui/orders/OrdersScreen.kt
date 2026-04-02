@@ -194,10 +194,19 @@ private fun MenuView(viewModel: OrdersViewModel, uiState: OrdersUiState) {
             OutlinedTextField(
                 value = uiState.tableNumber,
                 onValueChange = { viewModel.setTableNumber(it) },
-                label = { Text("Table", fontSize = 12.sp) },
+                label = { Text("Table", fontSize = 12.sp, color = BronzeAbomey) },
                 modifier = Modifier.width(80.dp),
                 singleLine = true,
-                textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
+                textStyle = LocalTextStyle.current.copy(fontSize = 14.sp, color = TerreFon),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = TerreFon,
+                    unfocusedTextColor = TerreFon,
+                    cursorColor = RougeDahomey,
+                    focusedBorderColor = RougeDahomey,
+                    unfocusedBorderColor = BronzeAbomey,
+                    focusedLabelColor = RougeDahomey,
+                    unfocusedLabelColor = BronzeAbomey
+                )
             )
 
             // Payment method chips

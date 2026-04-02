@@ -166,10 +166,19 @@ fun PosScreen(
                 OutlinedTextField(
                     value = state.tableNumber,
                     onValueChange = { viewModel.setTableNumber(it) },
-                    label = { Text("Table", fontSize = 12.sp) },
+                    label = { Text("Table", fontSize = 12.sp, color = BronzeAbomey) },
                     modifier = Modifier.width(80.dp),
                     singleLine = true,
-                    textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
+                    textStyle = LocalTextStyle.current.copy(fontSize = 14.sp, color = TerreFon),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TerreFon,
+                        unfocusedTextColor = TerreFon,
+                        cursorColor = RougeDahomey,
+                        focusedBorderColor = RougeDahomey,
+                        unfocusedBorderColor = BronzeAbomey,
+                        focusedLabelColor = RougeDahomey,
+                        unfocusedLabelColor = BronzeAbomey
+                    )
                 )
 
                 val methods = listOf(
@@ -195,12 +204,19 @@ fun PosScreen(
             OutlinedTextField(
                 value = state.searchQuery,
                 onValueChange = { viewModel.onSearchQueryChange(it) },
-                placeholder = { Text("Rechercher un article...") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                placeholder = { Text("Rechercher un article...", color = BronzeAbomey) },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = BronzeAbomey) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 8.dp),
-                singleLine = true
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = TerreFon,
+                    unfocusedTextColor = TerreFon,
+                    cursorColor = RougeDahomey,
+                    focusedBorderColor = RougeDahomey,
+                    unfocusedBorderColor = BronzeAbomey
+                )
             )
 
             // Articles grid

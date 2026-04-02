@@ -52,6 +52,19 @@ data class Article(
 
 data class CategoryRef(val id: String, val name: String)
 
+data class ArticleCategory(
+    val id: String,
+    val name: String,
+    val _count: ArticleCategoryCount? = null
+)
+
+data class ArticleCategoryCount(val articles: Int = 0)
+
+data class CategoriesResponse(
+    val success: Boolean,
+    val data: List<ArticleCategory>
+)
+
 data class ArticlesResponse(
     val success: Boolean,
     val data: List<Article>,

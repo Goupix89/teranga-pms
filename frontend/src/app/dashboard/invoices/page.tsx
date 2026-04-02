@@ -67,11 +67,16 @@ export default function InvoicesPage() {
     mutationFn: (body: { invoiceIds: string[]; tableNumber?: string }) => apiPost('/invoices/merge', body),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
       setShowMerge(false);
       setMergeTable('');
       setMergeInvoices([]);
       setMergeSelected([]);
-      toast.success(`Factures regroupées — ${data?.data?.invoiceNumber || 'nouvelle facture créée'}`);
+      const combined = data?.data?.combinedOrder;
+      const msg = combined
+        ? `Factures regroupées — ${data?.data?.invoiceNumber} — Commande ${combined.orderNumber}`
+        : `Factures regroupées — ${data?.data?.invoiceNumber || 'nouvelle facture créée'}`;
+      toast.success(msg);
     },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur lors du regroupement'),
   });

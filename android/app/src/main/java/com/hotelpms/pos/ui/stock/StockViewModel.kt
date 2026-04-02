@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.hotelpms.pos.data.local.TokenManager
 import com.hotelpms.pos.data.remote.PmsApiService
 import com.hotelpms.pos.domain.model.Article
+import com.hotelpms.pos.domain.model.ArticleCategory
 import com.hotelpms.pos.domain.model.CreateStockMovementRequest
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
@@ -16,6 +17,7 @@ import javax.inject.Inject
 data class StockUiState(
     val articles: List<Article> = emptyList(),
     val filteredArticles: List<Article> = emptyList(),
+    val categories: List<ArticleCategory> = emptyList(),
     val searchQuery: String = "",
     val userRole: String = "",
     val isLoading: Boolean = false,
@@ -38,6 +40,7 @@ class StockViewModel @Inject constructor(
     init {
         uiState = uiState.copy(userRole = tokenManager.establishmentRole ?: "")
         fetchArticles()
+        fetchCategories()
     }
 
     fun fetchArticles() {
@@ -125,32 +128,101 @@ class StockViewModel @Inject constructor(
         currentStock: Int,
         unit: String,
         description: String,
-        imageUrl: String
+        imageUrl: String,
+        categoryId: String? = null
     ) {
         viewModelScope.launch {
             uiState = uiState.copy(isLoading = true)
             try {
                 val body = mutableMapOf<String, Any>(
                     "name" to name,
-                    "sku" to sku,
                     "unitPrice" to unitPrice,
                     "currentStock" to currentStock,
                     "unit" to unit,
                     "establishmentId" to establishmentId
                 )
+                if (sku.isNotBlank()) body["sku"] = sku
                 if (description.isNotBlank()) body["description"] = description
                 if (imageUrl.isNotBlank()) body["imageUrl"] = imageUrl
+                if (!categoryId.isNullOrBlank()) body["categoryId"] = categoryId
 
                 val response = api.createArticle(body)
                 if (response.success) {
-                    uiState = uiState.copy(isLoading = false, successMessage = "Article cr\u00e9\u00e9")
+                    uiState = uiState.copy(isLoading = false, successMessage = "Article cree")
                     fetchArticles()
                 } else {
                     uiState = uiState.copy(isLoading = false, error = response.message ?: "Erreur")
                 }
             } catch (e: Exception) {
-                uiState = uiState.copy(isLoading = false, error = e.message ?: "Erreur de cr\u00e9ation")
+                uiState = uiState.copy(isLoading = false, error = e.message ?: "Erreur de creation")
             }
+        }
+    }
+
+    fun updateArticle(
+        id: String,
+        name: String,
+        sku: String,
+        unitPrice: Double,
+        currentStock: Int,
+        unit: String,
+        description: String,
+        imageUrl: String,
+        categoryId: String? = null
+    ) {
+        viewModelScope.launch {
+            uiState = uiState.copy(isLoading = true)
+            try {
+                val body = mutableMapOf<String, Any>(
+                    "name" to name,
+                    "unitPrice" to unitPrice,
+                    "currentStock" to currentStock,
+                    "unit" to unit
+                )
+                if (sku.isNotBlank()) body["sku"] = sku
+                if (description.isNotBlank()) body["description"] = description
+                if (imageUrl.isNotBlank()) body["imageUrl"] = imageUrl
+                if (!categoryId.isNullOrBlank()) body["categoryId"] = categoryId
+
+                val response = api.updateArticle(id, body)
+                if (response.success) {
+                    uiState = uiState.copy(isLoading = false, successMessage = "Article modifie")
+                    fetchArticles()
+                } else {
+                    uiState = uiState.copy(isLoading = false, error = response.message ?: "Erreur")
+                }
+            } catch (e: Exception) {
+                uiState = uiState.copy(isLoading = false, error = e.message ?: "Erreur de modification")
+            }
+        }
+    }
+
+    fun deactivateArticle(id: String) {
+        viewModelScope.launch {
+            uiState = uiState.copy(isLoading = true)
+            try {
+                val body = mapOf<String, Any>("isActive" to false)
+                val response = api.updateArticle(id, body)
+                if (response.success) {
+                    uiState = uiState.copy(isLoading = false, successMessage = "Article supprime")
+                    fetchArticles()
+                } else {
+                    uiState = uiState.copy(isLoading = false, error = response.message ?: "Erreur")
+                }
+            } catch (e: Exception) {
+                uiState = uiState.copy(isLoading = false, error = e.message ?: "Erreur")
+            }
+        }
+    }
+
+    fun fetchCategories() {
+        viewModelScope.launch {
+            try {
+                val response = api.getCategories()
+                if (response.isSuccessful && response.body()?.success == true) {
+                    uiState = uiState.copy(categories = response.body()!!.data)
+                }
+            } catch (_: Exception) { }
         }
     }
 

@@ -3,6 +3,8 @@ package com.hotelpms.pos.ui.stock
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -13,8 +15,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.hotelpms.pos.domain.model.Article
+import com.hotelpms.pos.domain.model.ArticleCategory
 import com.hotelpms.pos.ui.theme.*
 import java.text.NumberFormat
 import java.util.Locale
@@ -28,6 +33,9 @@ fun StockScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var showMovementDialog by remember { mutableStateOf(false) }
     var showArticleDialog by remember { mutableStateOf(false) }
+    var editingArticle by remember { mutableStateOf<Article?>(null) }
+    var deletingArticle by remember { mutableStateOf<Article?>(null) }
+    val canEdit = state.userRole.uppercase() in listOf("MANAGER", "DAF", "OWNER", "SUPERADMIN")
     val currencyFormat = remember {
         NumberFormat.getNumberInstance(Locale.FRANCE).apply {
             maximumFractionDigits = 0
@@ -126,7 +134,13 @@ fun StockScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(state.filteredArticles) { article ->
-                        ArticleStockCard(article = article, currencyFormat = currencyFormat)
+                        ArticleStockCard(
+                            article = article,
+                            currencyFormat = currencyFormat,
+                            canEdit = canEdit,
+                            onEdit = { editingArticle = article },
+                            onDelete = { deletingArticle = article }
+                        )
                     }
                     item { Spacer(modifier = Modifier.height(80.dp)) }
                 }
@@ -148,19 +162,64 @@ fun StockScreen(
 
     // Create article dialog
     if (showArticleDialog) {
-        CreateArticleDialog(
+        ArticleFormDialog(
+            title = "Nouvel article",
+            categories = state.categories,
             onDismiss = { showArticleDialog = false },
-            onCreate = { name, sku, price, stock, unit, description, imageUrl ->
+            onSave = { name, sku, price, stock, unit, description, imageUrl, categoryId ->
                 showArticleDialog = false
-                viewModel.createArticle(name, sku, price, stock, unit, description, imageUrl)
+                viewModel.createArticle(name, sku, price, stock, unit, description, imageUrl, categoryId)
+            }
+        )
+    }
+
+    // Edit article dialog
+    if (editingArticle != null) {
+        ArticleFormDialog(
+            title = "Modifier l'article",
+            article = editingArticle,
+            categories = state.categories,
+            onDismiss = { editingArticle = null },
+            onSave = { name, sku, price, stock, unit, description, imageUrl, categoryId ->
+                val id = editingArticle!!.id
+                editingArticle = null
+                viewModel.updateArticle(id, name, sku, price, stock, unit, description, imageUrl, categoryId)
+            }
+        )
+    }
+
+    // Delete confirmation dialog
+    if (deletingArticle != null) {
+        AlertDialog(
+            onDismissRequest = { deletingArticle = null },
+            title = { Text("Supprimer l'article") },
+            text = { Text("Voulez-vous vraiment supprimer \"${deletingArticle!!.name}\" ? L'article sera desactive.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val id = deletingArticle!!.id
+                        deletingArticle = null
+                        viewModel.deactivateArticle(id)
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = RougeDahomey)
+                ) { Text("Supprimer") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingArticle = null }) { Text("Annuler") }
             }
         )
     }
 }
 
 @Composable
-private fun ArticleStockCard(article: Article, currencyFormat: NumberFormat) {
-    val isLowStock = article.currentStock <= 5 // approximate minimum stock threshold
+private fun ArticleStockCard(
+    article: Article,
+    currencyFormat: NumberFormat,
+    canEdit: Boolean = false,
+    onEdit: () -> Unit = {},
+    onDelete: () -> Unit = {}
+) {
+    val isLowStock = article.currentStock <= 5
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -179,7 +238,8 @@ private fun ArticleStockCard(article: Article, currencyFormat: NumberFormat) {
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
                     if (isLowStock) {
                         Spacer(modifier = Modifier.width(8.dp))
@@ -191,36 +251,18 @@ private fun ArticleStockCard(article: Article, currencyFormat: NumberFormat) {
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    Icons.Default.Warning,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(12.dp),
-                                    tint = RougeDahomey
-                                )
+                                Icon(Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(12.dp), tint = RougeDahomey)
                                 Spacer(modifier = Modifier.width(2.dp))
-                                Text(
-                                    "Stock bas",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = RougeDahomey,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Text("Stock bas", style = MaterialTheme.typography.labelSmall, color = RougeDahomey, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
                 }
                 article.sku?.let { sku ->
-                    Text(
-                        text = "SKU : $sku",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Text(text = "SKU : $sku", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 article.category?.let { cat ->
-                    Text(
-                        text = cat.name,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Text(text = cat.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
@@ -236,6 +278,17 @@ private fun ArticleStockCard(article: Article, currencyFormat: NumberFormat) {
                     style = MaterialTheme.typography.bodySmall,
                     color = OrBeninoisDark
                 )
+                if (canEdit) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
+                        IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.Edit, contentDescription = "Modifier", modifier = Modifier.size(18.dp), tint = OrBeninois)
+                        }
+                        IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.Delete, contentDescription = "Supprimer", modifier = Modifier.size(18.dp), tint = RougeDahomey)
+                        }
+                    }
+                }
             }
         }
     }
@@ -371,97 +424,181 @@ private fun StockMovementDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CreateArticleDialog(
+private fun ArticleFormDialog(
+    title: String,
+    article: Article? = null,
+    categories: List<ArticleCategory> = emptyList(),
     onDismiss: () -> Unit,
-    onCreate: (String, String, Double, Int, String, String, String) -> Unit
+    onSave: (String, String, Double, Int, String, String, String, String?) -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
-    var sku by remember { mutableStateOf("") }
-    var price by remember { mutableStateOf("") }
-    var stock by remember { mutableStateOf("") }
-    var unit by remember { mutableStateOf("pi\u00e8ce") }
-    var description by remember { mutableStateOf("") }
-    var imageUrl by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf(article?.name ?: "") }
+    var sku by remember { mutableStateOf(article?.sku ?: "") }
+    var price by remember { mutableStateOf(article?.unitPrice?.let { if (it > 0) it.toInt().toString() else "" } ?: "") }
+    var stock by remember { mutableStateOf(article?.currentStock?.toString() ?: "") }
+    var unit by remember { mutableStateOf(article?.unit ?: "piece") }
+    var description by remember { mutableStateOf(article?.description ?: "") }
+    var imageUrl by remember { mutableStateOf(article?.imageUrl ?: "") }
+    var selectedCategoryId by remember { mutableStateOf(article?.category?.id) }
+    var categoryExpanded by remember { mutableStateOf(false) }
 
-    AlertDialog(
+    val selectedCategory = categories.find { it.id == selectedCategoryId }
+
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { Text("Nouvel article") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Nom") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = sku,
-                    onValueChange = { sku = it },
-                    label = { Text("SKU") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = price,
-                    onValueChange = { price = it },
-                    label = { Text("Prix unitaire (FCFA)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = stock,
-                    onValueChange = { stock = it },
-                    label = { Text("Stock initial") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = unit,
-                    onValueChange = { unit = it },
-                    label = { Text("Unit\u00e9") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Description (optionnel)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 2
-                )
-                OutlinedTextField(
-                    value = imageUrl,
-                    onValueChange = { imageUrl = it },
-                    label = { Text("URL de l'image (optionnel)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    onCreate(
-                        name,
-                        sku,
-                        price.toDoubleOrNull() ?: 0.0,
-                        stock.toIntOrNull() ?: 0,
-                        unit,
-                        description,
-                        imageUrl
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .fillMaxHeight(0.8f),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Header
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Fermer")
+                    }
+                }
+
+                HorizontalDivider()
+
+                // Form fields
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Nom *") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
                     )
-                },
-                enabled = name.isNotBlank() && sku.isNotBlank() && price.isNotBlank()
-            ) {
-                Text("Cr\u00e9er")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Annuler")
+
+                    // Category selector
+                    if (categories.isNotEmpty()) {
+                        ExposedDropdownMenuBox(
+                            expanded = categoryExpanded,
+                            onExpandedChange = { categoryExpanded = it }
+                        ) {
+                            OutlinedTextField(
+                                value = selectedCategory?.name ?: "Sans categorie",
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Categorie") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded) },
+                                modifier = Modifier.fillMaxWidth().menuAnchor()
+                            )
+                            ExposedDropdownMenu(
+                                expanded = categoryExpanded,
+                                onDismissRequest = { categoryExpanded = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Sans categorie") },
+                                    onClick = { selectedCategoryId = null; categoryExpanded = false }
+                                )
+                                categories.forEach { cat ->
+                                    DropdownMenuItem(
+                                        text = { Text(cat.name) },
+                                        onClick = { selectedCategoryId = cat.id; categoryExpanded = false }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = sku,
+                        onValueChange = { sku = it },
+                        label = { Text("SKU") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedTextField(
+                            value = price,
+                            onValueChange = { price = it },
+                            label = { Text("Prix (FCFA) *") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = stock,
+                            onValueChange = { stock = it },
+                            label = { Text("Stock") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = unit,
+                        onValueChange = { unit = it },
+                        label = { Text("Unite") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { description = it },
+                        label = { Text("Description") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 2
+                    )
+                    OutlinedTextField(
+                        value = imageUrl,
+                        onValueChange = { imageUrl = it },
+                        label = { Text("URL de l'image") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
+
+                HorizontalDivider()
+
+                // Action buttons
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(onClick = onDismiss) {
+                        Text("Annuler")
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Button(
+                        onClick = {
+                            onSave(
+                                name, sku,
+                                price.toDoubleOrNull() ?: 0.0,
+                                stock.toIntOrNull() ?: 0,
+                                unit, description, imageUrl,
+                                selectedCategoryId
+                            )
+                        },
+                        enabled = name.isNotBlank() && price.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(containerColor = RougeDahomey)
+                    ) {
+                        Text(if (article != null) "Enregistrer" else "Creer", color = Color.White)
+                    }
+                }
             }
         }
-    )
+    }
 }
