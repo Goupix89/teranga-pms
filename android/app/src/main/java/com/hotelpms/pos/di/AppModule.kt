@@ -7,6 +7,7 @@ import com.hotelpms.pos.BuildConfig
 import com.hotelpms.pos.data.local.AppDatabase
 import com.hotelpms.pos.data.local.TokenManager
 import com.hotelpms.pos.data.remote.AuthInterceptor
+import com.hotelpms.pos.data.remote.OrderSyncService
 import com.hotelpms.pos.data.remote.PmsApiService
 import com.hotelpms.pos.data.repository.PosRepository
 import dagger.Module
@@ -67,6 +68,12 @@ object AppModule {
     @Singleton
     fun providePmsApiService(retrofit: Retrofit): PmsApiService {
         return retrofit.create(PmsApiService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideOrderSyncService(tokenManager: TokenManager): OrderSyncService {
+        return OrderSyncService(tokenManager)
     }
 
     @Provides

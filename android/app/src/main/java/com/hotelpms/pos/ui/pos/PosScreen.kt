@@ -1,5 +1,9 @@
 package com.hotelpms.pos.ui.pos
 
+import android.graphics.BitmapFactory
+import android.util.Base64
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -7,18 +11,27 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.hotelpms.pos.domain.model.CachedArticle
 import com.hotelpms.pos.domain.model.CartItem
+import com.hotelpms.pos.domain.model.QrCodeData
+import com.hotelpms.pos.ui.theme.*
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -35,12 +48,13 @@ fun PosScreen(
     val cartCount by viewModel.cartItemCount.collectAsState()
     val pendingCount by viewModel.pendingCount.collectAsState()
 
-    var showInvoiceDialog by remember { mutableStateOf(false) }
-    var invoiceId by remember { mutableStateOf("") }
+    val currencyFormat = remember {
+        NumberFormat.getNumberInstance(Locale.FRANCE).apply {
+            maximumFractionDigits = 0
+            minimumFractionDigits = 0
+        }
+    }
 
-    val currencyFormat = remember { NumberFormat.getNumberInstance(Locale.FRANCE) }
-
-    // Snackbar for messages
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(state.error) {
@@ -57,17 +71,33 @@ fun PosScreen(
         }
     }
 
+    // QR Code payment dialog
+    if (state.showQrCode && state.qrCodeData != null) {
+        QrCodePaymentDialog(
+            qrData = state.qrCodeData!!,
+            onDismiss = { viewModel.dismissQrCode() },
+            onSimulatePayment = { invoiceId -> viewModel.simulatePayment(invoiceId) },
+            isSimulating = state.isSimulating,
+            simulationSuccess = state.simulationSuccess
+        )
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Point de Vente") },
+                title = {
+                    Text(
+                        "Point de Vente",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 22.sp
+                    )
+                },
                 actions = {
-                    // Pending sync indicator
                     if (pendingCount > 0) {
                         Badge(
                             modifier = Modifier.padding(end = 8.dp),
-                            containerColor = MaterialTheme.colorScheme.error
+                            containerColor = RougeDahomey
                         ) {
                             Text("$pendingCount")
                         }
@@ -77,333 +107,503 @@ fun PosScreen(
                     }
 
                     IconButton(onClick = { viewModel.refreshArticles() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Rafraîchir")
+                        Icon(Icons.Default.Refresh, contentDescription = "Rafraichir")
                     }
 
                     IconButton(onClick = onLogout) {
-                        Icon(Icons.Default.Logout, contentDescription = "Déconnexion")
+                        Icon(Icons.Default.Logout, contentDescription = "Deconnexion")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = TerreFon,
+                    titleContentColor = SableOuidah,
+                    actionIconContentColor = SableOuidah
+                )
             )
+        },
+        bottomBar = {
+            if (cartItems.isNotEmpty()) {
+                CartBottomBar(
+                    itemCount = cartCount,
+                    total = cartTotal,
+                    isProcessing = state.isProcessing,
+                    onCheckout = { viewModel.submitOrder() }
+                )
+            }
         }
     ) { padding ->
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .background(SableOuidah)
         ) {
-            // LEFT: Article grid
-            Column(
-                modifier = Modifier
-                    .weight(0.6f)
-                    .fillMaxHeight()
-                    .padding(8.dp)
-            ) {
-                // Search bar
-                OutlinedTextField(
-                    value = state.searchQuery,
-                    onValueChange = { viewModel.onSearchQueryChange(it) },
-                    placeholder = { Text("Rechercher un article...") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                if (state.isLoadingArticles) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
-                    }
-                } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 150.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(articles) { article ->
-                            ArticleCard(
-                                article = article,
-                                onAdd = { viewModel.addToCart(article) },
-                                currencyFormat = currencyFormat
-                            )
-                        }
-                    }
-                }
+            // Error/Success snackbars inline
+            if (state.error != null) {
+                Snackbar(
+                    modifier = Modifier.padding(8.dp),
+                    action = { TextButton(onClick = { viewModel.clearError() }) { Text("OK", color = Color.White) } },
+                    containerColor = RougeDahomey
+                ) { Text(state.error, color = Color.White) }
+            }
+            if (state.successMessage != null) {
+                Snackbar(
+                    modifier = Modifier.padding(8.dp),
+                    action = { TextButton(onClick = { viewModel.clearSuccess() }) { Text("OK", color = Color.White) } },
+                    containerColor = VertBeninois
+                ) { Text(state.successMessage, color = Color.White) }
             }
 
-            // Divider
-            VerticalDivider()
-
-            // RIGHT: Cart
-            Column(
-                modifier = Modifier
-                    .weight(0.4f)
-                    .fillMaxHeight()
-                    .padding(8.dp)
-            ) {
-                Text(
-                    "Panier ($cartCount)",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                if (cartItems.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                Icons.Default.ShoppingCart,
-                                contentDescription = null,
-                                modifier = Modifier.size(48.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
-                            )
-                            Text(
-                                "Panier vide",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        items(cartItems) { item ->
-                            CartItemRow(
-                                item = item,
-                                onQuantityChange = { viewModel.updateQuantity(item.article.id, it) },
-                                onRemove = { viewModel.removeFromCart(item.article.id) },
-                                currencyFormat = currencyFormat
-                            )
-                        }
-                    }
-                }
-
-                Divider(modifier = Modifier.padding(vertical = 8.dp))
-
-                // Total
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("Total", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(
-                        "${currencyFormat.format(cartTotal)} XOF",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = { viewModel.clearCart() },
-                        modifier = Modifier.weight(1f),
-                        enabled = cartItems.isNotEmpty()
-                    ) {
-                        Text("Vider")
-                    }
-
-                    Button(
-                        onClick = { showInvoiceDialog = true },
-                        modifier = Modifier.weight(1f),
-                        enabled = cartItems.isNotEmpty() && !state.isProcessing
-                    ) {
-                        if (state.isProcessing) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                        } else {
-                            Icon(Icons.Default.Payment, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Encaisser")
-                        }
-                    }
-                }
-            }
-        }
-
-        // Invoice ID dialog
-        if (showInvoiceDialog) {
-            AlertDialog(
-                onDismissRequest = { showInvoiceDialog = false },
-                title = { Text("N° de facture") },
-                text = {
-                    OutlinedTextField(
-                        value = invoiceId,
-                        onValueChange = { invoiceId = it },
-                        label = { Text("ID Facture") },
-                        singleLine = true
-                    )
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            showInvoiceDialog = false
-                            viewModel.processTransaction(invoiceId)
-                            invoiceId = ""
-                        },
-                        enabled = invoiceId.isNotBlank()
-                    ) {
-                        Text("Valider")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showInvoiceDialog = false }) {
-                        Text("Annuler")
-                    }
-                }
-            )
-        }
-    }
-}
-
-@Composable
-fun ArticleCard(
-    article: CachedArticle,
-    onAdd: () -> Unit,
-    currencyFormat: NumberFormat
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onAdd() },
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = article.name,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            article.categoryName?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
+            // Table number + payment method row
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(CremeGanvie)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "${currencyFormat.format(article.unitPrice)} XOF",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
+                OutlinedTextField(
+                    value = state.tableNumber,
+                    onValueChange = { viewModel.setTableNumber(it) },
+                    label = { Text("Table", fontSize = 12.sp) },
+                    modifier = Modifier.width(80.dp),
+                    singleLine = true,
+                    textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
                 )
 
-                Text(
-                    text = "Stock: ${article.currentStock}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (article.currentStock <= 5)
-                        MaterialTheme.colorScheme.error
-                    else
-                        MaterialTheme.colorScheme.onSurfaceVariant
+                val methods = listOf(
+                    "CASH" to "Especes",
+                    "MOOV_MONEY" to "Flooz",
+                    "MIXX_BY_YAS" to "Yas",
+                    "FEDAPAY" to "FedaPay"
                 )
+                methods.forEach { (value, label) ->
+                    FilterChip(
+                        selected = state.paymentMethod == value,
+                        onClick = { viewModel.setPaymentMethod(value) },
+                        label = { Text(label, fontSize = 11.sp) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = OrBeninois.copy(alpha = 0.2f),
+                            selectedLabelColor = TerreFon
+                        )
+                    )
+                }
+            }
+
+            // Search bar
+            OutlinedTextField(
+                value = state.searchQuery,
+                onValueChange = { viewModel.onSearchQueryChange(it) },
+                placeholder = { Text("Rechercher un article...") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                singleLine = true
+            )
+
+            // Articles grid
+            if (state.isLoadingArticles) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = RougeDahomey)
+                }
+            } else if (articles.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.Default.ShoppingCart,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = BronzeAbomey
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text("Aucun article", fontSize = 16.sp, color = BronzeAbomey)
+                    }
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    contentPadding = PaddingValues(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(articles, key = { it.id }) { article ->
+                        val cartQty = cartItems.find { it.article.id == article.id }?.quantity ?: 0
+                        ArticleCard(
+                            article = article,
+                            cartQuantity = cartQty,
+                            onAdd = { viewModel.addToCart(article) },
+                            onRemove = { viewModel.removeFromCart(article.id) },
+                            currencyFormat = currencyFormat
+                        )
+                    }
+                }
             }
         }
     }
 }
 
+// =============================================================================
+// ARTICLE CARD
+// =============================================================================
+
 @Composable
-fun CartItemRow(
-    item: CartItem,
-    onQuantityChange: (Int) -> Unit,
+private fun ArticleCard(
+    article: CachedArticle,
+    cartQuantity: Int,
+    onAdd: () -> Unit,
     onRemove: () -> Unit,
     currencyFormat: NumberFormat
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = CremeGanvie),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(12.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = item.article.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "${currencyFormat.format(item.article.unitPrice)} × ${item.quantity} = ${currencyFormat.format(item.total)} XOF",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+        Column {
+            // Placeholder icon area
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(60.dp)
+                    .background(OrBeninois.copy(alpha = 0.08f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.Restaurant,
+                    contentDescription = null,
+                    modifier = Modifier.size(28.dp),
+                    tint = BronzeAbomey
                 )
             }
 
-            // Quantity controls
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(
-                    onClick = { onQuantityChange(item.quantity - 1) },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(Icons.Default.Remove, contentDescription = "Moins", modifier = Modifier.size(16.dp))
-                }
-
+            Column(modifier = Modifier.padding(10.dp)) {
                 Text(
-                    text = "${item.quantity}",
-                    style = MaterialTheme.typography.bodyLarge,
+                    text = article.name,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 4.dp)
+                    fontSize = 14.sp,
+                    color = TerreFon,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
 
-                IconButton(
-                    onClick = { onQuantityChange(item.quantity + 1) },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Plus", modifier = Modifier.size(16.dp))
+                article.categoryName?.let {
+                    Text(
+                        text = it,
+                        fontSize = 11.sp,
+                        color = BronzeAbomey,
+                        maxLines = 1
+                    )
                 }
 
-                IconButton(
-                    onClick = onRemove,
-                    modifier = Modifier.size(32.dp)
+                Spacer(Modifier.height(6.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "Supprimer",
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.error
-                    )
+                    Column {
+                        Text(
+                            text = "${currencyFormat.format(article.unitPrice)} FCFA",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = RougeDahomey
+                        )
+                        Text(
+                            text = "Stock: ${article.currentStock}",
+                            fontSize = 10.sp,
+                            color = if (article.currentStock <= 5) RougeDahomey else BronzeAbomey
+                        )
+                    }
+
+                    if (cartQuantity > 0) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            IconButton(
+                                onClick = onRemove,
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Remove,
+                                    contentDescription = "Retirer",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = RougeDahomey
+                                )
+                            }
+                            Surface(
+                                color = OrBeninois.copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = "$cartQuantity",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = TerreFon,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = onAdd,
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Add,
+                                    contentDescription = "Ajouter",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = VertBeninois
+                                )
+                            }
+                        }
+                    } else {
+                        FilledTonalButton(
+                            onClick = onAdd,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = VertBeninois.copy(alpha = 0.15f),
+                                contentColor = VertBeninois
+                            )
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(2.dp))
+                            Text("Ajouter", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
         }
     }
 }
 
+// =============================================================================
+// CART BOTTOM BAR
+// =============================================================================
+
 @Composable
-fun VerticalDivider() {
-    Divider(
-        modifier = Modifier
-            .fillMaxHeight()
-            .width(1.dp)
-    )
+private fun CartBottomBar(
+    itemCount: Int,
+    total: Double,
+    isProcessing: Boolean,
+    onCheckout: () -> Unit
+) {
+    val currencyFormat = remember {
+        NumberFormat.getNumberInstance(Locale.FRANCE).apply {
+            maximumFractionDigits = 0
+            minimumFractionDigits = 0
+        }
+    }
+
+    Surface(
+        color = TerreFon,
+        shadowElevation = 8.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "$itemCount article${if (itemCount > 1) "s" else ""}",
+                    fontSize = 12.sp,
+                    color = SableOuidah.copy(alpha = 0.7f)
+                )
+                Text(
+                    text = "${currencyFormat.format(total)} FCFA",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = OrBeninois
+                )
+            }
+
+            Button(
+                onClick = onCheckout,
+                enabled = !isProcessing,
+                colors = ButtonDefaults.buttonColors(containerColor = RougeDahomey),
+                contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
+            ) {
+                if (isProcessing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Commander", fontWeight = FontWeight.Bold, color = Color.White)
+            }
+        }
+    }
+}
+
+// =============================================================================
+// QR CODE PAYMENT DIALOG
+// =============================================================================
+
+@Composable
+private fun QrCodePaymentDialog(
+    qrData: QrCodeData,
+    onDismiss: () -> Unit,
+    onSimulatePayment: ((String) -> Unit)? = null,
+    isSimulating: Boolean = false,
+    simulationSuccess: Boolean = false
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            colors = CardDefaults.cardColors(containerColor = CremeGanvie),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    "QR Code de paiement",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = TerreFon
+                )
+                Spacer(Modifier.height(8.dp))
+
+                Text(
+                    qrData.invoice?.invoiceNumber ?: "",
+                    fontSize = 14.sp,
+                    color = BronzeAbomey
+                )
+                Spacer(Modifier.height(4.dp))
+
+                val amount = qrData.invoice?.totalAmount ?: 0.0
+                val fmt = remember {
+                    NumberFormat.getNumberInstance(Locale.FRANCE).apply {
+                        maximumFractionDigits = 0
+                    }
+                }
+                Text(
+                    "${fmt.format(amount)} FCFA",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 24.sp,
+                    color = RougeDahomey
+                )
+                Text(
+                    "Paiement par ${qrData.paymentLabel ?: ""}",
+                    fontSize = 13.sp,
+                    color = BronzeAbomey
+                )
+                Spacer(Modifier.height(16.dp))
+
+                // Decode base64 QR image
+                val qrBitmap = remember(qrData.qrCode) {
+                    try {
+                        val base64Part = qrData.qrCode.substringAfter("base64,")
+                        val bytes = Base64.decode(base64Part, Base64.DEFAULT)
+                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    } catch (_: Exception) { null }
+                }
+
+                if (qrBitmap != null) {
+                    Image(
+                        bitmap = qrBitmap.asImageBitmap(),
+                        contentDescription = "QR Code",
+                        modifier = Modifier
+                            .size(250.dp)
+                            .background(Color.White, MaterialTheme.shapes.medium)
+                            .padding(12.dp)
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(250.dp)
+                            .background(Color.White, MaterialTheme.shapes.medium),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("QR code indisponible", color = Color.Gray, fontSize = 12.sp)
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                if (qrData.fedapayCheckoutUrl != null) {
+                    Text(
+                        "Scannez le QR code ou appuyez sur le bouton ci-dessous pour payer via FedaPay.",
+                        fontSize = 11.sp, color = BronzeAbomey, textAlign = TextAlign.Center
+                    )
+                } else {
+                    Text(
+                        "Le client doit scanner ce QR code avec son application ${qrData.paymentLabel ?: ""} pour effectuer le paiement.",
+                        fontSize = 11.sp, color = BronzeAbomey, textAlign = TextAlign.Center
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+
+                // FedaPay checkout button
+                if (qrData.fedapayCheckoutUrl != null) {
+                    val uriHandler = LocalUriHandler.current
+                    Button(
+                        onClick = { uriHandler.openUri(qrData.fedapayCheckoutUrl) },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E88E5)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("\uD83D\uDCB3 Payer avec FedaPay", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+
+                if (simulationSuccess) {
+                    Surface(
+                        color = VertBeninois.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = VertBeninois, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Paiement recu !", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = VertBeninois)
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+
+                // Simulate payment button
+                if (!simulationSuccess && onSimulatePayment != null && qrData.invoice?.id != null) {
+                    Button(
+                        onClick = { onSimulatePayment(qrData.invoice.id) },
+                        enabled = !isSimulating,
+                        colors = ButtonDefaults.buttonColors(containerColor = VertBeninois),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (isSimulating) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text("Simuler le paiement client", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+
+                Button(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.buttonColors(containerColor = RougeDahomey),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Fermer", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
 }

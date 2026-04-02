@@ -6,14 +6,14 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hotelpms.pos.data.local.TokenManager
+import com.hotelpms.pos.data.remote.OrderSyncService
 import com.hotelpms.pos.data.remote.PmsApiService
-import com.hotelpms.pos.domain.model.Article
-import com.hotelpms.pos.domain.model.CreateOrderItem
-import com.hotelpms.pos.domain.model.CreateOrderRequest
-import com.hotelpms.pos.domain.model.Order
-import com.hotelpms.pos.domain.model.OrderStatusRequest
-import com.hotelpms.pos.domain.model.QrCodeData
+import com.hotelpms.pos.domain.model.*
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -41,7 +41,13 @@ data class OrdersUiState(
     val showQrCode: Boolean = false,
     val isCreating: Boolean = false,
     val isSimulating: Boolean = false,
-    val simulationSuccess: Boolean = false
+    val simulationSuccess: Boolean = false,
+    // Merge invoices
+    val showMergeDialog: Boolean = false,
+    val mergeTableQuery: String = "",
+    val mergeableInvoices: List<Map<String, Any>> = emptyList(),
+    val isMerging: Boolean = false,
+    val isFetchingMergeable: Boolean = false
 ) {
     val filteredOrders: List<Order>
         get() = if (statusFilter == null) {
@@ -74,7 +80,8 @@ data class OrdersUiState(
 @HiltViewModel
 class OrdersViewModel @Inject constructor(
     private val apiService: PmsApiService,
-    private val tokenManager: TokenManager
+    private val tokenManager: TokenManager,
+    private val orderSyncService: OrderSyncService
 ) : ViewModel() {
 
     var uiState by mutableStateOf(OrdersUiState())
@@ -83,6 +90,43 @@ class OrdersViewModel @Inject constructor(
     init {
         fetchOrders()
         fetchArticles()
+        startRealtimeSync()
+    }
+
+    private fun startRealtimeSync() {
+        // SSE for instant push
+        orderSyncService.connect()
+        orderSyncService.orderEvents
+            .onEach { event ->
+                if (event == "ORDER_UPDATE") {
+                    fetchOrders()
+                }
+            }
+            .launchIn(viewModelScope)
+
+        // Polling every 5s as reliable fallback
+        viewModelScope.launch {
+            while (isActive) {
+                delay(5000)
+                fetchOrdersSilent()
+            }
+        }
+    }
+
+    private fun fetchOrdersSilent() {
+        viewModelScope.launch {
+            try {
+                val response = apiService.getOrders()
+                if (response.data != uiState.orders) {
+                    uiState = uiState.copy(orders = response.data)
+                }
+            } catch (_: Exception) { }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        orderSyncService.disconnect()
     }
 
     fun fetchOrders() {
@@ -272,6 +316,73 @@ class OrdersViewModel @Inject constructor(
                     isSimulating = false,
                     error = e.message ?: "Erreur réseau"
                 )
+            }
+        }
+    }
+
+    // =============================================
+    // Merge invoices by table
+    // =============================================
+
+    fun showMergeDialog() {
+        uiState = uiState.copy(showMergeDialog = true, mergeTableQuery = "", mergeableInvoices = emptyList())
+    }
+
+    fun dismissMergeDialog() {
+        uiState = uiState.copy(showMergeDialog = false, mergeableInvoices = emptyList(), mergeTableQuery = "")
+    }
+
+    fun setMergeTableQuery(table: String) {
+        uiState = uiState.copy(mergeTableQuery = table)
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    fun fetchMergeableInvoices() {
+        val table = uiState.mergeTableQuery.trim()
+        if (table.isBlank()) return
+        viewModelScope.launch {
+            uiState = uiState.copy(isFetchingMergeable = true)
+            try {
+                val response = apiService.getInvoicesByTable(table)
+                if (response.isSuccessful) {
+                    val data = response.body()?.data
+                    val list = (data as? List<*>)?.filterIsInstance<Map<String, Any>>() ?: emptyList()
+                    uiState = uiState.copy(mergeableInvoices = list, isFetchingMergeable = false)
+                } else {
+                    uiState = uiState.copy(isFetchingMergeable = false, error = "Erreur recherche")
+                }
+            } catch (e: Exception) {
+                uiState = uiState.copy(isFetchingMergeable = false, error = e.message)
+            }
+        }
+    }
+
+    fun mergeInvoices(invoiceIds: List<String>) {
+        if (invoiceIds.size < 2) {
+            uiState = uiState.copy(error = "Au moins 2 factures requises")
+            return
+        }
+        viewModelScope.launch {
+            uiState = uiState.copy(isMerging = true)
+            try {
+                val body = MergeInvoicesRequest(
+                    invoiceIds = invoiceIds,
+                    tableNumber = uiState.mergeTableQuery.ifBlank { null }
+                )
+                val response = apiService.mergeInvoices(body)
+                if (response.isSuccessful) {
+                    uiState = uiState.copy(
+                        isMerging = false,
+                        showMergeDialog = false,
+                        mergeableInvoices = emptyList(),
+                        successMessage = "Factures regroupées avec succès"
+                    )
+                    fetchOrders()
+                } else {
+                    uiState = uiState.copy(isMerging = false, error = "Erreur lors du regroupement")
+                }
+            } catch (e: Exception) {
+                uiState = uiState.copy(isMerging = false, error = e.message ?: "Erreur")
             }
         }
     }

@@ -186,7 +186,6 @@ export class ReceiptService {
             createdBy: { select: { firstName: true, lastName: true } },
             items: { include: { article: { select: { name: true } } } },
           },
-          take: 1,
         },
         reservation: { select: { guestName: true, checkIn: true, checkOut: true } },
         createdBy: { select: { firstName: true, lastName: true } },
@@ -267,11 +266,15 @@ export class ReceiptService {
       if (invoice.reservation) {
         doc.text(`Client: ${invoice.reservation.guestName}`);
       }
-      if (order) {
-        doc.text(`Commande: ${order.orderNumber}`);
-        if (order.tableNumber) doc.text(`Table: ${order.tableNumber}`);
-        doc.text(`Serveur: ${order.createdBy.firstName} ${order.createdBy.lastName}`);
-        if (order.paymentMethod) doc.text(`Paiement: ${PAYMENT_LABELS[order.paymentMethod] || order.paymentMethod}`);
+      if (invoice.orders.length > 0) {
+        const orderNumbers = invoice.orders.map((o: any) => o.orderNumber).join(', ');
+        doc.text(`Commande${invoice.orders.length > 1 ? 's' : ''}: ${orderNumbers}`);
+        const table = invoice.orders.find((o: any) => o.tableNumber)?.tableNumber;
+        if (table) doc.text(`Table: ${table}`);
+        const firstOrder = invoice.orders[0];
+        doc.text(`Serveur: ${firstOrder.createdBy.firstName} ${firstOrder.createdBy.lastName}`);
+        const pm = firstOrder.paymentMethod || invoice.paymentMethod;
+        if (pm) doc.text(`Paiement: ${PAYMENT_LABELS[pm] || pm}`);
       }
 
       doc.moveDown(0.8);

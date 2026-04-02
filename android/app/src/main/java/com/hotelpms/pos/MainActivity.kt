@@ -16,6 +16,7 @@ import androidx.compose.material.icons.outlined.CleaningServices
 import androidx.compose.material.icons.outlined.Inventory
 import androidx.compose.material.icons.outlined.KingBed
 import androidx.compose.material.icons.outlined.LocalDining
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.PointOfSale
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -33,6 +34,7 @@ import com.hotelpms.pos.ui.auth.LoginScreen
 import com.hotelpms.pos.ui.cleaning.CleaningScreen
 import com.hotelpms.pos.ui.dashboard.DashboardScreen
 import com.hotelpms.pos.ui.kitchen.KitchenScreen
+import com.hotelpms.pos.ui.notifications.NotificationsScreen
 import com.hotelpms.pos.ui.orders.OrdersScreen
 import com.hotelpms.pos.ui.pos.PosScreen
 import com.hotelpms.pos.ui.reservations.ReservationsScreen
@@ -70,19 +72,20 @@ val allNavItems = listOf(
     NavItem("cleaning", "Ménage", Icons.Outlined.CleaningServices),
     NavItem("stock", "Stock", Icons.Outlined.Inventory),
     NavItem("approvals", "Approbations", Icons.Default.CheckCircle),
-    NavItem("pos", "POS", Icons.Outlined.PointOfSale)
+    NavItem("pos", "POS", Icons.Outlined.PointOfSale),
+    NavItem("notifications", "Notifs", Icons.Outlined.Notifications)
 )
 
 fun navItemsForRole(role: String): List<NavItem> {
     val allowedRoutes = when (role.uppercase()) {
-        "COOK" -> listOf("dashboard", "kitchen")
-        "SERVER" -> listOf("dashboard", "orders", "pos")
-        "CLEANER" -> listOf("dashboard", "cleaning")
-        "MANAGER" -> listOf("dashboard", "rooms", "reservations", "orders", "stock", "approvals", "pos")
-        "DAF" -> listOf("dashboard", "rooms", "reservations", "orders", "stock", "approvals")
-        "OWNER" -> listOf("dashboard", "rooms", "reservations", "orders", "stock", "approvals")
-        "SUPERADMIN" -> listOf("dashboard", "orders", "kitchen", "rooms", "reservations", "cleaning", "stock", "approvals", "pos")
-        else -> listOf("dashboard", "orders", "pos")
+        "COOK" -> listOf("dashboard", "kitchen", "notifications")
+        "SERVER" -> listOf("dashboard", "orders", "pos", "notifications")
+        "CLEANER" -> listOf("dashboard", "cleaning", "notifications")
+        "MANAGER" -> listOf("dashboard", "rooms", "reservations", "orders", "stock", "approvals", "pos", "notifications")
+        "DAF" -> listOf("dashboard", "rooms", "reservations", "orders", "stock", "approvals", "notifications")
+        "OWNER" -> listOf("dashboard", "rooms", "reservations", "orders", "stock", "approvals", "notifications")
+        "SUPERADMIN" -> listOf("dashboard", "orders", "kitchen", "rooms", "reservations", "cleaning", "stock", "approvals", "pos", "notifications")
+        else -> listOf("dashboard", "orders", "pos", "notifications")
     }
     return allNavItems.filter { it.route in allowedRoutes }
 }
@@ -283,6 +286,10 @@ fun MainScaffold(
 
             composable("pos") {
                 PosScreen(onLogout = onLogout)
+            }
+
+            composable("notifications") {
+                NotificationsScreen()
             }
         }
     }

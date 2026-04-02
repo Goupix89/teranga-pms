@@ -206,6 +206,18 @@ export class OrderService {
           paymentMethod: data.paymentMethod as any || null,
           notes: `Commande ${orderNumber}${data.tableNumber ? ` - Table ${data.tableNumber}` : ''}`,
           status: 'ISSUED',
+          items: {
+            create: itemsData.map((item) => {
+              const article = articleMap.get(item.articleId)!;
+              return {
+                articleId: item.articleId,
+                description: article.name,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                totalPrice: item.unitPrice * item.quantity,
+              };
+            }),
+          },
         },
       });
 
@@ -316,16 +328,50 @@ export class OrderService {
         },
       });
 
-      // Notify when order is READY → tell the server who created it
-      if (status === 'READY' && order.createdById) {
+      // Notify on every status change so all roles see updates in real-time
+      const statusLabels: Record<string, string> = {
+        IN_PROGRESS: 'en preparation',
+        READY: 'prete a servir',
+        SERVED: 'servie',
+        CANCELLED: 'annulee',
+      };
+
+      // Notify the creator (SERVER/POS) on status changes
+      if (order.createdById && order.createdById !== userId) {
         notificationService.notify({
           tenantId,
           userId: order.createdById,
           establishmentId: order.establishmentId,
+          type: `ORDER_${status}`,
+          title: `Commande ${statusLabels[status] || status}`,
+          message: `La commande ${order.orderNumber} est ${statusLabels[status] || status}.`,
+          data: { orderId: order.id, orderNumber: order.orderNumber, status },
+        }).catch(() => {});
+      }
+
+      // Notify cooks when a new order arrives or status changes
+      if (['CANCELLED', 'SERVED'].includes(status)) {
+        notificationService.notifyRole({
+          tenantId,
+          establishmentId: order.establishmentId,
+          roles: ['COOK'],
+          type: `ORDER_${status}`,
+          title: `Commande ${statusLabels[status] || status}`,
+          message: `La commande ${order.orderNumber} est ${statusLabels[status] || status}.`,
+          data: { orderId: order.id, orderNumber: order.orderNumber, status },
+        }).catch(() => {});
+      }
+
+      // Notify servers when order is READY
+      if (status === 'READY') {
+        notificationService.notifyRole({
+          tenantId,
+          establishmentId: order.establishmentId,
+          roles: ['SERVER', 'POS', 'MAITRE_HOTEL'],
           type: 'ORDER_READY',
           title: 'Commande prete',
           message: `La commande ${order.orderNumber} est prete a servir.`,
-          data: { orderId: order.id, orderNumber: order.orderNumber },
+          data: { orderId: order.id, orderNumber: order.orderNumber, status },
         }).catch(() => {});
       }
 

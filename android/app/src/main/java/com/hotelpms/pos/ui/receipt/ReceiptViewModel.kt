@@ -97,6 +97,51 @@ class ReceiptViewModel @Inject constructor(
         }
     }
 
+    fun printInvoiceToThermal(
+        device: BluetoothDevice,
+        invoiceNumber: String,
+        items: List<Map<String, Any>>,
+        totalAmount: Double,
+        tableNumber: String?,
+        paymentMethod: String?,
+        orderNumbers: List<String>,
+        establishment: Establishment
+    ) {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(isPrinting = true, printResult = null)
+            val receiptData = ReceiptFormatter.formatInvoiceReceipt(
+                invoiceNumber, items, totalAmount, tableNumber, paymentMethod, orderNumbers, establishment
+            )
+            val result = printerManager.print(device, receiptData)
+            _state.value = _state.value.copy(
+                isPrinting = false,
+                printResult = if (result.isSuccess) "Impression reussie" else result.exceptionOrNull()?.message
+            )
+        }
+    }
+
+    fun loadInvoicePdf(invoiceId: String) {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(isLoading = true, error = null)
+            try {
+                val response = api.getInvoicePdf(invoiceId)
+                if (response.isSuccessful && response.body() != null) {
+                    val bytes = response.body()!!.bytes()
+                    val bitmap = renderPdfPage(bytes)
+                    _state.value = _state.value.copy(
+                        isLoading = false,
+                        pdfBytes = bytes,
+                        previewBitmap = bitmap
+                    )
+                } else {
+                    _state.value = _state.value.copy(isLoading = false, error = "Erreur chargement facture")
+                }
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(isLoading = false, error = e.message ?: "Erreur")
+            }
+        }
+    }
+
     fun shareReceipt(context: Context, orderNumber: String?) {
         val bytes = _state.value.pdfBytes ?: return
         viewModelScope.launch {

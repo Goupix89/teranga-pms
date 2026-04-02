@@ -6,9 +6,14 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hotelpms.pos.data.local.TokenManager
+import com.hotelpms.pos.data.remote.OrderSyncService
 import com.hotelpms.pos.data.remote.PmsApiService
 import com.hotelpms.pos.domain.model.Order
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -30,7 +35,8 @@ data class KitchenUiState(
 @HiltViewModel
 class KitchenViewModel @Inject constructor(
     private val apiService: PmsApiService,
-    private val tokenManager: TokenManager
+    private val tokenManager: TokenManager,
+    private val orderSyncService: OrderSyncService
 ) : ViewModel() {
 
     var uiState by mutableStateOf(KitchenUiState())
@@ -38,6 +44,31 @@ class KitchenViewModel @Inject constructor(
 
     init {
         fetchOrders()
+        startRealtimeSync()
+    }
+
+    private fun startRealtimeSync() {
+        orderSyncService.connect()
+        orderSyncService.orderEvents
+            .onEach { event ->
+                if (event == "ORDER_UPDATE") {
+                    fetchOrders()
+                }
+            }
+            .launchIn(viewModelScope)
+
+        // Polling every 5s for reliable instant updates
+        viewModelScope.launch {
+            while (isActive) {
+                delay(5000)
+                try { fetchOrders() } catch (_: Exception) { }
+            }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        orderSyncService.disconnect()
     }
 
     fun fetchOrders() {

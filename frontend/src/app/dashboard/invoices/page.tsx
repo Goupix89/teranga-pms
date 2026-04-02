@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost } from '@/lib/api';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { PageHeader, StatusBadge, Pagination, Modal, SearchInput, EmptyState, LoadingPage } from '@/components/ui';
-import { Receipt, Plus, Send, XCircle, Loader2, FileDown } from 'lucide-react';
+import { Receipt, Plus, Send, XCircle, Loader2, FileDown, Merge, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { api } from '@/lib/api';
@@ -22,6 +22,11 @@ export default function InvoicesPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [showMerge, setShowMerge] = useState(false);
+  const [mergeTable, setMergeTable] = useState('');
+  const [mergeInvoices, setMergeInvoices] = useState<any[]>([]);
+  const [mergeSelected, setMergeSelected] = useState<string[]>([]);
+  const [isFetchingMerge, setIsFetchingMerge] = useState(false);
   const [items, setItems] = useState([{ description: '', quantity: '1', unitPrice: '' }]);
   const [taxRate, setTaxRate] = useState('0');
 
@@ -57,6 +62,40 @@ export default function InvoicesPage() {
     },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
   });
+
+  const mergeMutation = useMutation({
+    mutationFn: (body: { invoiceIds: string[]; tableNumber?: string }) => apiPost('/invoices/merge', body),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      setShowMerge(false);
+      setMergeTable('');
+      setMergeInvoices([]);
+      setMergeSelected([]);
+      toast.success(`Factures regroupées — ${data?.data?.invoiceNumber || 'nouvelle facture créée'}`);
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur lors du regroupement'),
+  });
+
+  const fetchMergeableInvoices = async () => {
+    if (!mergeTable.trim()) return;
+    setIsFetchingMerge(true);
+    try {
+      const res = await apiGet<{ data: any[] }>(`/invoices/by-table/${encodeURIComponent(mergeTable.trim())}`);
+      setMergeInvoices(res.data || []);
+      setMergeSelected((res.data || []).map((inv: any) => inv.id));
+    } catch {
+      toast.error('Erreur lors de la recherche');
+      setMergeInvoices([]);
+    } finally {
+      setIsFetchingMerge(false);
+    }
+  };
+
+  const toggleMergeSelect = (id: string) => {
+    setMergeSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
 
   const downloadInvoicePdf = async (invoiceId: string, invoiceNumber: string) => {
     try {
@@ -102,7 +141,12 @@ export default function InvoicesPage() {
       <PageHeader
         title="Factures"
         subtitle={`${meta?.total || 0} facture${(meta?.total || 0) > 1 ? 's' : ''}`}
-        action={<button onClick={() => setShowCreate(true)} className="btn-primary"><Plus className="mr-2 h-4 w-4" /> Nouvelle facture</button>}
+        action={
+          <div className="flex gap-2">
+            <button onClick={() => setShowMerge(true)} className="btn-secondary"><Merge className="mr-2 h-4 w-4" /> Regrouper</button>
+            <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus className="mr-2 h-4 w-4" /> Nouvelle facture</button>
+          </div>
+        }
       />
 
       <div className="flex flex-wrap items-center gap-3">
@@ -113,6 +157,7 @@ export default function InvoicesPage() {
           <option value="ISSUED">Émise</option>
           <option value="PAID">Payée</option>
           <option value="OVERDUE">En retard</option>
+          <option value="MERGED">Fusionnée</option>
         </select>
       </div>
 
@@ -210,6 +255,88 @@ export default function InvoicesPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Merge invoices modal */}
+      <Modal open={showMerge} onClose={() => { setShowMerge(false); setMergeInvoices([]); setMergeSelected([]); setMergeTable(''); }} title="Regrouper les factures d'une table" size="xl">
+        <div className="space-y-4">
+          <div className="flex gap-2">
+            <input
+              value={mergeTable}
+              onChange={(e) => setMergeTable(e.target.value)}
+              className="input flex-1"
+              placeholder="Numéro de table (ex: 5)"
+              onKeyDown={(e) => e.key === 'Enter' && fetchMergeableInvoices()}
+            />
+            <button
+              type="button"
+              onClick={fetchMergeableInvoices}
+              className="btn-primary"
+              disabled={isFetchingMerge || !mergeTable.trim()}
+            >
+              {isFetchingMerge ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+              <span className="ml-2">Rechercher</span>
+            </button>
+          </div>
+
+          {mergeInvoices.length === 0 && !isFetchingMerge && mergeTable && (
+            <p className="text-sm text-gray-500 text-center py-4">Aucune facture ouverte pour la table {mergeTable}</p>
+          )}
+
+          {mergeInvoices.length === 1 && (
+            <p className="text-sm text-amber-600 text-center py-4">Une seule facture trouvée — il faut au moins 2 factures pour regrouper</p>
+          )}
+
+          {mergeInvoices.length >= 2 && (
+            <>
+              <div className="border rounded-lg divide-y max-h-80 overflow-y-auto">
+                {mergeInvoices.map((inv) => (
+                  <label key={inv.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={mergeSelected.includes(inv.id)}
+                      onChange={() => toggleMergeSelect(inv.id)}
+                      className="h-4 w-4 rounded border-gray-300 text-primary-600"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-sm">{inv.invoiceNumber}</span>
+                        <span className="text-xs text-gray-500">{formatCurrency(inv.totalAmount)}</span>
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        {inv.orders?.map((o: any) => o.orderNumber).join(', ')}
+                        {inv.items?.length > 0 && ` — ${inv.items.length} article(s)`}
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium">{mergeSelected.length} facture(s) sélectionnée(s)</p>
+                  <p className="text-lg font-bold text-primary-700">
+                    Total: {formatCurrency(
+                      mergeInvoices
+                        .filter((inv) => mergeSelected.includes(inv.id))
+                        .reduce((sum: number, inv: any) => sum + inv.totalAmount, 0)
+                    )}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => mergeMutation.mutate({ invoiceIds: mergeSelected, tableNumber: mergeTable })}
+                  className="btn-primary"
+                  disabled={mergeSelected.length < 2 || mergeMutation.isPending}
+                >
+                  {mergeMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  <Merge className="mr-2 h-4 w-4" />
+                  Regrouper en 1 facture
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </Modal>
     </div>
   );

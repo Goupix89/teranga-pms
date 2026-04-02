@@ -4,6 +4,7 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -35,6 +36,7 @@ import com.hotelpms.pos.domain.model.Article
 import com.hotelpms.pos.domain.model.Establishment
 import com.hotelpms.pos.domain.model.Order
 import com.hotelpms.pos.domain.model.QrCodeData
+import com.hotelpms.pos.ui.receipt.InvoiceReceiptScreen
 import com.hotelpms.pos.ui.receipt.ReceiptScreen
 import com.hotelpms.pos.ui.theme.*
 import java.text.NumberFormat
@@ -52,12 +54,28 @@ fun OrdersScreen(
     val uiState = viewModel.uiState
     var receiptOrder by remember { mutableStateOf<Order?>(null) }
 
-    // Receipt dialog
+    // Receipt dialog — use InvoiceReceiptScreen for orders with invoices (supports thermal invoice printing)
     if (receiptOrder != null && establishment != null) {
-        ReceiptScreen(
-            order = receiptOrder!!,
-            establishment = establishment,
-            onDismiss = { receiptOrder = null }
+        if (receiptOrder!!.invoiceId != null) {
+            InvoiceReceiptScreen(
+                order = receiptOrder!!,
+                establishment = establishment,
+                onDismiss = { receiptOrder = null }
+            )
+        } else {
+            ReceiptScreen(
+                order = receiptOrder!!,
+                establishment = establishment,
+                onDismiss = { receiptOrder = null }
+            )
+        }
+    }
+
+    // Merge invoices dialog
+    if (uiState.showMergeDialog) {
+        MergeInvoicesDialog(
+            viewModel = viewModel,
+            uiState = uiState
         )
     }
 
@@ -86,6 +104,12 @@ fun OrdersScreen(
                     )
                 },
                 actions = {
+                    // Merge invoices button (orders view only)
+                    if (uiState.viewMode == "orders") {
+                        IconButton(onClick = { viewModel.showMergeDialog() }) {
+                            Icon(Icons.Default.MergeType, contentDescription = "Regrouper factures")
+                        }
+                    }
                     // Toggle between menu and orders list
                     IconButton(onClick = {
                         viewModel.setViewMode(if (uiState.viewMode == "menu") "orders" else "menu")
@@ -796,6 +820,169 @@ private fun QrCodePaymentDialog(
                     colors = ButtonDefaults.buttonColors(containerColor = RougeDahomey),
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Fermer", color = Color.White, fontWeight = FontWeight.Bold) }
+            }
+        }
+    }
+}
+
+// =============================================================================
+// MERGE INVOICES DIALOG
+// =============================================================================
+
+@Composable
+private fun MergeInvoicesDialog(
+    viewModel: OrdersViewModel,
+    uiState: OrdersUiState
+) {
+    val invoices = uiState.mergeableInvoices
+    var selectedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+    // Auto-select all when invoices load
+    LaunchedEffect(invoices) {
+        selectedIds = invoices.mapNotNull { it["id"] as? String }.toSet()
+    }
+
+    Dialog(onDismissRequest = { viewModel.dismissMergeDialog() }) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            colors = CardDefaults.cardColors(containerColor = CremeGanvie),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(
+                    "Regrouper les factures",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = TerreFon
+                )
+                Spacer(Modifier.height(12.dp))
+
+                // Table search
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = uiState.mergeTableQuery,
+                        onValueChange = { viewModel.setMergeTableQuery(it) },
+                        label = { Text("N° Table") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    Button(
+                        onClick = { viewModel.fetchMergeableInvoices() },
+                        enabled = uiState.mergeTableQuery.isNotBlank() && !uiState.isFetchingMergeable,
+                        colors = ButtonDefaults.buttonColors(containerColor = RougeDahomey)
+                    ) {
+                        if (uiState.isFetchingMergeable) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                when {
+                    uiState.isFetchingMergeable -> {
+                        Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = RougeDahomey)
+                        }
+                    }
+                    invoices.isEmpty() && uiState.mergeTableQuery.isNotBlank() -> {
+                        Text(
+                            "Aucune facture ouverte pour cette table",
+                            fontSize = 13.sp, color = BronzeAbomey,
+                            modifier = Modifier.padding(vertical = 16.dp)
+                        )
+                    }
+                    invoices.size == 1 -> {
+                        Text(
+                            "Une seule facture — il en faut au moins 2",
+                            fontSize = 13.sp, color = OrBeninois,
+                            modifier = Modifier.padding(vertical = 16.dp)
+                        )
+                    }
+                    invoices.size >= 2 -> {
+                        // Invoice list with checkboxes
+                        LazyColumn(modifier = Modifier.heightIn(max = 250.dp)) {
+                            items(invoices, key = { (it["id"] as? String) ?: "" }) { inv ->
+                                val invId = inv["id"] as? String ?: return@items
+                                val invNumber = inv["invoiceNumber"] as? String ?: "---"
+                                val invTotal = (inv["totalAmount"] as? Number)?.toDouble() ?: 0.0
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            selectedIds = if (invId in selectedIds) selectedIds - invId else selectedIds + invId
+                                        }
+                                        .padding(vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Checkbox(
+                                        checked = invId in selectedIds,
+                                        onCheckedChange = {
+                                            selectedIds = if (it) selectedIds + invId else selectedIds - invId
+                                        }
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(invNumber, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TerreFon)
+                                    }
+                                    Text(formatFcfa(invTotal), fontWeight = FontWeight.Bold, fontSize = 13.sp, color = RougeDahomey)
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(12.dp))
+
+                        // Total + merge button
+                        val selectedTotal = invoices
+                            .filter { (it["id"] as? String) in selectedIds }
+                            .sumOf { (it["totalAmount"] as? Number)?.toDouble() ?: 0.0 }
+
+                        Surface(
+                            color = OrBeninois.copy(alpha = 0.1f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text("${selectedIds.size} facture(s)", fontSize = 12.sp, color = BronzeAbomey)
+                                    Text(formatFcfa(selectedTotal), fontWeight = FontWeight.Bold, fontSize = 16.sp, color = TerreFon)
+                                }
+                                Button(
+                                    onClick = { viewModel.mergeInvoices(selectedIds.toList()) },
+                                    enabled = selectedIds.size >= 2 && !uiState.isMerging,
+                                    colors = ButtonDefaults.buttonColors(containerColor = RougeDahomey)
+                                ) {
+                                    if (uiState.isMerging) {
+                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                                        Spacer(Modifier.width(8.dp))
+                                    }
+                                    Text("Regrouper", fontWeight = FontWeight.Bold, color = Color.White)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = { viewModel.dismissMergeDialog() },
+                    colors = ButtonDefaults.buttonColors(containerColor = BronzeAbomey),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Fermer", color = Color.White)
+                }
             }
         }
     }

@@ -126,6 +126,34 @@ interface PmsApiService {
     @GET("api/orders/{id}/receipt")
     suspend fun getOrderReceipt(@Path("id") id: String): Response<ResponseBody>
 
+    // Invoice PDF
+    @Streaming
+    @GET("api/invoices/{id}/pdf")
+    suspend fun getInvoicePdf(@Path("id") id: String): Response<ResponseBody>
+
+    // Invoices - merge
+    @GET("api/invoices/by-table/{tableNumber}")
+    suspend fun getInvoicesByTable(@Path("tableNumber") tableNumber: String): Response<GenericResponse>
+
+    @POST("api/invoices/merge")
+    suspend fun mergeInvoices(@Body body: MergeInvoicesRequest): Response<GenericResponse>
+
+    // Notifications
+    @GET("api/notifications")
+    suspend fun getNotifications(
+        @Query("unread") unread: Boolean? = null,
+        @Query("limit") limit: Int = 50
+    ): Response<NotificationsResponse>
+
+    @GET("api/notifications/unread-count")
+    suspend fun getUnreadCount(): Response<UnreadCountResponse>
+
+    @POST("api/notifications/{id}/read")
+    suspend fun markNotificationRead(@Path("id") id: String): Response<GenericResponse>
+
+    @POST("api/notifications/read-all")
+    suspend fun markAllNotificationsRead(): Response<GenericResponse>
+
     // Push notifications - register FCM device token
     @POST("api/notifications/device-token")
     suspend fun registerDeviceToken(@Body body: Map<String, String>): Response<GenericResponse>

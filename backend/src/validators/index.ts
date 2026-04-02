@@ -79,7 +79,7 @@ export const updateTenantSchema = z.object({
 // User
 // =============================================================================
 
-export const establishmentRoleEnum = z.enum(['OWNER', 'DAF', 'MANAGER', 'SERVER', 'POS', 'COOK', 'CLEANER']);
+export const establishmentRoleEnum = z.enum(['OWNER', 'DAF', 'MANAGER', 'MAITRE_HOTEL', 'SERVER', 'POS', 'COOK', 'CLEANER']);
 
 export const createUserSchema = z.object({
   email: z.string().email('Email invalide'),

@@ -41,6 +41,7 @@ export default function OrdersPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['orders', page, statusFilter, serverFilter, currentEstId],
     queryFn: () => apiGet<any>(`/orders?page=${page}&limit=20${statusFilter ? `&status=${statusFilter}` : ''}${serverFilter ? `&createdById=${serverFilter}` : ''}${currentEstId ? `&establishmentId=${currentEstId}` : ''}`),
+    refetchInterval: 15000, // Auto-refresh every 15s for near-real-time
   });
 
   const { data: articlesData } = useQuery({

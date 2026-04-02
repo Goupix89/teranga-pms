@@ -255,6 +255,165 @@ export class InvoiceService {
     });
   }
 
+  /**
+   * Merge multiple invoices into one consolidated invoice.
+   * All source invoices must be ISSUED and unpaid. Their items and linked orders
+   * are moved to a new invoice, and the sources are cancelled.
+   */
+  async merge(tenantId: string, createdById: string, invoiceIds: string[], tableNumber?: string) {
+    if (invoiceIds.length < 2) {
+      throw new ValidationError('Au moins 2 factures sont requises pour le regroupement');
+    }
+
+    return prisma.$transaction(async (tx) => {
+      // Load all source invoices with items, orders, and payments
+      const invoices = await tx.invoice.findMany({
+        where: { id: { in: invoiceIds }, tenantId },
+        include: {
+          items: true,
+          orders: { select: { id: true, orderNumber: true, tableNumber: true } },
+          payments: { take: 1 },
+        },
+      });
+
+      if (invoices.length !== invoiceIds.length) {
+        throw new NotFoundError('Une ou plusieurs factures introuvables');
+      }
+
+      // Validate: all must be ISSUED or DRAFT, and have no payments
+      for (const inv of invoices) {
+        if (!['ISSUED', 'DRAFT'].includes(inv.status)) {
+          throw new ValidationError(`La facture ${inv.invoiceNumber} ne peut pas être regroupée (statut: ${inv.status})`);
+        }
+        if (inv.payments.length > 0) {
+          throw new ValidationError(`La facture ${inv.invoiceNumber} a déjà des paiements`);
+        }
+      }
+
+      // Generate new invoice number
+      const now = new Date();
+      const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+      const lastInvoice = await tx.invoice.findFirst({
+        where: { tenantId, invoiceNumber: { startsWith: `FAC-${dateStr}` } },
+        orderBy: { invoiceNumber: 'desc' },
+      });
+      const lastNum = lastInvoice ? parseInt(lastInvoice.invoiceNumber.split('-').pop() || '0', 10) : 0;
+      const invoiceNumber = `FAC-${dateStr}-${String(lastNum + 1).padStart(4, '0')}`;
+
+      // Collect all items — convert Prisma Decimals to numbers
+      // If an invoice has no items (legacy orders), pull items from linked orders instead
+      let allItems: Array<{ articleId: string | null; description: string; quantity: number; unitPrice: number; totalPrice: number }> = [];
+
+      for (const inv of invoices) {
+        if (inv.items.length > 0) {
+          // Invoice has its own items — use them
+          allItems.push(...inv.items.map((item) => ({
+            articleId: item.articleId,
+            description: item.description,
+            quantity: item.quantity,
+            unitPrice: Number(item.unitPrice),
+            totalPrice: Number(item.unitPrice) * item.quantity,
+          })));
+        } else if (inv.orders.length > 0) {
+          // No invoice items — pull from linked orders
+          const orderIds = inv.orders.map((o) => o.id);
+          const orderItems = await tx.orderItem.findMany({
+            where: { orderId: { in: orderIds } },
+            include: { article: { select: { id: true, name: true } } },
+          });
+          allItems.push(...orderItems.map((oi) => ({
+            articleId: oi.articleId,
+            description: oi.article?.name || 'Article',
+            quantity: oi.quantity,
+            unitPrice: Number(oi.unitPrice),
+            totalPrice: Number(oi.unitPrice) * oi.quantity,
+          })));
+        }
+      }
+
+      // If still no items found, use the invoice totalAmounts directly as a fallback
+      let subtotal: number;
+      let totalAmount: number;
+      if (allItems.length > 0) {
+        subtotal = allItems.reduce((sum, i) => sum + i.totalPrice, 0);
+        totalAmount = subtotal;
+      } else {
+        subtotal = invoices.reduce((sum, inv) => sum + Number(inv.totalAmount), 0);
+        totalAmount = subtotal;
+      }
+
+      // Build notes: concatenate all source descriptions + invoice numbers
+      const sourceNumbers = invoices.map((inv) => inv.invoiceNumber).join(', ');
+      const sourceNotes = invoices
+        .map((inv) => inv.notes)
+        .filter(Boolean)
+        .join(' | ');
+      const notes = `Regroupement: ${sourceNumbers}${tableNumber ? ` — Table ${tableNumber}` : ''}${sourceNotes ? `\n${sourceNotes}` : ''}`;
+
+      // Create consolidated invoice
+      const merged = await tx.invoice.create({
+        data: {
+          tenantId,
+          createdById,
+          invoiceNumber,
+          subtotal,
+          taxRate: 0,
+          taxAmount: 0,
+          totalAmount,
+          currency: invoices[0].currency,
+          paymentMethod: invoices[0].paymentMethod,
+          notes,
+          status: 'ISSUED',
+          items: {
+            create: allItems.map((item) => ({
+              articleId: item.articleId,
+              description: item.description,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              totalPrice: item.totalPrice,
+            })),
+          },
+        },
+        include: { items: true },
+      });
+
+      // Relink all orders to the new invoice
+      const allOrderIds = invoices.flatMap((inv) => inv.orders.map((o) => o.id));
+      if (allOrderIds.length > 0) {
+        await tx.order.updateMany({
+          where: { id: { in: allOrderIds } },
+          data: { invoiceId: merged.id },
+        });
+      }
+
+      // Mark source invoices as MERGED (not cancelled) and keep their items for traceability
+      for (const inv of invoices) {
+        await tx.invoice.update({
+          where: { id: inv.id },
+          data: { status: 'MERGED', notes: `Fusionnée dans ${invoiceNumber}` },
+        });
+      }
+
+      logger.info('Invoices merged', {
+        tenantId,
+        sourceIds: invoiceIds,
+        mergedInvoiceId: merged.id,
+        invoiceNumber,
+        totalAmount,
+      });
+
+      return {
+        ...merged,
+        subtotal: Number(merged.subtotal),
+        taxRate: Number(merged.taxRate),
+        taxAmount: Number(merged.taxAmount),
+        totalAmount: Number(merged.totalAmount),
+        orderCount: allOrderIds.length,
+        sourceInvoices: sourceNumbers,
+      };
+    });
+  }
+
   async cancel(tenantId: string, id: string) {
     const invoice = await prisma.invoice.findFirst({
       where: { id, tenantId },

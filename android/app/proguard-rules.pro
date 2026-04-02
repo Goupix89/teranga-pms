@@ -12,6 +12,10 @@
 -keep class com.hotelpms.pos.domain.model.** { *; }
 -keepclassmembers class com.hotelpms.pos.domain.model.** { *; }
 
+# OkHttp SSE
+-keep class okhttp3.sse.** { *; }
+-dontwarn okhttp3.sse.**
+
 # Room
 -keep class * extends androidx.room.RoomDatabase
 -keep @androidx.room.Entity class *

@@ -67,6 +67,7 @@ export const statusColors: Record<string, string> = {
   PAID: 'badge-success',
   PARTIALLY_PAID: 'badge-warning',
   OVERDUE: 'badge-danger',
+  MERGED: 'badge-info',
   // User status
   ACTIVE: 'badge-success',
   PENDING_APPROVAL: 'badge-warning',
@@ -97,6 +98,7 @@ export const statusLabels: Record<string, string> = {
   PAID: 'Payée',
   PARTIALLY_PAID: 'Paiement partiel',
   OVERDUE: 'En retard',
+  MERGED: 'Fusionnée',
   ACTIVE: 'Actif',
   PENDING_APPROVAL: 'En attente',
   LOCKED: 'Verrouillé',

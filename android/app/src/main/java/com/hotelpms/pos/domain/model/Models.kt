@@ -229,9 +229,10 @@ data class OrderStatusRequest(
 
 data class CreateOrderRequest(
     val establishmentId: String,
-    val tableNumber: String,
+    val tableNumber: String? = null,
     val paymentMethod: String? = null,
-    val items: List<CreateOrderItem>
+    val items: List<CreateOrderItem>,
+    val notes: String? = null
 )
 
 data class QrCodeResponse(
@@ -352,6 +353,44 @@ data class DashboardStats(
     val todayRevenue: Double = 0.0,
     val pendingApprovals: Int = 0,
     val activeSessions: Int = 0
+)
+
+// =============================================================================
+// Notifications
+// =============================================================================
+
+data class Notification(
+    val id: String,
+    val type: String,
+    val title: String,
+    val body: String? = null,
+    val isRead: Boolean = false,
+    val data: Map<String, Any>? = null,
+    val createdAt: String? = null
+)
+
+data class NotificationsResponse(
+    val success: Boolean,
+    val data: List<Notification>,
+    val unreadCount: Int? = null
+)
+
+data class UnreadCountResponse(
+    val success: Boolean,
+    val data: UnreadCountData? = null
+)
+
+data class UnreadCountData(
+    val count: Int
+)
+
+// =============================================================================
+// Invoice Merge
+// =============================================================================
+
+data class MergeInvoicesRequest(
+    val invoiceIds: List<String>,
+    val tableNumber: String? = null
 )
 
 // =============================================================================

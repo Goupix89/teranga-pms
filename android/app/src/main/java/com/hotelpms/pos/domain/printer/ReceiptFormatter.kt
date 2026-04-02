@@ -30,6 +30,94 @@ object ReceiptFormatter {
         "OTHER" to "Autre"
     )
 
+    /**
+     * Format a merged/grouped invoice receipt for thermal printing.
+     * Takes invoice data as maps since the mobile may not have a typed Invoice model.
+     */
+    fun formatInvoiceReceipt(
+        invoiceNumber: String,
+        items: List<Map<String, Any>>,
+        totalAmount: Double,
+        tableNumber: String?,
+        paymentMethod: String?,
+        orderNumbers: List<String>,
+        establishment: Establishment,
+        cols: Int = 32
+    ): ByteArray {
+        val esc = EscPosCommands
+        val buf = mutableListOf<Byte>()
+
+        fun add(vararg arrays: ByteArray) {
+            arrays.forEach { buf.addAll(it.toList()) }
+        }
+
+        // Init
+        add(esc.INIT)
+
+        // Header
+        add(esc.ALIGN_CENTER, esc.DOUBLE_HEIGHT, esc.BOLD_ON)
+        add(esc.text(establishment.name + "\n"))
+        add(esc.BOLD_OFF, esc.NORMAL_SIZE)
+
+        establishment.address?.let { add(esc.text(it + "\n")) }
+        val cityLine = listOfNotNull(establishment.city, establishment.country).joinToString(", ")
+        if (cityLine.isNotEmpty()) add(esc.text(cityLine + "\n"))
+        establishment.phone?.let { add(esc.text("Tel: $it\n")) }
+
+        add(esc.line(), esc.separator(cols))
+
+        // Invoice info
+        add(esc.BOLD_ON)
+        add(esc.text("FACTURE $invoiceNumber\n"))
+        add(esc.BOLD_OFF, esc.ALIGN_LEFT)
+
+        if (orderNumbers.isNotEmpty()) {
+            add(esc.text("Cmd: ${orderNumbers.joinToString(", ")}\n"))
+        }
+        tableNumber?.let { add(esc.text("Table: $it\n")) }
+        paymentMethod?.let {
+            val label = paymentLabels[it] ?: it
+            add(esc.text("Paiement: $label\n"))
+        }
+
+        add(esc.separator(cols))
+
+        // Items
+        for (item in items) {
+            val name = (item["description"] as? String) ?: (item["name"] as? String) ?: "Article"
+            val qty = ((item["quantity"] as? Number)?.toInt()) ?: 1
+            val price = ((item["unitPrice"] as? Number)?.toDouble()) ?: 0.0
+            val subtotal = (qty * price).toLong()
+            val left = "${qty}x $name"
+            val right = currencyFormat.format(subtotal)
+
+            val maxLeft = cols - right.length - 1
+            val truncated = if (left.length > maxLeft) left.take(maxLeft - 2) + ".." else left
+            val padding = cols - truncated.length - right.length
+            val line = truncated + " ".repeat(maxOf(1, padding)) + right
+
+            add(esc.text(line + "\n"))
+        }
+
+        add(esc.separator(cols))
+
+        // Total
+        add(esc.BOLD_ON, esc.ALIGN_RIGHT)
+        add(esc.text("TOTAL: ${currencyFormat.format(totalAmount.toLong())} FCFA\n"))
+        add(esc.BOLD_OFF, esc.ALIGN_LEFT)
+
+        add(esc.line())
+
+        // Footer
+        add(esc.ALIGN_CENTER)
+        add(esc.text("Merci de votre visite !\n"))
+        add(esc.line())
+
+        add(esc.feedLines(4), esc.CUT_PAPER)
+
+        return buf.toByteArray()
+    }
+
     fun formatReceipt(order: Order, establishment: Establishment, cols: Int = 32): ByteArray {
         val esc = EscPosCommands
         val buf = mutableListOf<Byte>()
