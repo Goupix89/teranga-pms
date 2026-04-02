@@ -7,7 +7,8 @@
       "Bash(npx next:*)",
       "Bash(find /home/user/hotel-pms -type f \\\\\\(-name nginx.conf -o -name *.conf -o -name Makefile -o -name *.sh \\\\\\))",
       "Bash(grep -E \"\\\\.ts$\")",
-      "Bash(ls -la /home/user/hotel-pms/android/app/src/main/res/mipmap*)"
+      "Bash(ls -la /home/user/hotel-pms/android/app/src/main/res/mipmap*)",
+      "Bash(grep -n \"mode.*insensitive\" backend/src/routes/resource.routes.ts backend/src/services/*.ts)"
     ]
   }
 }

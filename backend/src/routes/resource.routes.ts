@@ -495,12 +495,12 @@ invoiceRouter.get('/', authenticate, requireDAFOrManagerOrServer,
 invoiceRouter.get('/by-table/:tableNumber', authenticate, requireDAFOrManagerOrServer,
   asyncHandler(async (req, res) => {
     const tenantId = req.user!.tenantId;
-    const tableNumber = req.params.tableNumber;
+    const tableNumber = req.params.tableNumber.trim();
     const invoices = await prisma.invoice.findMany({
       where: {
         tenantId,
         status: { in: ['ISSUED', 'DRAFT'] },
-        orders: { some: { tableNumber } },
+        orders: { some: { tableNumber: { equals: tableNumber, mode: 'insensitive' } } },
       },
       include: {
         items: { include: { article: { select: { id: true, name: true } } } },
@@ -521,6 +521,19 @@ invoiceRouter.get('/by-table/:tableNumber', authenticate, requireDAFOrManagerOrS
         orders: inv.orders.map((o: any) => ({ ...o, totalAmount: Number(o.totalAmount) })),
       }));
     res.json({ success: true, data: mergeable });
+  })
+);
+
+// Merge multiple invoices into one — MUST be before /:id routes
+invoiceRouter.post('/merge', authenticate, requireDAFOrManagerOrServer,
+  asyncHandler(async (req, res) => {
+    const { invoiceIds, tableNumber } = req.body;
+    if (!Array.isArray(invoiceIds) || invoiceIds.length < 2) {
+      res.status(400).json({ success: false, error: 'Au moins 2 factures requises' });
+      return;
+    }
+    const data = await invoiceService.merge(req.user!.tenantId, req.user!.id, invoiceIds, tableNumber);
+    res.json({ success: true, data });
   })
 );
 
@@ -555,19 +568,6 @@ invoiceRouter.post('/:id/issue', authenticate, requireDAFOrManager,
 invoiceRouter.post('/:id/cancel', authenticate, requireDAF,
   asyncHandler(async (req, res) => {
     const data = await invoiceService.cancel(req.user!.tenantId, req.params.id);
-    res.json({ success: true, data });
-  })
-);
-
-// Merge multiple invoices into one (e.g. same table, multiple orders)
-invoiceRouter.post('/merge', authenticate, requireDAFOrManagerOrServer,
-  asyncHandler(async (req, res) => {
-    const { invoiceIds, tableNumber } = req.body;
-    if (!Array.isArray(invoiceIds) || invoiceIds.length < 2) {
-      res.status(400).json({ success: false, error: 'Au moins 2 factures requises' });
-      return;
-    }
-    const data = await invoiceService.merge(req.user!.tenantId, req.user!.id, invoiceIds, tableNumber);
     res.json({ success: true, data });
   })
 );
