@@ -414,6 +414,15 @@ export class InvoiceService {
           }))
         );
 
+        // Determine the status for the combined order:
+        // Keep the most advanced status among source orders, but never jump to SERVED
+        // (SERVED only happens after payment)
+        const statusPriority = ['PENDING', 'IN_PROGRESS', 'READY', 'SERVED', 'CANCELLED'] as const;
+        const sourceStatuses = sourceOrders.map((o) => o.status);
+        const maxStatusIndex = Math.max(...sourceStatuses.map((s) => statusPriority.indexOf(s as any)));
+        // Cap at READY — SERVED requires payment
+        const combinedStatus = statusPriority[Math.min(maxStatusIndex, 2)] || 'PENDING';
+
         // Create the combined order linked to the merged invoice
         combinedOrder = await tx.order.create({
           data: {
@@ -425,7 +434,7 @@ export class InvoiceService {
             paymentMethod: invoices[0].paymentMethod as any || null,
             notes: `Regroupement: ${sourceOrders.map((o) => o.orderNumber).join(', ')}`,
             totalAmount,
-            status: 'SERVED',
+            status: combinedStatus,
             invoiceId: merged.id,
             items: {
               create: combinedItems,
@@ -437,11 +446,8 @@ export class InvoiceService {
           },
         });
 
-        // Mark source orders as SERVED (they are now part of the combined order)
-        await tx.order.updateMany({
-          where: { id: { in: allOrderIds }, status: { notIn: ['CANCELLED', 'SERVED'] } },
-          data: { status: 'SERVED', servedAt: now },
-        });
+        // Source orders keep their current status — they stay visible in kitchen
+        // Just relink them to the merged invoice for traceability
       }
 
       // Relink source orders to the merged invoice (keep traceability)
