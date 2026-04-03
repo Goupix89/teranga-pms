@@ -8,9 +8,11 @@
     @retrofit2.http.* <methods>;
 }
 
-# Gson
+# Gson — keep model fields and generic type info for deserialization
 -keep class com.hotelpms.pos.domain.model.** { *; }
 -keepclassmembers class com.hotelpms.pos.domain.model.** { *; }
+-keep class com.google.gson.reflect.TypeToken { *; }
+-keep class * extends com.google.gson.reflect.TypeToken
 
 # OkHttp SSE
 -keep class okhttp3.sse.** { *; }

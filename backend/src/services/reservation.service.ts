@@ -178,6 +178,16 @@ export class ReservationService {
             paymentMethod: data.paymentMethod || null,
             notes: `Hébergement ${data.guestName} — Chambre ${reservation.room.number} (${nights} nuit${nights > 1 ? 's' : ''})`,
             status: 'ISSUED',
+            items: {
+              create: [
+                {
+                  description: `Chambre ${reservation.room.number} (${reservation.room.type}) — ${nights} nuit${nights > 1 ? 's' : ''}`,
+                  quantity: nights,
+                  unitPrice: Number(room.pricePerNight),
+                  totalPrice: Number(totalPrice),
+                },
+              ],
+            },
           },
         });
         invoiceId = invoice.id;

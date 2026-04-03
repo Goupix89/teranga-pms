@@ -187,7 +187,7 @@ export class ReceiptService {
             items: { include: { article: { select: { name: true } } } },
           },
         },
-        reservation: { select: { guestName: true, checkIn: true, checkOut: true } },
+        reservation: { select: { guestName: true, checkIn: true, checkOut: true, room: { select: { number: true, type: true } } } },
         createdBy: { select: { firstName: true, lastName: true } },
       },
     });
@@ -316,6 +316,19 @@ export class ReceiptService {
             total: qty * up,
           });
         }
+      } else if (invoice.reservation) {
+        // Fallback for reservation invoices created without items
+        const res = invoice.reservation;
+        const checkIn = new Date(res.checkIn);
+        const checkOut = new Date(res.checkOut);
+        const nights = Math.max(1, Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24)));
+        const pricePerNight = nights > 0 ? totalAmount / nights : totalAmount;
+        displayItems.push({
+          description: `Chambre ${res.room?.number || '—'} — ${nights} nuit${nights > 1 ? 's' : ''}`,
+          quantity: nights,
+          unitPrice: pricePerNight,
+          total: totalAmount,
+        });
       }
 
       doc.font('Helvetica').fontSize(9);
