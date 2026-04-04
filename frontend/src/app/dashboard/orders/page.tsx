@@ -233,6 +233,11 @@ export default function OrdersPage() {
                       {order.items?.map((item) => (
                         <div key={item.id}>{item.quantity}x {item.article?.name || item.articleId}</div>
                       ))}
+                      {order.notes && (
+                        <div className="mt-1 text-xs text-primary-600 italic bg-primary-50 rounded px-1.5 py-0.5">
+                          📝 {order.notes}
+                        </div>
+                      )}
                     </td>
                     <td className="font-medium">{formatCurrency(order.totalAmount)}</td>
                     <td><StatusBadge status={order.status} /></td>

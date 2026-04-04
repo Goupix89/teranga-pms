@@ -224,6 +224,30 @@ private fun MenuView(viewModel: OrdersViewModel, uiState: OrdersUiState) {
             }
         }
 
+        // Order notes
+        OutlinedTextField(
+            value = uiState.orderNotes,
+            onValueChange = { viewModel.setOrderNotes(it) },
+            placeholder = { Text("Instructions cuisine (ex: sans piment, bien cuit...)", fontSize = 12.sp) },
+            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = BronzeAbomey, modifier = Modifier.size(18.dp)) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 4.dp),
+            singleLine = false,
+            maxLines = 2,
+            textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = TerreFon,
+                unfocusedTextColor = TerreFon,
+                cursorColor = RougeDahomey,
+                focusedBorderColor = RougeDahomey,
+                unfocusedBorderColor = BronzeAbomey,
+                focusedLabelColor = RougeDahomey,
+                unfocusedLabelColor = BronzeAbomey
+            ),
+            shape = RoundedCornerShape(8.dp)
+        )
+
         // Category tabs: Restaurant / Boissons
         TabRow(
             selectedTabIndex = if (uiState.menuTab == "Restaurant") 0 else 1,
@@ -257,6 +281,36 @@ private fun MenuView(viewModel: OrdersViewModel, uiState: OrdersUiState) {
                 unselectedContentColor = SableOuidah.copy(alpha = 0.7f)
             )
         }
+
+        // Search bar
+        OutlinedTextField(
+            value = uiState.menuSearchQuery,
+            onValueChange = { viewModel.setMenuSearchQuery(it) },
+            placeholder = { Text("Rechercher un article...", fontSize = 13.sp) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = BronzeAbomey, modifier = Modifier.size(20.dp)) },
+            trailingIcon = {
+                if (uiState.menuSearchQuery.isNotEmpty()) {
+                    IconButton(onClick = { viewModel.setMenuSearchQuery("") }) {
+                        Icon(Icons.Default.Clear, contentDescription = "Effacer", tint = BronzeAbomey, modifier = Modifier.size(18.dp))
+                    }
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            singleLine = true,
+            textStyle = LocalTextStyle.current.copy(fontSize = 14.sp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = TerreFon,
+                unfocusedTextColor = TerreFon,
+                cursorColor = RougeDahomey,
+                focusedBorderColor = RougeDahomey,
+                unfocusedBorderColor = BronzeAbomey,
+                focusedLabelColor = RougeDahomey,
+                unfocusedLabelColor = BronzeAbomey
+            ),
+            shape = RoundedCornerShape(8.dp)
+        )
 
         // Menu grid
         if (uiState.isLoadingArticles) {

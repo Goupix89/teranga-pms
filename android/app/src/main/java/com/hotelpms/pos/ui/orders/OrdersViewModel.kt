@@ -37,6 +37,8 @@ data class OrdersUiState(
     val viewMode: String = "menu", // "menu" or "orders"
     val tableNumber: String = "",
     val paymentMethod: String = "CASH",
+    val orderNotes: String = "",
+    val menuSearchQuery: String = "",
     val qrCodeData: QrCodeData? = null,
     val showQrCode: Boolean = false,
     val isCreating: Boolean = false,
@@ -59,14 +61,17 @@ data class OrdersUiState(
     val menuArticles: List<Article>
         get() {
             val foodCategories = listOf("Restaurant", "Nourriture")
+            val drinkCategories = listOf("Boissons", "Bar")
+            val query = menuSearchQuery.trim().lowercase()
             return articles.filter { article ->
                 val catName = article.category?.name
                 val matchesTab = if (menuTab == "Restaurant") {
-                    catName in foodCategories
+                    catName in foodCategories || (catName != null && catName !in drinkCategories && catName !in foodCategories) || catName == null
                 } else {
-                    catName == menuTab
+                    catName in drinkCategories
                 }
-                matchesTab && article.isApproved
+                val matchesSearch = query.isEmpty() || article.name.lowercase().contains(query)
+                matchesTab && article.isApproved && matchesSearch
             }
         }
 
@@ -151,7 +156,7 @@ class OrdersViewModel @Inject constructor(
         viewModelScope.launch {
             uiState = uiState.copy(isLoadingArticles = true)
             try {
-                val response = apiService.getArticles(menuOnly = true)
+                val response = apiService.getArticles()
                 if (response.isSuccessful) {
                     uiState = uiState.copy(
                         articles = response.body()?.data ?: emptyList(),
@@ -172,12 +177,20 @@ class OrdersViewModel @Inject constructor(
         uiState = uiState.copy(menuTab = tab)
     }
 
+    fun setMenuSearchQuery(query: String) {
+        uiState = uiState.copy(menuSearchQuery = query)
+    }
+
     fun setTableNumber(table: String) {
         uiState = uiState.copy(tableNumber = table)
     }
 
     fun setPaymentMethod(method: String) {
         uiState = uiState.copy(paymentMethod = method)
+    }
+
+    fun setOrderNotes(notes: String) {
+        uiState = uiState.copy(orderNotes = notes)
     }
 
     fun addToCart(article: Article) {
@@ -205,7 +218,7 @@ class OrdersViewModel @Inject constructor(
     }
 
     fun clearCart() {
-        uiState = uiState.copy(cart = emptyList(), tableNumber = "")
+        uiState = uiState.copy(cart = emptyList(), tableNumber = "", orderNotes = "")
     }
 
     fun setStatusFilter(status: String?) {
@@ -244,6 +257,7 @@ class OrdersViewModel @Inject constructor(
                     establishmentId = estId,
                     tableNumber = uiState.tableNumber,
                     paymentMethod = uiState.paymentMethod,
+                    notes = uiState.orderNotes.ifBlank { null },
                     items = uiState.cart.map { entry ->
                         CreateOrderItem(
                             articleId = entry.article.id,
@@ -261,6 +275,7 @@ class OrdersViewModel @Inject constructor(
                         successMessage = "Commande créée — facture générée",
                         cart = emptyList(),
                         tableNumber = "",
+                        orderNotes = "",
                         viewMode = "orders"
                     )
                     fetchOrders()

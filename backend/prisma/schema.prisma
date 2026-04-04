@@ -539,6 +539,7 @@ model Article {
   stockAlerts    StockAlert[]
 
   @@unique([tenantId, sku])
+  @@unique([tenantId, name])
   @@index([tenantId])
   @@index([establishmentId])
   @@index([tenantId, currentStock])

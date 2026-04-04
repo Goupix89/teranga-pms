@@ -900,6 +900,12 @@ articleRouter.post('/', authenticate, requireDAFOrManager, validate(v.createArti
       estRole = membership?.role || null;
     }
 
+    // Check for duplicate article name
+    const existingArticle = await articleService.findByName(req.user!.tenantId, articleData.name);
+    if (existingArticle) {
+      return res.status(409).json({ success: false, error: `Un article avec le nom "${articleData.name}" existe déjà` });
+    }
+
     if (estRole === 'MANAGER' || estRole === 'DAF') {
       // Manager and DAF create articles requiring approval (from DAF/OWNER or OWNER respectively)
       const article = await articleService.create(req.user!.tenantId, {

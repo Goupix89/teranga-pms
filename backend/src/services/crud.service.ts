@@ -589,6 +589,13 @@ export class ArticleService {
     return { ...article, unitPrice: Number(article.unitPrice), costPrice: Number(article.costPrice) };
   }
 
+  async findByName(tenantId: string, name: string) {
+    const db = createTenantClient(tenantId);
+    return db.article.findFirst({
+      where: { tenantId, name: { equals: name, mode: 'insensitive' }, isActive: true },
+    });
+  }
+
   async create(tenantId: string, data: {
     categoryId?: string; name: string; sku?: string;
     description?: string; imageUrl?: string; unitPrice: number; costPrice?: number;
