@@ -1110,7 +1110,11 @@ approvalRouter.post('/', authenticate, requireDAFOrManager, validate(v.createApp
 
 approvalRouter.post('/:id/approve', authenticate, requireDAF,
   asyncHandler(async (req, res) => {
-    const data = await approvalService.approve(req.user!.tenantId, req.params.id, req.user!.id);
+    // Determine reviewer's effective role (SUPERADMIN counts as OWNER)
+    const reviewerRole = req.user!.role === 'SUPERADMIN'
+      ? 'SUPERADMIN'
+      : req.user?.memberships?.map(m => m.role).includes('OWNER') ? 'OWNER' : 'DAF';
+    const data = await approvalService.approve(req.user!.tenantId, req.params.id, req.user!.id, reviewerRole);
     res.json({ success: true, data });
   })
 );

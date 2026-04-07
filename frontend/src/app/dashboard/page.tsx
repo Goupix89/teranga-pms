@@ -21,6 +21,8 @@ import {
   ArrowRightLeft,
   Clock,
   LayoutGrid,
+  Users,
+  Eye,
 } from 'lucide-react';
 import {
   BarChart,
@@ -88,6 +90,15 @@ function useCleaningActive(establishmentId: string | null) {
     queryKey: ['cleaning-active', establishmentId],
     queryFn: () => apiGet<any>(`/cleaning/active/${establishmentId}`),
     enabled: !!establishmentId,
+  });
+}
+
+function useAllOrders(establishmentId: string | null) {
+  return useQuery({
+    queryKey: ['all-orders-dashboard', establishmentId],
+    queryFn: () => apiGet<any>(`/orders?limit=500${establishmentId ? `&establishmentId=${establishmentId}` : ''}`),
+    enabled: !!establishmentId,
+    refetchInterval: 30000,
   });
 }
 
@@ -847,6 +858,270 @@ function ManagerDashboard({ establishmentId }: { establishmentId: string | null 
 }
 
 // =============================================================================
+// MAITRE D'HOTEL Dashboard
+// =============================================================================
+
+function MaitreHotelDashboard({
+  establishmentId,
+  userId,
+}: {
+  establishmentId: string | null;
+  userId: string | undefined;
+}) {
+  const { data: allOrdersData } = useAllOrders(establishmentId);
+  const { data: orderStats } = useOrderStats(establishmentId);
+  const { data: myOrderStats } = useOrderStats(establishmentId, userId);
+  const { data: rooms } = useRoomsStats();
+
+  const allOrders = allOrdersData?.data || [];
+  const stats = orderStats?.data || {};
+  const myStats = myOrderStats?.data || {};
+  const roomsData = rooms?.data || [];
+
+  const available = roomsData.filter((r: any) => r.status === 'AVAILABLE').length;
+  const occupied = roomsData.filter((r: any) => r.status === 'OCCUPIED').length;
+  const totalRooms = roomsData.length;
+
+  // Per-server breakdown
+  const byServer: Record<string, { name: string; orders: any[] }> = {};
+  allOrders.forEach((order: any) => {
+    const serverId = order.createdBy?.id || 'unknown';
+    if (!byServer[serverId]) {
+      const name = order.createdBy
+        ? `${order.createdBy.firstName || ''} ${order.createdBy.lastName || ''}`.trim()
+        : 'Inconnu';
+      byServer[serverId] = { name, orders: [] };
+    }
+    byServer[serverId].orders.push(order);
+  });
+
+  const serverBreakdown = Object.values(byServer)
+    .map((s) => ({
+      name: s.name,
+      total: s.orders.length,
+      revenue: s.orders.reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0),
+      pending: s.orders.filter((o: any) => o.status === 'PENDING').length,
+      preparing: s.orders.filter((o: any) => o.status === 'PREPARING' || o.status === 'IN_PROGRESS').length,
+      ready: s.orders.filter((o: any) => o.status === 'READY').length,
+      served: s.orders.filter((o: any) => o.status === 'SERVED').length,
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  const totalRevenue = allOrders.reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0);
+  const pendingCount = allOrders.filter((o: any) => o.status === 'PENDING').length;
+  const readyCount = allOrders.filter((o: any) => o.status === 'READY').length;
+
+  const statusColor = (s: string) =>
+    s === 'AVAILABLE' ? 'bg-sage-100 text-sage-700' :
+    s === 'OCCUPIED' ? 'bg-primary-100 text-primary-700' :
+    s === 'MAINTENANCE' ? 'bg-amber-100 text-amber-700' :
+    s === 'CLEANING' ? 'bg-blue-100 text-blue-700' :
+    'bg-wood-100 text-wood-600';
+
+  const statusLabel = (s: string) =>
+    s === 'AVAILABLE' ? 'Libre' :
+    s === 'OCCUPIED' ? 'Occupée' :
+    s === 'MAINTENANCE' ? 'Maintenance' :
+    s === 'CLEANING' ? 'Nettoyage' :
+    s === 'OUT_OF_ORDER' ? 'Hors service' : s;
+
+  return (
+    <div className="space-y-8">
+      <PageHeader
+        title="Tableau de bord"
+        subtitle="Maître d'hôtel — Vue d'ensemble du service"
+      />
+      <div className="divider-teranga" />
+
+      {/* Overview stats */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <StatCard
+          title="Commandes du jour"
+          value={stats.today ?? allOrders.length}
+          icon={UtensilsCrossed}
+          color="accent"
+        />
+        <StatCard
+          title="Revenu du jour"
+          value={formatCurrency(totalRevenue)}
+          icon={DollarSign}
+          color="sage"
+        />
+        <StatCard
+          title="En attente"
+          value={pendingCount}
+          icon={Clock}
+          color="amber"
+        />
+        <StatCard
+          title="Prêtes à servir"
+          value={readyCount}
+          icon={CheckCircle2}
+          color="primary"
+        />
+        <StatCard
+          title="Mes commandes"
+          value={myStats.today ?? '—'}
+          icon={ClipboardList}
+          color="primary"
+        />
+      </div>
+
+      {/* Per-server breakdown */}
+      <div>
+        <h2 className="font-display text-lg font-bold text-wood-800 mb-4">
+          <Users className="inline h-5 w-5 mr-2 text-accent-500" />
+          Performance par serveur
+        </h2>
+        <div className="card-accent overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-wood-100 bg-wood-50/50">
+                  <th className="px-4 py-3 text-left font-semibold text-wood-600">Serveur</th>
+                  <th className="px-4 py-3 text-center font-semibold text-wood-600">Commandes</th>
+                  <th className="px-4 py-3 text-center font-semibold text-wood-600">Revenu</th>
+                  <th className="px-4 py-3 text-center font-semibold text-wood-600">En attente</th>
+                  <th className="px-4 py-3 text-center font-semibold text-wood-600">En préparation</th>
+                  <th className="px-4 py-3 text-center font-semibold text-wood-600">Prêtes</th>
+                  <th className="px-4 py-3 text-center font-semibold text-wood-600">Servies</th>
+                </tr>
+              </thead>
+              <tbody>
+                {serverBreakdown.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-wood-400">
+                      Aucune commande aujourd&apos;hui
+                    </td>
+                  </tr>
+                ) : (
+                  serverBreakdown.map((server, i) => (
+                    <tr
+                      key={i}
+                      className="border-b border-wood-50 hover:bg-accent-50/30 transition-colors"
+                    >
+                      <td className="px-4 py-3 font-semibold text-wood-800">{server.name}</td>
+                      <td className="px-4 py-3 text-center font-bold text-wood-700">{server.total}</td>
+                      <td className="px-4 py-3 text-center text-wood-700">{formatCurrency(server.revenue)}</td>
+                      <td className="px-4 py-3 text-center">
+                        {server.pending > 0 ? (
+                          <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
+                            {server.pending}
+                          </span>
+                        ) : (
+                          <span className="text-wood-300">0</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {server.preparing > 0 ? (
+                          <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-700">
+                            {server.preparing}
+                          </span>
+                        ) : (
+                          <span className="text-wood-300">0</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {server.ready > 0 ? (
+                          <span className="inline-flex items-center rounded-full bg-sage-100 px-2 py-0.5 text-xs font-bold text-sage-700">
+                            {server.ready}
+                          </span>
+                        ) : (
+                          <span className="text-wood-300">0</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="text-wood-500">{server.served}</span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* Room status overview */}
+      <div>
+        <h2 className="font-display text-lg font-bold text-wood-800 mb-4">
+          <BedDouble className="inline h-5 w-5 mr-2 text-accent-500" />
+          État des chambres
+        </h2>
+        <div className="grid gap-3 sm:grid-cols-3 mb-4">
+          <StatCard title="Libres" value={available} icon={BedDouble} color="sage" />
+          <StatCard title="Occupées" value={occupied} icon={BedDouble} color="primary" />
+          <StatCard title="Total" value={totalRooms} icon={BedDouble} color="accent" />
+        </div>
+        <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-2">
+          {roomsData.map((r: any) => (
+            <div
+              key={r.id}
+              className={`rounded-lg px-2 py-2 text-center text-xs font-bold ${statusColor(r.status)}`}
+              title={`${r.number} — ${statusLabel(r.status)}`}
+            >
+              <div className="text-sm">{r.number}</div>
+              <div className="text-[10px] font-medium opacity-80">{statusLabel(r.status)}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* My orders stats */}
+      <div>
+        <h2 className="font-display text-lg font-bold text-wood-800 mb-4">
+          <Eye className="inline h-5 w-5 mr-2 text-accent-500" />
+          Mes statistiques
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <StatCard
+            title="Mes commandes aujourd'hui"
+            value={myStats.today ?? '—'}
+            icon={UtensilsCrossed}
+            color="accent"
+          />
+          <StatCard
+            title="Ma semaine"
+            value={myStats.thisWeek ?? '—'}
+            icon={ClipboardList}
+            color="primary"
+          />
+          <StatCard
+            title="Mon mois"
+            value={myStats.thisMonth ?? '—'}
+            icon={TrendingUp}
+            color="sage"
+          />
+        </div>
+      </div>
+
+      {/* Quick actions */}
+      <div className="card-accent p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-display font-bold text-wood-800">Accès rapide</h3>
+        </div>
+        <div className="flex gap-3 flex-wrap">
+          <Link
+            href="/dashboard/orders"
+            className="btn-primary inline-flex items-center gap-2"
+          >
+            <UtensilsCrossed className="h-4 w-4" />
+            Voir les commandes
+          </Link>
+          <Link
+            href="/dashboard/reports"
+            className="btn-secondary inline-flex items-center gap-2"
+          >
+            <TrendingUp className="h-4 w-4" />
+            Rapports
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
 // DAF Dashboard
 // =============================================================================
 
@@ -1196,6 +1471,13 @@ export default function DashboardPage() {
     case 'POS':
       return (
         <ServerDashboard
+          establishmentId={currentEstablishmentId}
+          userId={user?.id}
+        />
+      );
+    case 'MAITRE_HOTEL':
+      return (
+        <MaitreHotelDashboard
           establishmentId={currentEstablishmentId}
           userId={user?.id}
         />

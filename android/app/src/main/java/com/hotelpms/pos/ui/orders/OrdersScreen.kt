@@ -139,6 +139,9 @@ fun OrdersScreen(
                     itemCount = uiState.cartItemCount,
                     total = uiState.cartTotal,
                     isCreating = uiState.isCreating,
+                    cart = uiState.cart,
+                    onAdd = { viewModel.addToCart(it) },
+                    onRemove = { viewModel.removeFromCart(it) },
                     onCheckout = { viewModel.submitOrder() }
                 )
             }
@@ -513,50 +516,133 @@ private fun CartBottomBar(
     itemCount: Int,
     total: Double,
     isCreating: Boolean,
+    cart: List<CartEntry> = emptyList(),
+    onAdd: (Article) -> Unit = {},
+    onRemove: (String) -> Unit = {},
     onCheckout: () -> Unit
 ) {
+    var expanded by remember { mutableStateOf(false) }
+
     Surface(
         color = TerreFon,
         shadowElevation = 8.dp
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(
-                    text = "$itemCount article${if (itemCount > 1) "s" else ""}",
-                    fontSize = 12.sp,
-                    color = SableOuidah.copy(alpha = 0.7f)
-                )
-                Text(
-                    text = formatFcfa(total),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = OrBeninois
-                )
+        Column {
+            // Expandable cart items
+            if (expanded && cart.isNotEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Récapitulatif", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = OrBeninois)
+                        IconButton(onClick = { expanded = false }, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Default.ExpandMore, contentDescription = "Réduire", tint = SableOuidah, modifier = Modifier.size(20.dp))
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    HorizontalDivider(color = SableOuidah.copy(alpha = 0.2f))
+                    Spacer(Modifier.height(4.dp))
+                    cart.forEach { entry ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = entry.article.name,
+                                fontSize = 13.sp,
+                                color = SableOuidah,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                IconButton(onClick = { onRemove(entry.article.id) }, modifier = Modifier.size(24.dp)) {
+                                    Icon(Icons.Default.Remove, contentDescription = "Retirer", tint = RougeDahomey, modifier = Modifier.size(16.dp))
+                                }
+                                Text(
+                                    text = "${entry.quantity}",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = SableOuidah
+                                )
+                                IconButton(onClick = { onAdd(entry.article) }, modifier = Modifier.size(24.dp)) {
+                                    Icon(Icons.Default.Add, contentDescription = "Ajouter", tint = VertBeninois, modifier = Modifier.size(16.dp))
+                                }
+                                Text(
+                                    text = formatFcfa(entry.total),
+                                    fontSize = 12.sp,
+                                    color = OrBeninois,
+                                    modifier = Modifier.width(70.dp),
+                                    textAlign = TextAlign.End
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    HorizontalDivider(color = SableOuidah.copy(alpha = 0.2f))
+                }
             }
 
-            Button(
-                onClick = onCheckout,
-                enabled = !isCreating,
-                colors = ButtonDefaults.buttonColors(containerColor = RougeDahomey),
-                contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
+            // Main bar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                if (isCreating) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        color = Color.White,
-                        strokeWidth = 2.dp
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (expanded) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
+                        contentDescription = null,
+                        tint = SableOuidah.copy(alpha = 0.6f),
+                        modifier = Modifier.size(20.dp)
                     )
                     Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = "$itemCount article${if (itemCount > 1) "s" else ""}",
+                            fontSize = 12.sp,
+                            color = SableOuidah.copy(alpha = 0.7f)
+                        )
+                        Text(
+                            text = formatFcfa(total),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = OrBeninois
+                        )
+                    }
                 }
-                Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Commander", fontWeight = FontWeight.Bold, color = Color.White)
+
+                Button(
+                    onClick = onCheckout,
+                    enabled = !isCreating,
+                    colors = ButtonDefaults.buttonColors(containerColor = RougeDahomey),
+                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
+                ) {
+                    if (isCreating) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Commander", fontWeight = FontWeight.Bold, color = Color.White)
+                }
             }
         }
     }

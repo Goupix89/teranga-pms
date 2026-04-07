@@ -328,6 +328,14 @@ export class OrderService {
         },
       });
 
+      // Cancel the associated invoice when an order is cancelled
+      if (status === 'CANCELLED' && order.invoiceId) {
+        await tx.invoice.update({
+          where: { id: order.invoiceId },
+          data: { status: 'CANCELLED' },
+        });
+      }
+
       // Notify on every status change so all roles see updates in real-time
       const statusLabels: Record<string, string> = {
         IN_PROGRESS: 'en preparation',

@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.hotelpms.pos.data.local.TokenManager
 import com.hotelpms.pos.data.remote.PmsApiService
 import com.hotelpms.pos.domain.model.DashboardStats
+import com.hotelpms.pos.domain.model.Order
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -33,7 +34,20 @@ data class DashboardUiState(
     val averageDuration: Int = 0,
     // Cook stats
     val preparingCount: Int = 0,
-    val readyCount: Int = 0
+    val readyCount: Int = 0,
+    // Order lists for Server / MAITRE_HOTEL dashboards
+    val myRecentOrders: List<Order> = emptyList(),
+    val allOrders: List<Order> = emptyList(),
+    // Per-server breakdown (name → count, revenue)
+    val serverBreakdown: List<ServerOrderSummary> = emptyList()
+)
+
+data class ServerOrderSummary(
+    val serverName: String,
+    val orderCount: Int,
+    val revenue: Double,
+    val pendingCount: Int,
+    val readyCount: Int
 )
 
 @HiltViewModel
@@ -77,6 +91,7 @@ class DashboardViewModel @Inject constructor(
 
                 when (role.uppercase()) {
                     "MANAGER", "DAF", "OWNER" -> fetchManagerStats(role.uppercase())
+                    "MAITRE_HOTEL" -> fetchMaitreHotelStats()
                     "COOK" -> fetchCookStats()
                     "CLEANER" -> fetchCleanerStats()
                     "SERVER" -> fetchServerStats()
@@ -215,9 +230,63 @@ class DashboardViewModel @Inject constructor(
                 myOrdersCount = myOrders.size,
                 readyToServeCount = orderList.count { it.status == "READY" },
                 myDailyTotal = myOrders.sumOf { it.totalAmount },
+                myRecentOrders = myOrders.sortedByDescending { it.createdAt }.take(10),
+                allOrders = orderList,
                 stats = DashboardStats(
                     pendingOrders = orderList.count { it.status == "PENDING" },
                     todayOrders = orderList.size,
+                    availableRooms = roomList.count { it.status == "AVAILABLE" },
+                    occupiedRooms = roomList.count { it.status == "OCCUPIED" },
+                    cleaningRooms = roomList.count { it.status == "CLEANING" },
+                    totalRooms = roomList.size
+                ),
+                isLoading = false
+            )
+        } catch (e: Exception) {
+            uiState = uiState.copy(isLoading = false, error = e.message)
+        }
+    }
+
+    private suspend fun fetchMaitreHotelStats() {
+        try {
+            val ordersDeferred = viewModelScope.async {
+                try { api.getOrders(establishmentId) } catch (_: Exception) { null }
+            }
+            val roomsDeferred = viewModelScope.async {
+                try { api.getRooms(establishmentId) } catch (_: Exception) { null }
+            }
+
+            val orders = ordersDeferred.await()
+            val rooms = roomsDeferred.await()
+
+            val orderList = orders?.data ?: emptyList()
+            val roomList = rooms?.data ?: emptyList()
+            val myOrders = orderList.filter { it.createdBy?.id == tokenManager.userId }
+
+            // Per-server breakdown
+            val byServer = orderList.groupBy { it.createdBy?.id ?: "unknown" }
+            val serverBreakdown = byServer.map { (_, serverOrders) ->
+                val name = serverOrders.firstOrNull()?.createdBy?.let { "${it.firstName} ${it.lastName}" } ?: "Inconnu"
+                ServerOrderSummary(
+                    serverName = name,
+                    orderCount = serverOrders.size,
+                    revenue = serverOrders.sumOf { it.totalAmount },
+                    pendingCount = serverOrders.count { it.status == "PENDING" || it.status == "IN_PROGRESS" },
+                    readyCount = serverOrders.count { it.status == "READY" }
+                )
+            }.sortedByDescending { it.orderCount }
+
+            uiState = uiState.copy(
+                myOrdersCount = myOrders.size,
+                readyToServeCount = orderList.count { it.status == "READY" },
+                myDailyTotal = myOrders.sumOf { it.totalAmount },
+                myRecentOrders = myOrders.sortedByDescending { it.createdAt }.take(10),
+                allOrders = orderList,
+                serverBreakdown = serverBreakdown,
+                stats = DashboardStats(
+                    pendingOrders = orderList.count { it.status == "PENDING" },
+                    todayOrders = orderList.size,
+                    todayRevenue = orderList.sumOf { it.totalAmount },
                     availableRooms = roomList.count { it.status == "AVAILABLE" },
                     occupiedRooms = roomList.count { it.status == "OCCUPIED" },
                     cleaningRooms = roomList.count { it.status == "CLEANING" },

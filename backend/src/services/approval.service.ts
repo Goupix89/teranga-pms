@@ -99,13 +99,22 @@ export class ApprovalService {
    * Approve a pending approval request.
    * Handles side effects based on approval type.
    */
-  async approve(tenantId: string, id: string, reviewerId: string) {
+  async approve(tenantId: string, id: string, reviewerId: string, reviewerRole?: string) {
     return prisma.$transaction(async (tx) => {
       const request = await tx.approvalRequest.findFirst({
         where: { id, tenantId, status: 'PENDING' },
       });
 
       if (!request) throw new NotFoundError('Demande d\'approbation');
+
+      // DAF cannot approve their own article creations — only OWNER/SUPERADMIN can
+      if (
+        request.type === 'ARTICLE_CREATION' &&
+        request.requestedById === reviewerId &&
+        reviewerRole !== 'OWNER' && reviewerRole !== 'SUPERADMIN'
+      ) {
+        throw new ValidationError('Vous ne pouvez pas approuver vos propres créations d\'articles. Seul un propriétaire ou superadmin le peut.');
+      }
 
       // Mark as approved
       const approved = await tx.approvalRequest.update({

@@ -97,16 +97,34 @@ export default function ReportsPage() {
   const cleaning = roomList.filter((r: any) => r.status === 'CLEANING').length;
   const occupancyRate = totalRooms > 0 ? Math.round((occupied / totalRooms) * 100) : 0;
 
-  // Revenue
-  const totalRevenue = orderList.reduce((sum: number, o: any) => sum + (Number(o.totalAmount) || 0), 0);
+  // Identify merged source orders (order numbers referenced in "Regroupement:" notes)
+  const mergedSourceOrderNumbers = new Set<string>();
+  orderList.forEach((o: any) => {
+    if (o.notes?.startsWith('Regroupement:')) {
+      const nums = o.notes.replace('Regroupement:', '').split(',').map((s: string) => s.trim());
+      nums.forEach((n: string) => mergedSourceOrderNumbers.add(n));
+    }
+  });
+
+  // Active orders: exclude cancelled, pending, and merged source orders
+  const cancelledOrders = orderList.filter((o: any) => o.status === 'CANCELLED');
+  const cancelledCount = cancelledOrders.length;
+  const activeOrders = orderList.filter((o: any) =>
+    o.status !== 'CANCELLED' &&
+    o.status !== 'PENDING' &&
+    !mergedSourceOrderNumbers.has(o.orderNumber)
+  );
+
+  // Revenue: only from non-cancelled, non-pending, non-merged-source orders
+  const totalRevenue = activeOrders.reduce((sum: number, o: any) => sum + (Number(o.totalAmount) || 0), 0);
   const paidInvoices = invoiceList.filter((i: any) => i.status === 'PAID');
   const totalPaid = paidInvoices.reduce((sum: number, i: any) => sum + (Number(i.totalAmount) || 0), 0);
   const pendingInvoices = invoiceList.filter((i: any) => ['ISSUED', 'OVERDUE'].includes(i.status));
   const totalPending = pendingInvoices.reduce((sum: number, i: any) => sum + (Number(i.totalAmount) || 0), 0);
 
-  // Orders per server
+  // Orders per server — exclude cancelled, pending, and merged source orders
   const serverOrders: Record<string, { name: string; count: number; revenue: number }> = {};
-  orderList.forEach((o: any) => {
+  activeOrders.forEach((o: any) => {
     if (o.createdBy) {
       const key = o.createdBy.id;
       if (!serverOrders[key]) {
@@ -118,7 +136,7 @@ export default function ReportsPage() {
   });
   const serverChartData = Object.values(serverOrders).sort((a, b) => b.count - a.count);
 
-  // Orders by status
+  // Orders by status (all orders for visibility)
   const statusCounts: Record<string, number> = {};
   orderList.forEach((o: any) => {
     statusCounts[o.status] = (statusCounts[o.status] || 0) + 1;
@@ -133,9 +151,9 @@ export default function ReportsPage() {
     { name: 'Maintenance', value: maintenance },
   ].filter(d => d.value > 0);
 
-  // Payment methods breakdown
+  // Payment methods breakdown (active orders only)
   const paymentCounts: Record<string, number> = {};
-  orderList.forEach((o: any) => {
+  activeOrders.forEach((o: any) => {
     const pm = o.paymentMethod || 'NON_DEFINI';
     paymentCounts[pm] = (paymentCounts[pm] || 0) + 1;
   });
@@ -172,12 +190,12 @@ export default function ReportsPage() {
   });
   const stockCategoryData = Object.values(stockByCategory);
 
-  // --- Cash register (caisse) ---
-  const cashOrders = orderList.filter((o: any) => o.paymentMethod === 'CASH' && o.status !== 'CANCELLED');
+  // --- Cash register (caisse) — use activeOrders (excludes cancelled, pending, merged source) ---
+  const cashOrders = activeOrders.filter((o: any) => o.paymentMethod === 'CASH');
   const totalCash = cashOrders.reduce((sum: number, o: any) => sum + (Number(o.totalAmount) || 0), 0);
-  const cardOrders = orderList.filter((o: any) => o.paymentMethod === 'CARD' && o.status !== 'CANCELLED');
+  const cardOrders = activeOrders.filter((o: any) => o.paymentMethod === 'CARD');
   const totalCard = cardOrders.reduce((sum: number, o: any) => sum + (Number(o.totalAmount) || 0), 0);
-  const mobileOrders = orderList.filter((o: any) => ['MOBILE_MONEY', 'MOOV_MONEY', 'MIXX_BY_YAS', 'FEDAPAY'].includes(o.paymentMethod) && o.status !== 'CANCELLED');
+  const mobileOrders = activeOrders.filter((o: any) => ['MOBILE_MONEY', 'MOOV_MONEY', 'MIXX_BY_YAS', 'FEDAPAY'].includes(o.paymentMethod));
   const totalMobile = mobileOrders.reduce((sum: number, o: any) => sum + (Number(o.totalAmount) || 0), 0);
   const totalCaisse = totalCash + totalCard + totalMobile;
 
@@ -221,7 +239,7 @@ export default function ReportsPage() {
         csv += `${c.name},${c.count},${c.value}\n`;
       });
       csv += `\nDétail des transactions\nN° Commande,Date,Montant,Mode paiement,Serveur\n`;
-      orderList.filter((o: any) => o.status !== 'CANCELLED' && o.paymentMethod).forEach((o: any) => {
+      activeOrders.filter((o: any) => o.paymentMethod).forEach((o: any) => {
         csv += `${o.orderNumber},${o.createdAt},${o.totalAmount},${paymentLabels[o.paymentMethod] || o.paymentMethod},${o.createdBy?.firstName || ''} ${o.createdBy?.lastName || ''}\n`;
       });
     }
@@ -270,7 +288,7 @@ export default function ReportsPage() {
       <div className="divider-teranga" />
 
       {/* KPI Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard
           title="Taux d'occupation"
           value={`${occupancyRate}%`}
@@ -281,7 +299,7 @@ export default function ReportsPage() {
         <StatCard
           title="Revenus totaux"
           value={formatCurrency(totalRevenue)}
-          subtitle={`${orderList.length} commandes`}
+          subtitle={`${activeOrders.length} commandes (hors annulées/en attente)`}
           icon={TrendingUp}
           color="accent"
         />
@@ -298,6 +316,13 @@ export default function ReportsPage() {
           subtitle={`Semaine: ${stats.thisWeek ?? '—'} | Mois: ${stats.thisMonth ?? '—'}`}
           icon={UtensilsCrossed}
           color="accent"
+        />
+        <StatCard
+          title="Commandes annulées"
+          value={cancelledCount}
+          subtitle={`sur ${orderList.length} au total`}
+          icon={UtensilsCrossed}
+          color="red"
         />
       </div>
 
@@ -481,7 +506,7 @@ export default function ReportsPage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between rounded-lg bg-sage-50/50 border border-sage-200 p-4">
               <div>
-                <p className="text-sm text-sage-600">Revenus des commandes</p>
+                <p className="text-sm text-sage-600">Revenus des commandes (hors annulées)</p>
                 <p className="text-2xl font-bold text-sage-800">{formatCurrency(totalRevenue)}</p>
               </div>
               <TrendingUp className="h-8 w-8 text-sage-400" />
