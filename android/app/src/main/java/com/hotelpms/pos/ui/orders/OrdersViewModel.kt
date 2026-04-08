@@ -9,6 +9,7 @@ import com.hotelpms.pos.data.local.TokenManager
 import com.hotelpms.pos.data.remote.OrderSyncService
 import com.hotelpms.pos.data.remote.PmsApiService
 import com.hotelpms.pos.domain.model.*
+import com.hotelpms.pos.domain.model.RestaurantTable
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.launchIn
@@ -44,6 +45,8 @@ data class OrdersUiState(
     val isCreating: Boolean = false,
     val isSimulating: Boolean = false,
     val simulationSuccess: Boolean = false,
+    // Restaurant tables
+    val restaurantTables: List<RestaurantTable> = emptyList(),
     // Merge invoices
     val showMergeDialog: Boolean = false,
     val mergeTableQuery: String = "",
@@ -62,13 +65,17 @@ data class OrdersUiState(
         get() {
             val foodCategories = listOf("Restaurant", "Nourriture")
             val drinkCategories = listOf("Boissons", "Bar")
+            val leisureCategories = listOf("Loisirs", "Loisir")
+            val locationCategories = listOf("Location")
             val query = menuSearchQuery.trim().lowercase()
             return articles.filter { article ->
                 val catName = article.category?.name
-                val matchesTab = if (menuTab == "Restaurant") {
-                    catName in foodCategories || (catName != null && catName !in drinkCategories && catName !in foodCategories) || catName == null
-                } else {
-                    catName in drinkCategories
+                val matchesTab = when (menuTab) {
+                    "Restaurant" -> catName in foodCategories || (catName != null && catName !in drinkCategories && catName !in leisureCategories && catName !in locationCategories && catName !in foodCategories) || catName == null
+                    "Boissons" -> catName in drinkCategories
+                    "Loisirs" -> catName in leisureCategories
+                    "Location" -> catName in locationCategories
+                    else -> true
                 }
                 val matchesSearch = query.isEmpty() || article.name.lowercase().contains(query)
                 matchesTab && article.isApproved && matchesSearch
@@ -95,6 +102,7 @@ class OrdersViewModel @Inject constructor(
     init {
         fetchOrders()
         fetchArticles()
+        fetchRestaurantTables()
         startRealtimeSync()
     }
 
@@ -166,6 +174,19 @@ class OrdersViewModel @Inject constructor(
             } catch (_: Exception) {
                 uiState = uiState.copy(isLoadingArticles = false)
             }
+        }
+    }
+
+    fun fetchRestaurantTables() {
+        viewModelScope.launch {
+            try {
+                val response = apiService.getRestaurantTables()
+                if (response.isSuccessful) {
+                    uiState = uiState.copy(
+                        restaurantTables = response.body()?.data ?: emptyList()
+                    )
+                }
+            } catch (_: Exception) { }
         }
     }
 
@@ -253,9 +274,16 @@ class OrdersViewModel @Inject constructor(
             uiState = uiState.copy(isCreating = true, error = null)
             try {
                 val estId = tokenManager.establishmentId ?: return@launch
+                val isLeisure = uiState.menuTab == "Loisirs"
+                val isLocation = uiState.menuTab == "Location"
                 val request = CreateOrderRequest(
                     establishmentId = estId,
-                    tableNumber = uiState.tableNumber,
+                    tableNumber = uiState.tableNumber.ifBlank { null },
+                    orderType = when {
+                        isLeisure -> "LEISURE"
+                        isLocation -> "LOCATION"
+                        else -> "RESTAURANT"
+                    },
                     paymentMethod = uiState.paymentMethod,
                     notes = uiState.orderNotes.ifBlank { null },
                     items = uiState.cart.map { entry ->

@@ -108,16 +108,39 @@ export class ReceiptService {
       this.drawSeparator(doc, margin, contentWidth);
 
       // ── Order info ──
-      doc.font('Helvetica-Bold').fontSize(9).text(`Reçu N° ${order.orderNumber}`, { align: 'center' });
+      const isLeisure = (order as any).orderType === 'LEISURE';
+      const isLocation = (order as any).orderType === 'LOCATION';
+      const ticketTitle = isLeisure
+        ? `TICKET LOISIR N° ${order.orderNumber}`
+        : isLocation
+          ? `TICKET LOCATION N° ${order.orderNumber}`
+          : `Reçu N° ${order.orderNumber}`;
+      doc.font('Helvetica-Bold').fontSize(9).text(ticketTitle, { align: 'center' });
       doc.font('Helvetica').fontSize(7);
       doc.text(`Date: ${formatDate(order.createdAt)}`);
       if (order.tableNumber) doc.text(`Table: ${order.tableNumber}`);
-      doc.text(`Serveur: ${order.createdBy.firstName} ${order.createdBy.lastName}`);
+      doc.text(`${(isLeisure || isLocation) ? 'Émis par' : 'Serveur'}: ${order.createdBy.firstName} ${order.createdBy.lastName}`);
+
+      // Leisure/Location-specific: start time, end time
+      if (isLeisure || isLocation) {
+        const startTime = (order as any).startTime;
+        const endTime = (order as any).endTime;
+        if (startTime) doc.text(`Début: ${formatDate(new Date(startTime))}`);
+        if (endTime) doc.text(`Fin: ${formatDate(new Date(endTime))}`);
+        if (!startTime && !endTime) doc.text(`Horaire: Non défini`);
+      }
 
       doc.moveDown(0.3);
       this.drawSeparator(doc, margin, contentWidth);
 
       // ── Items ──
+      if (isLeisure) {
+        doc.font('Helvetica-Bold').fontSize(8).text('LOISIR', { align: 'center' });
+        doc.moveDown(0.2);
+      } else if (isLocation) {
+        doc.font('Helvetica-Bold').fontSize(8).text('LOCATION', { align: 'center' });
+        doc.moveDown(0.2);
+      }
       doc.font('Helvetica').fontSize(7);
       const items = order.items as any[];
       for (const item of items) {
@@ -160,7 +183,7 @@ export class ReceiptService {
 
       // ── Footer ──
       doc.font('Helvetica').fontSize(7);
-      doc.text('Merci de votre visite !', { align: 'center' });
+      doc.text(isLeisure ? 'Bon divertissement !' : isLocation ? 'Bonne location !' : 'Merci de votre visite !', { align: 'center' });
       doc.moveDown(0.2);
       doc.fontSize(6).text(`Généré le ${formatDate(new Date())}`, { align: 'center' });
 
@@ -275,6 +298,14 @@ export class ReceiptService {
         doc.text(`Serveur: ${firstOrder.createdBy.firstName} ${firstOrder.createdBy.lastName}`);
         const pm = firstOrder.paymentMethod || invoice.paymentMethod;
         if (pm) doc.text(`Paiement: ${PAYMENT_LABELS[pm] || pm}`);
+      } else {
+        // Manual invoice (no linked orders) — show the creator
+        if (invoice.createdBy) {
+          doc.text(`Émise par: ${invoice.createdBy.firstName} ${invoice.createdBy.lastName}`);
+        }
+        if (invoice.paymentMethod) {
+          doc.text(`Paiement: ${PAYMENT_LABELS[invoice.paymentMethod] || invoice.paymentMethod}`);
+        }
       }
 
       doc.moveDown(0.8);

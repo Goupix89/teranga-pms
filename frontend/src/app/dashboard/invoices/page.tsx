@@ -16,7 +16,7 @@ export default function InvoicesPage() {
   const currentUser = useAuthStore((s) => s.user);
   const currentEstRole = useAuthStore((s) => s.currentEstablishmentRole);
   const isSuperAdmin = currentUser?.role === 'SUPERADMIN';
-  const canDownloadPdf = isSuperAdmin || ['OWNER', 'DAF', 'MANAGER', 'MAITRE_HOTEL', 'SERVER'].includes(currentEstRole || '');
+  const canDownloadPdf = isSuperAdmin || ['OWNER', 'DAF', 'MANAGER', 'MAITRE_HOTEL', 'SERVER', 'POS'].includes(currentEstRole || '');
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');

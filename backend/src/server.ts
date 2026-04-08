@@ -38,6 +38,7 @@ import {
   supplierRouter,
   approvalRouter,
   cleaningRouter,
+  restaurantTableRouter,
   integrationRouter,
   channelRouter,
   apiKeyRouter,
@@ -357,6 +358,7 @@ app.use('/api/suppliers', supplierRouter);
 app.use('/api/orders', orderRouter);
 app.use('/api/approvals', approvalRouter);
 app.use('/api/cleaning', cleaningRouter);
+app.use('/api/restaurant-tables', restaurantTableRouter);
 app.use('/api/stock-alerts', stockAlertRouter);
 app.use('/api/notifications', notificationRouter);
 

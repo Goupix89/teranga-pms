@@ -178,6 +178,7 @@ model Tenant {
   cleaningSessions CleaningSession[]
   notifications      Notification[]
   channelConnections ChannelConnection[]
+  restaurantTables   RestaurantTable[]
 
   @@map("tenants")
 }
@@ -285,6 +286,7 @@ model Establishment {
   cleaningSessions CleaningSession[]
   articles         Article[]
   categories       ArticleCategory[]
+  restaurantTables RestaurantTable[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -380,11 +382,14 @@ model Order {
   createdById     String      @map("created_by_id")
   orderNumber     String      @map("order_number")
   tableNumber     String?     @map("table_number")
+  orderType       String      @default("RESTAURANT") @map("order_type") // RESTAURANT | LEISURE
   status          OrderStatus    @default(PENDING)
   paymentMethod   PaymentMethod? @map("payment_method")
   notes           String?
   totalAmount     Decimal        @default(0) @map("total_amount") @db.Decimal(10, 2)
   invoiceId       String?        @map("invoice_id")
+  startTime       DateTime?   @map("start_time")
+  endTime         DateTime?   @map("end_time")
   readyAt         DateTime?   @map("ready_at")
   servedAt        DateTime?   @map("served_at")
   createdAt       DateTime    @default(now()) @map("created_at")
@@ -414,6 +419,29 @@ model OrderItem {
   article Article @relation(fields: [articleId], references: [id])
 
   @@map("order_items")
+}
+
+// =============================================================================
+// RESTAURANT TABLES
+// =============================================================================
+
+model RestaurantTable {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  establishmentId String   @map("establishment_id")
+  number          String
+  label           String?
+  capacity        Int      @default(4)
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id])
+  establishment Establishment @relation(fields: [establishmentId], references: [id])
+
+  @@unique([tenantId, establishmentId, number])
+  @@index([tenantId, establishmentId])
+  @@map("restaurant_tables")
 }
 
 // =============================================================================

@@ -93,9 +93,12 @@ export class OrderService {
     data: {
       establishmentId: string;
       tableNumber?: string;
+      orderType?: string; // RESTAURANT | LEISURE | LOCATION
       items: Array<{ articleId: string; quantity: number }>;
       notes?: string;
       paymentMethod?: string;
+      startTime?: string;
+      endTime?: string;
     }
   ) {
     if (!data.items || data.items.length === 0) {
@@ -164,10 +167,13 @@ export class OrderService {
           establishmentId: data.establishmentId,
           createdById: userId,
           orderNumber,
+          orderType: data.orderType || 'RESTAURANT',
           tableNumber: data.tableNumber,
           paymentMethod: data.paymentMethod as any,
           notes: data.notes,
           totalAmount,
+          startTime: data.startTime ? new Date(data.startTime) : null,
+          endTime: data.endTime ? new Date(data.endTime) : null,
           items: {
             create: itemsData,
           },

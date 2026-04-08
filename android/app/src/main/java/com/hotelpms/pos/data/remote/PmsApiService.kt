@@ -63,6 +63,12 @@ interface PmsApiService {
     @GET("api/reservations/{id}/receipt")
     suspend fun getReservationReceipt(@Path("id") id: String): Response<ResponseBody>
 
+    // Restaurant Tables
+    @GET("api/restaurant-tables")
+    suspend fun getRestaurantTables(
+        @Query("establishmentId") establishmentId: String? = null
+    ): RestaurantTablesResponse
+
     // Orders
     @GET("api/orders")
     suspend fun getOrders(

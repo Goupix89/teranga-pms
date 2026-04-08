@@ -194,23 +194,58 @@ private fun MenuView(viewModel: OrdersViewModel, uiState: OrdersUiState) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            OutlinedTextField(
-                value = uiState.tableNumber,
-                onValueChange = { viewModel.setTableNumber(it) },
-                label = { Text("Table", fontSize = 12.sp, color = BronzeAbomey) },
-                modifier = Modifier.width(80.dp),
-                singleLine = true,
-                textStyle = LocalTextStyle.current.copy(fontSize = 14.sp, color = TerreFon),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = TerreFon,
-                    unfocusedTextColor = TerreFon,
-                    cursorColor = RougeDahomey,
-                    focusedBorderColor = RougeDahomey,
-                    unfocusedBorderColor = BronzeAbomey,
-                    focusedLabelColor = RougeDahomey,
-                    unfocusedLabelColor = BronzeAbomey
-                )
-            )
+            // Table dropdown
+            Box(modifier = Modifier.width(120.dp)) {
+                var tableExpanded by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(
+                    expanded = tableExpanded,
+                    onExpandedChange = { tableExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = if (uiState.tableNumber.isBlank()) "— Table —" else uiState.tableNumber,
+                        onValueChange = {},
+                        readOnly = true,
+                        modifier = Modifier
+                            .menuAnchor()
+                            .fillMaxWidth(),
+                        singleLine = true,
+                        textStyle = LocalTextStyle.current.copy(fontSize = 13.sp, color = TerreFon),
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = tableExpanded) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TerreFon,
+                            unfocusedTextColor = TerreFon,
+                            focusedBorderColor = RougeDahomey,
+                            unfocusedBorderColor = BronzeAbomey
+                        )
+                    )
+                    ExposedDropdownMenu(
+                        expanded = tableExpanded,
+                        onDismissRequest = { tableExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("— Sans table —", fontSize = 13.sp) },
+                            onClick = {
+                                viewModel.setTableNumber("")
+                                tableExpanded = false
+                            }
+                        )
+                        uiState.restaurantTables.forEach { table ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        "${table.number}${table.label?.let { " — $it" } ?: ""} (${table.capacity}p)",
+                                        fontSize = 13.sp
+                                    )
+                                },
+                                onClick = {
+                                    viewModel.setTableNumber(table.number)
+                                    tableExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
 
             // Payment method chips
             val methods = listOf("CASH" to "Espèces", "MOOV_MONEY" to "Flooz", "MIXX_BY_YAS" to "Yas", "FEDAPAY" to "FedaPay")
@@ -251,11 +286,12 @@ private fun MenuView(viewModel: OrdersViewModel, uiState: OrdersUiState) {
             shape = RoundedCornerShape(8.dp)
         )
 
-        // Category tabs: Restaurant / Boissons
-        TabRow(
-            selectedTabIndex = if (uiState.menuTab == "Restaurant") 0 else 1,
+        // Category tabs: Restaurant / Boissons / Loisirs / Location
+        ScrollableTabRow(
+            selectedTabIndex = when (uiState.menuTab) { "Restaurant" -> 0; "Boissons" -> 1; "Loisirs" -> 2; "Location" -> 3; else -> 0 },
             containerColor = TerreFon,
-            contentColor = OrBeninois
+            contentColor = OrBeninois,
+            edgePadding = 4.dp
         ) {
             Tab(
                 selected = uiState.menuTab == "Restaurant",
@@ -264,7 +300,7 @@ private fun MenuView(viewModel: OrdersViewModel, uiState: OrdersUiState) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Restaurant, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Restaurant", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text("Restaurant", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 },
                 selectedContentColor = OrBeninois,
@@ -277,7 +313,33 @@ private fun MenuView(viewModel: OrdersViewModel, uiState: OrdersUiState) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.LocalBar, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Boissons", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text("Boissons", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                },
+                selectedContentColor = OrBeninois,
+                unselectedContentColor = SableOuidah.copy(alpha = 0.7f)
+            )
+            Tab(
+                selected = uiState.menuTab == "Loisirs",
+                onClick = { viewModel.setMenuTab("Loisirs") },
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.SportsEsports, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Loisirs", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                },
+                selectedContentColor = OrBeninois,
+                unselectedContentColor = SableOuidah.copy(alpha = 0.7f)
+            )
+            Tab(
+                selected = uiState.menuTab == "Location",
+                onClick = { viewModel.setMenuTab("Location") },
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Location", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 },
                 selectedContentColor = OrBeninois,
@@ -324,7 +386,7 @@ private fun MenuView(viewModel: OrdersViewModel, uiState: OrdersUiState) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
-                        if (uiState.menuTab == "Restaurant") Icons.Default.Restaurant else Icons.Default.LocalBar,
+                        when (uiState.menuTab) { "Restaurant" -> Icons.Default.Restaurant; "Loisirs" -> Icons.Default.SportsEsports; "Location" -> Icons.Default.Key; else -> Icons.Default.LocalBar },
                         contentDescription = null,
                         modifier = Modifier.size(48.dp),
                         tint = BronzeAbomey
@@ -392,16 +454,30 @@ private fun MenuCard(
                         .fillMaxWidth()
                         .height(80.dp)
                         .background(
-                            if (article.category?.name == "Restaurant") RougeDahomey.copy(alpha = 0.1f)
-                            else OrBeninois.copy(alpha = 0.1f)
+                            when (article.category?.name) {
+                                "Restaurant" -> RougeDahomey.copy(alpha = 0.1f)
+                                "Loisirs", "Loisir" -> Color(0xFF9C27B0).copy(alpha = 0.1f)
+                                "Location" -> Color(0xFF00796B).copy(alpha = 0.1f)
+                                else -> OrBeninois.copy(alpha = 0.1f)
+                            }
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        if (article.category?.name == "Restaurant") Icons.Default.Restaurant else Icons.Default.LocalBar,
+                        when (article.category?.name) {
+                            "Restaurant" -> Icons.Default.Restaurant
+                            "Loisirs", "Loisir" -> Icons.Default.SportsEsports
+                            "Location" -> Icons.Default.Key
+                            else -> Icons.Default.LocalBar
+                        },
                         contentDescription = null,
                         modifier = Modifier.size(32.dp),
-                        tint = if (article.category?.name == "Restaurant") RougeDahomey else OrBeninois
+                        tint = when (article.category?.name) {
+                            "Restaurant" -> RougeDahomey
+                            "Loisirs", "Loisir" -> Color(0xFF9C27B0)
+                            "Location" -> Color(0xFF00796B)
+                            else -> OrBeninois
+                        }
                     )
                 }
             }

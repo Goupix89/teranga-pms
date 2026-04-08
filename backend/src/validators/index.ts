@@ -296,6 +296,13 @@ export const updateCategorySchema = z.object({
   parentId: z.string().uuid().optional().nullable(),
 });
 
+export const createRestaurantTableSchema = z.object({
+  establishmentId: z.string().uuid(),
+  number: z.string().min(1).max(20),
+  label: z.string().max(100).optional(),
+  capacity: z.number().int().min(1).max(50).default(4),
+});
+
 export const createStockMovementSchema = z.object({
   articleId: z.string().uuid(),
   establishmentId: z.string().uuid().optional(),
@@ -374,12 +381,15 @@ export const registerTenantSchema = z.object({
 export const createOrderSchema = z.object({
   establishmentId: z.string().uuid(),
   tableNumber: z.string().max(20).optional(),
+  orderType: z.enum(['RESTAURANT', 'LEISURE', 'LOCATION']).default('RESTAURANT'),
   paymentMethod: z.enum(['CASH', 'CARD', 'BANK_TRANSFER', 'MOBILE_MONEY', 'MOOV_MONEY', 'MIXX_BY_YAS', 'FEDAPAY', 'OTHER']).optional(),
   items: z.array(z.object({
     articleId: z.string().uuid(),
     quantity: z.number().int().positive().max(999),
   })).min(1, 'Au moins un article requis'),
   notes: z.string().max(500).optional(),
+  startTime: z.string().datetime().optional(),
+  endTime: z.string().datetime().optional(),
 });
 
 export const updateOrderStatusSchema = z.object({

@@ -17,8 +17,8 @@ export default function OrdersPage() {
   const currentEstId = useAuthStore((s) => s.currentEstablishmentId);
   const currentEstRole = useAuthStore((s) => s.currentEstablishmentRole);
   const isSuperAdmin = currentUser?.role === 'SUPERADMIN';
-  const canCreate = isSuperAdmin || ['DAF', 'MANAGER', 'MAITRE_HOTEL', 'SERVER'].includes(currentEstRole || '');
-  const canDownloadReceipt = isSuperAdmin || ['OWNER', 'DAF', 'MANAGER', 'MAITRE_HOTEL', 'SERVER'].includes(currentEstRole || '');
+  const canCreate = isSuperAdmin || ['DAF', 'MANAGER', 'MAITRE_HOTEL', 'SERVER', 'POS'].includes(currentEstRole || '');
+  const canDownloadReceipt = isSuperAdmin || ['OWNER', 'DAF', 'MANAGER', 'MAITRE_HOTEL', 'SERVER', 'POS'].includes(currentEstRole || '');
 
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState('');
@@ -28,7 +28,7 @@ export default function OrdersPage() {
 
   const isDAFOrManager = isSuperAdmin || ['DAF', 'MANAGER'].includes(currentEstRole || '');
 
-  const [form, setForm] = useState({ establishmentId: '', tableNumber: '', paymentMethod: 'MOOV_MONEY' as PaymentMethod, items: [{ articleId: '', quantity: 1 }] as Array<{ articleId: string; quantity: number }>, notes: '' });
+  const [form, setForm] = useState({ establishmentId: '', tableNumber: '', orderType: 'RESTAURANT' as 'RESTAURANT' | 'LEISURE' | 'LOCATION', paymentMethod: 'MOOV_MONEY' as PaymentMethod, items: [{ articleId: '', quantity: 1 }] as Array<{ articleId: string; quantity: number }>, notes: '', startTime: '', endTime: '' });
   const [qrModal, setQrModal] = useState<{ open: boolean; invoiceId?: string; qrCode?: string; invoiceNumber?: string; totalAmount?: number; paymentLabel?: string; currency?: string; paid?: boolean; fedapayCheckoutUrl?: string }>({ open: false });
 
   // Fetch users (servers) for filter — only for DAF/Manager
@@ -47,6 +47,11 @@ export default function OrdersPage() {
   const { data: articlesData } = useQuery({
     queryKey: ['articles-menu', currentEstId],
     queryFn: () => apiGet<any>(`/articles?limit=200&menuOnly=true${currentEstId ? `&establishmentId=${currentEstId}` : ''}`),
+  });
+
+  const { data: tablesData } = useQuery({
+    queryKey: ['restaurant-tables', currentEstId],
+    queryFn: () => apiGet<any>(`/restaurant-tables${currentEstId ? `?establishmentId=${currentEstId}` : ''}`),
   });
 
   const { data: statsData } = useQuery({
@@ -111,7 +116,7 @@ export default function OrdersPage() {
     }
   };
 
-  const resetForm = () => setForm({ establishmentId: currentEstId || '', tableNumber: '', paymentMethod: 'MOOV_MONEY', items: [{ articleId: '', quantity: 1 }], notes: '' });
+  const resetForm = () => setForm({ establishmentId: currentEstId || '', tableNumber: '', orderType: 'RESTAURANT', paymentMethod: 'MOOV_MONEY', items: [{ articleId: '', quantity: 1 }], notes: '', startTime: '', endTime: '' });
 
   const addItem = () => setForm((prev) => ({ ...prev, items: [...prev.items, { articleId: '', quantity: 1 }] }));
   const removeItem = (idx: number) => setForm((prev) => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
@@ -227,7 +232,15 @@ export default function OrdersPage() {
               <tbody>
                 {orders.map((order: Order) => (
                   <tr key={order.id}>
-                    <td className="font-medium text-gray-900">{order.orderNumber}</td>
+                    <td className="font-medium text-gray-900">
+                      {order.orderNumber}
+                      {order.orderType === 'LEISURE' && (
+                        <span className="ml-1.5 inline-flex items-center rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700">Loisir</span>
+                      )}
+                      {order.orderType === 'LOCATION' && (
+                        <span className="ml-1.5 inline-flex items-center rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] font-medium text-teal-700">Location</span>
+                      )}
+                    </td>
                     <td className="text-gray-500">{order.tableNumber || '-'}</td>
                     <td className="text-sm text-gray-600">
                       {order.items?.map((item) => (
@@ -404,16 +417,32 @@ export default function OrdersPage() {
           const body = {
             establishmentId: form.establishmentId || currentEstId,
             tableNumber: form.tableNumber || undefined,
+            orderType: form.orderType,
             paymentMethod: form.paymentMethod,
             items: form.items.filter((i) => i.articleId),
             notes: form.notes || undefined,
+            startTime: (form.orderType === 'LEISURE' || form.orderType === 'LOCATION') && form.startTime ? new Date(form.startTime).toISOString() : undefined,
+            endTime: (form.orderType === 'LEISURE' || form.orderType === 'LOCATION') && form.endTime ? new Date(form.endTime).toISOString() : undefined,
           };
           createMutation.mutate(body);
         }} className="space-y-4">
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div>
-              <label className="label">N° Table (optionnel)</label>
-              <input value={form.tableNumber} onChange={(e) => setForm({ ...form, tableNumber: e.target.value })} className="input" placeholder="Ex: T1, 12..." />
+              <label className="label">Type</label>
+              <select value={form.orderType} onChange={(e) => setForm({ ...form, orderType: e.target.value as any })} className="input">
+                <option value="RESTAURANT">Restaurant</option>
+                <option value="LEISURE">Loisir</option>
+                <option value="LOCATION">Location</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">Table (optionnel)</label>
+              <select value={form.tableNumber} onChange={(e) => setForm({ ...form, tableNumber: e.target.value })} className="input">
+                <option value="">— Sans table —</option>
+                {(tablesData?.data || []).map((t: any) => (
+                  <option key={t.id} value={t.number}>{t.number}{t.label ? ` — ${t.label}` : ''} ({t.capacity} places)</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="label">Moyen de paiement</label>
@@ -432,6 +461,19 @@ export default function OrdersPage() {
               <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="input" placeholder="Instructions spéciales..." />
             </div>
           </div>
+
+          {(form.orderType === 'LEISURE' || form.orderType === 'LOCATION') && (
+            <div className={`grid grid-cols-2 gap-4 rounded-lg border p-3 ${form.orderType === 'LEISURE' ? 'bg-purple-50 border-purple-200' : 'bg-teal-50 border-teal-200'}`}>
+              <div>
+                <label className="label">{form.orderType === 'LOCATION' ? 'Date/heure début' : 'Heure de début'} (optionnel)</label>
+                <input type="datetime-local" value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} className="input" />
+              </div>
+              <div>
+                <label className="label">{form.orderType === 'LOCATION' ? 'Date/heure fin' : 'Heure de fin'} (optionnel)</label>
+                <input type="datetime-local" value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} className="input" />
+              </div>
+            </div>
+          )}
 
           <div>
             <div className="flex items-center justify-between mb-2">

@@ -115,9 +115,13 @@ export default function ReportsPage() {
     !mergedSourceOrderNumbers.has(o.orderNumber)
   );
 
-  // Revenue: only from non-cancelled, non-pending, non-merged-source orders
-  const totalRevenue = activeOrders.reduce((sum: number, o: any) => sum + (Number(o.totalAmount) || 0), 0);
+  // Revenue: orders (non-cancelled, non-pending, non-merged-source) + manual invoices paid
+  const orderRevenue = activeOrders.reduce((sum: number, o: any) => sum + (Number(o.totalAmount) || 0), 0);
   const paidInvoices = invoiceList.filter((i: any) => i.status === 'PAID');
+  // Manual invoices = paid invoices with no linked orders (created from invoices menu)
+  const manualPaidInvoices = paidInvoices.filter((i: any) => !i.orders || i.orders.length === 0);
+  const manualPaidTotal = manualPaidInvoices.reduce((sum: number, i: any) => sum + (Number(i.totalAmount) || 0), 0);
+  const totalRevenue = orderRevenue + manualPaidTotal;
   const totalPaid = paidInvoices.reduce((sum: number, i: any) => sum + (Number(i.totalAmount) || 0), 0);
   const pendingInvoices = invoiceList.filter((i: any) => ['ISSUED', 'OVERDUE'].includes(i.status));
   const totalPending = pendingInvoices.reduce((sum: number, i: any) => sum + (Number(i.totalAmount) || 0), 0);

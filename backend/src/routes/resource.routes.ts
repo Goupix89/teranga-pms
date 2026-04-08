@@ -39,6 +39,7 @@ import { registrationService } from '../services/registration.service';
 const QRCode = require('qrcode');
 import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
+import { createTenantClient } from '../utils/prisma';
 import crypto from 'crypto';
 import { config } from '../config';
 import { encrypt, decrypt, maskSecret } from '../utils/encryption';
@@ -457,9 +458,19 @@ orderRouter.get('/:id/receipt', authenticate, requireDAFOrManagerOrServer,
   })
 );
 
-// Servers create orders
+// Servers create orders — LEISURE/LOCATION orders restricted to POS/OWNER/SUPERADMIN
 orderRouter.post('/', authenticate, requireDAFOrManagerOrServer, validate(v.createOrderSchema),
   asyncHandler(async (req, res) => {
+    if (req.body.orderType === 'LEISURE' || req.body.orderType === 'LOCATION') {
+      const userRole = req.user!.role;
+      const estRole = req.user?.memberships?.find(
+        (m) => m.establishmentId === req.body.establishmentId
+      )?.role;
+      const canCreateSpecial = userRole === 'SUPERADMIN' || estRole === 'OWNER' || estRole === 'POS';
+      if (!canCreateSpecial) {
+        return res.status(403).json({ success: false, error: 'Seuls le POS, les propriétaires et le superadmin peuvent créer des commandes de loisirs/location' });
+      }
+    }
     const data = await orderService.create(req.user!.tenantId, req.user!.id, req.body);
     res.status(201).json({ success: true, data });
   })
@@ -1130,6 +1141,76 @@ approvalRouter.get('/pending-count/:establishmentId', authenticate, requireDAF,
   asyncHandler(async (req, res) => {
     const count = await approvalService.getPendingCount(req.user!.tenantId, req.params.establishmentId);
     res.json({ success: true, data: { count } });
+  })
+);
+
+// =============================================================================
+// RESTAURANT TABLES
+// =============================================================================
+export const restaurantTableRouter = Router();
+
+restaurantTableRouter.get('/', authenticate, requireDAFOrManagerOrServer,
+  asyncHandler(async (req, res) => {
+    const db = createTenantClient(req.user!.tenantId);
+    const { establishmentId } = req.query as any;
+    const where: any = { isActive: true };
+    if (establishmentId) where.establishmentId = establishmentId;
+    const data = await db.restaurantTable.findMany({
+      where,
+      orderBy: { number: 'asc' },
+    });
+    res.json({ success: true, data });
+  })
+);
+
+restaurantTableRouter.post('/', authenticate, requireDAFOrManager, validate(v.createRestaurantTableSchema),
+  asyncHandler(async (req, res) => {
+    const db = createTenantClient(req.user!.tenantId);
+    const { establishmentId, number, label, capacity } = req.body;
+    const existing = await db.restaurantTable.findFirst({
+      where: { tenantId: req.user!.tenantId, establishmentId, number },
+    });
+    if (existing) {
+      return res.status(409).json({ success: false, error: `La table "${number}" existe déjà` });
+    }
+    const data = await db.restaurantTable.create({
+      data: {
+        tenantId: req.user!.tenantId,
+        establishmentId,
+        number,
+        label: label || null,
+        capacity: capacity || 4,
+      },
+    });
+    res.status(201).json({ success: true, data });
+  })
+);
+
+restaurantTableRouter.patch('/:id', authenticate, requireDAFOrManager,
+  asyncHandler(async (req, res) => {
+    const db = createTenantClient(req.user!.tenantId);
+    const { number, label, capacity, isActive } = req.body;
+    const data = await db.restaurantTable.update({
+      where: { id: req.params.id },
+      data: {
+        ...(number !== undefined && { number }),
+        ...(label !== undefined && { label }),
+        ...(capacity !== undefined && { capacity }),
+        ...(isActive !== undefined && { isActive }),
+      },
+    });
+    res.json({ success: true, data });
+  })
+);
+
+restaurantTableRouter.delete('/:id', authenticate, requireDAFOrManager,
+  asyncHandler(async (req, res) => {
+    const db = createTenantClient(req.user!.tenantId);
+    await db.restaurantTable.update({
+      where: { id: req.params.id },
+      data: { isActive: false },
+    });
+    res.json({ success: true, message: 'Table supprimée' });
   })
 );
 

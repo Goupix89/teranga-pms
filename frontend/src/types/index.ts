@@ -295,11 +295,14 @@ export interface Order {
   orderNumber: string;
   establishmentId: string;
   tableNumber?: string | null;
+  orderType?: 'RESTAURANT' | 'LEISURE' | 'LOCATION';
   status: OrderStatus;
   totalAmount: number;
   paymentMethod?: PaymentMethod | null;
   invoiceId?: string | null;
   notes?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
   readyAt?: string | null;
   servedAt?: string | null;
   items: OrderItem[];

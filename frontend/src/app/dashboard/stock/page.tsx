@@ -29,6 +29,8 @@ export default function StockPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [movementForm, setMovementForm] = useState({ articleId: '', type: 'PURCHASE', quantity: '', unitCost: '', reason: '' });
+  const [showNewCategory, setShowNewCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
 
   const currentEstId = useAuthStore((s) => s.currentEstablishmentId);
   const currentUser = useAuthStore((s) => s.user);
@@ -182,6 +184,21 @@ export default function StockPage() {
     },
   });
 
+  const createCategoryMutation = useMutation({
+    mutationFn: (body: any) => apiPost<any>('/categories', body),
+    onSuccess: (res: any) => {
+      queryClient.invalidateQueries({ queryKey: ['categories'] });
+      const created = res?.data || res;
+      if (created?.id) {
+        setArticleForm(prev => ({ ...prev, categoryId: created.id }));
+      }
+      setShowNewCategory(false);
+      setNewCategoryName('');
+      toast.success('Catégorie créée');
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.error || 'Erreur création catégorie'),
+  });
+
   const handleSubmitArticle = (e: React.FormEvent) => {
     e.preventDefault();
     setFieldErrors({});
@@ -315,6 +332,8 @@ export default function StockPage() {
                           <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
                             art.category?.name === 'Restaurant' ? 'bg-primary-100 text-primary-700' :
                             art.category?.name === 'Boissons' ? 'bg-blue-100 text-blue-700' :
+                            art.category?.name === 'Loisirs' ? 'bg-purple-100 text-purple-700' :
+                            art.category?.name === 'Location' ? 'bg-teal-100 text-teal-700' :
                             'bg-wood-100 text-wood-600'
                           }`}>
                             {art.category?.name || '-'}
@@ -490,28 +509,91 @@ export default function StockPage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="label">Catégorie <span className="text-red-500">*</span></label>
-              <select
-                value={articleForm.categoryId}
-                onChange={(e) => { setArticleForm({ ...articleForm, categoryId: e.target.value }); setFieldErrors(prev => { const { categoryId, ...rest } = prev; return rest; }); }}
-                className={`input ${fieldErrors.categoryId ? 'border-red-500 ring-1 ring-red-500' : ''}`}
-              >
-                <option value="">— Choisir une catégorie —</option>
-                {catList.map((c: any) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+              <div className="flex gap-2">
+                <select
+                  value={articleForm.categoryId}
+                  onChange={(e) => { setArticleForm({ ...articleForm, categoryId: e.target.value }); setFieldErrors(prev => { const { categoryId, ...rest } = prev; return rest; }); }}
+                  className={`input flex-1 ${fieldErrors.categoryId ? 'border-red-500 ring-1 ring-red-500' : ''}`}
+                >
+                  <option value="">— Choisir une catégorie —</option>
+                  {catList.map((c: any) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setShowNewCategory(true)}
+                  className="btn-secondary px-2.5 text-xs whitespace-nowrap"
+                  title="Créer une catégorie"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </div>
               {fieldErrors.categoryId && <p className="text-sm text-red-600 mt-1">{fieldErrors.categoryId}</p>}
+
+              {showNewCategory && (
+                <div className="mt-2 flex gap-2 items-end rounded-lg bg-accent-50 border border-accent-200 p-2">
+                  <div className="flex-1">
+                    <label className="text-xs font-medium text-wood-600">Nom de la catégorie</label>
+                    <input
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      className="input text-sm"
+                      placeholder="Ex: Loisirs, Location..."
+                      autoFocus
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!newCategoryName.trim()) return;
+                      createCategoryMutation.mutate({
+                        name: newCategoryName.trim(),
+                        establishmentId: currentEstId || undefined,
+                      });
+                    }}
+                    disabled={!newCategoryName.trim() || createCategoryMutation.isPending}
+                    className="btn-primary text-xs px-3 py-2"
+                  >
+                    {createCategoryMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Créer'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowNewCategory(false); setNewCategoryName(''); }}
+                    className="btn-ghost p-1.5 text-wood-500"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
             </div>
             <div>
               <label className="label">Unité</label>
               <select value={articleForm.unit} onChange={(e) => setArticleForm({ ...articleForm, unit: e.target.value })} className="input">
-                <option value="plat">Plat</option>
-                <option value="verre">Verre</option>
-                <option value="bouteille">Bouteille</option>
-                <option value="canette">Canette</option>
-                <option value="pièce">Pièce</option>
-                <option value="sac">Sac</option>
-                <option value="kg">Kg</option>
+                <optgroup label="Restaurant">
+                  <option value="plat">Plat</option>
+                  <option value="verre">Verre</option>
+                  <option value="bouteille">Bouteille</option>
+                  <option value="canette">Canette</option>
+                  <option value="pièce">Pièce</option>
+                </optgroup>
+                <optgroup label="Stock">
+                  <option value="sac">Sac</option>
+                  <option value="kg">Kg</option>
+                  <option value="litre">Litre</option>
+                  <option value="carton">Carton</option>
+                </optgroup>
+                <optgroup label="Loisirs">
+                  <option value="session">Session</option>
+                  <option value="partie">Partie</option>
+                  <option value="heure">Heure</option>
+                  <option value="entrée">Entrée</option>
+                </optgroup>
+                <optgroup label="Location">
+                  <option value="jour">Jour</option>
+                  <option value="nuit">Nuit</option>
+                  <option value="semaine">Semaine</option>
+                </optgroup>
               </select>
             </div>
             <div>

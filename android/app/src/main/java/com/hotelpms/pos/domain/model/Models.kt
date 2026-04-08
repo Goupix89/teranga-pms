@@ -144,6 +144,23 @@ data class RoomsResponse(
 )
 
 // =============================================================================
+// Restaurant Tables
+// =============================================================================
+
+data class RestaurantTable(
+    val id: String,
+    val number: String,
+    val label: String? = null,
+    val capacity: Int = 4,
+    val isActive: Boolean = true
+)
+
+data class RestaurantTablesResponse(
+    val success: Boolean,
+    val data: List<RestaurantTable>
+)
+
+// =============================================================================
 // Reservations
 // =============================================================================
 
@@ -202,10 +219,14 @@ data class Order(
     val id: String,
     val orderNumber: String? = null,
     val tableNumber: String? = null,
+    val orderType: String? = "RESTAURANT",
     val status: String,
     val totalAmount: Double,
     val paymentMethod: String? = null,
     val invoiceId: String? = null,
+    val startTime: String? = null,
+    val endTime: String? = null,
+    val notes: String? = null,
     val items: List<OrderItem>? = null,
     val createdBy: UserSummary? = null,
     val createdAt: String? = null
@@ -243,9 +264,12 @@ data class OrderStatusRequest(
 data class CreateOrderRequest(
     val establishmentId: String,
     val tableNumber: String? = null,
+    val orderType: String? = "RESTAURANT",
     val paymentMethod: String? = null,
     val items: List<CreateOrderItem>,
-    val notes: String? = null
+    val notes: String? = null,
+    val startTime: String? = null,
+    val endTime: String? = null
 )
 
 data class QrCodeResponse(
