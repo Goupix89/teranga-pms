@@ -232,6 +232,7 @@ model User {
   articlesCreated     Article[]             @relation("ArticleCreator")
   notifications       Notification[]
   deviceTokens        DeviceToken[]
+  dashboardConfigs    DashboardConfig[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -287,6 +288,7 @@ model Establishment {
   articles         Article[]
   categories       ArticleCategory[]
   restaurantTables RestaurantTable[]
+  dashboardConfigs DashboardConfig[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -830,6 +832,26 @@ model SubscriptionPayment {
 
   @@index([subscriptionId])
   @@map("subscription_payments")
+}
+
+// =============================================================================
+// DASHBOARD CONFIGURATION (User widget preferences)
+// =============================================================================
+
+model DashboardConfig {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  establishmentId String?  @map("establishment_id")
+  widgets         Json     // Array of { id, enabled, order, size }
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  establishment Establishment? @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, establishmentId])
+  @@index([userId])
+  @@map("dashboard_configs")
 }
 
 // =============================================================================

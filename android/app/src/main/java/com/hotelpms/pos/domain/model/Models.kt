@@ -471,6 +471,32 @@ data class MergeInvoicesRequest(
 )
 
 // =============================================================================
+// Dashboard Config (Widget Preferences)
+// =============================================================================
+
+data class DashboardWidgetConfig(
+    val id: String,
+    val enabled: Boolean = true,
+    val order: Int = 0,
+    val size: String = "md"  // sm, md, lg
+)
+
+data class DashboardConfigResponse(
+    val success: Boolean,
+    val data: DashboardConfigData? = null
+)
+
+data class DashboardConfigData(
+    val id: String? = null,
+    val userId: String? = null,
+    val widgets: List<DashboardWidgetConfig> = emptyList()
+)
+
+data class DashboardConfigSaveRequest(
+    val widgets: List<DashboardWidgetConfig>
+)
+
+// =============================================================================
 // Generic Response
 // =============================================================================
 

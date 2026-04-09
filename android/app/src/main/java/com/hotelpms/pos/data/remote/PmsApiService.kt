@@ -183,4 +183,11 @@ interface PmsApiService {
     // Push notifications - remove FCM device token
     @HTTP(method = "DELETE", path = "api/notifications/device-token", hasBody = true)
     suspend fun removeDeviceToken(@Body body: Map<String, String>): Response<GenericResponse>
+
+    // Dashboard config (widget preferences)
+    @GET("api/dashboard-config")
+    suspend fun getDashboardConfig(): Response<DashboardConfigResponse>
+
+    @PUT("api/dashboard-config")
+    suspend fun saveDashboardConfig(@Body body: DashboardConfigSaveRequest): Response<DashboardConfigResponse>
 }

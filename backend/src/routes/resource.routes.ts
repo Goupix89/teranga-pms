@@ -2057,3 +2057,49 @@ subscriptionRouter.post('/activate', authenticate, requireSuperAdmin,
     });
   })
 );
+
+// =============================================================================
+// DASHBOARD CONFIG (User widget preferences)
+// =============================================================================
+export const dashboardConfigRouter = Router();
+
+// GET — fetch current user's dashboard config
+dashboardConfigRouter.get('/', authenticate, asyncHandler(async (req, res) => {
+  const userId = req.user!.id;
+  const establishmentId = (req.query.establishmentId as string) || null;
+
+  const db = createTenantClient(req.user!.tenantId);
+  const config = await db.dashboardConfig.findUnique({
+    where: { userId_establishmentId: { userId, establishmentId: establishmentId || '' } },
+  });
+
+  // If no config, try the one without establishment
+  if (!config && establishmentId) {
+    const fallback = await db.dashboardConfig.findUnique({
+      where: { userId_establishmentId: { userId, establishmentId: '' } },
+    });
+    return res.json({ success: true, data: fallback });
+  }
+
+  res.json({ success: true, data: config });
+}));
+
+// PUT — save/update dashboard config
+dashboardConfigRouter.put('/', authenticate, asyncHandler(async (req, res) => {
+  const userId = req.user!.id;
+  const { establishmentId, widgets } = req.body;
+  const estId = establishmentId || '';
+
+  if (!widgets || !Array.isArray(widgets)) {
+    return res.status(400).json({ success: false, error: 'widgets array is required' });
+  }
+
+  const db = createTenantClient(req.user!.tenantId);
+  const config = await db.dashboardConfig.upsert({
+    where: { userId_establishmentId: { userId, establishmentId: estId } },
+    create: { userId, establishmentId: estId || null, widgets },
+    update: { widgets },
+  });
+
+  res.json({ success: true, data: config });
+}));
