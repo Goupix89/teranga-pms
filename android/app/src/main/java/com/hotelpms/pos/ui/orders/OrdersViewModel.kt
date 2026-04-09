@@ -181,11 +181,9 @@ class OrdersViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val response = apiService.getRestaurantTables()
-                if (response.isSuccessful) {
-                    uiState = uiState.copy(
-                        restaurantTables = response.body()?.data ?: emptyList()
-                    )
-                }
+                uiState = uiState.copy(
+                    restaurantTables = response.data
+                )
             } catch (_: Exception) { }
         }
     }

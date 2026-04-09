@@ -174,7 +174,7 @@ export default function OrdersPage() {
 
       {/* Stats panel */}
       {showStats && stats && (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="card p-4 text-center">
             <p className="text-2xl font-bold text-gray-900">{stats.today}</p>
             <p className="text-sm text-gray-500">Aujourd'hui</p>
@@ -192,7 +192,7 @@ export default function OrdersPage() {
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
-        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className="input w-48">
+        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className="input w-full sm:w-48">
           <option value="">Tous les statuts</option>
           <option value="PENDING">En attente</option>
           <option value="IN_PROGRESS">En cours</option>
@@ -201,7 +201,7 @@ export default function OrdersPage() {
           <option value="CANCELLED">Annulée</option>
         </select>
         {isDAFOrManager && (
-          <select value={serverFilter} onChange={(e) => { setServerFilter(e.target.value); setPage(1); }} className="input w-56">
+          <select value={serverFilter} onChange={(e) => { setServerFilter(e.target.value); setPage(1); }} className="input w-full sm:w-56">
             <option value="">Tous les serveurs</option>
             {(usersData?.data || []).map((u: any) => (
               <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>
@@ -213,119 +213,223 @@ export default function OrdersPage() {
       {orders.length === 0 ? (
         <EmptyState icon={UtensilsCrossed} title="Aucune commande" description="Créez votre première commande" />
       ) : (
-        <div className="card">
-          <div className="table-container">
-            <table>
-              <thead>
-                <tr>
-                  <th>N° Commande</th>
-                  <th>Table</th>
-                  <th>Articles</th>
-                  <th>Total</th>
-                  <th>Statut</th>
-                  <th>Paiement</th>
-                  <th>Créée par</th>
-                  <th>Date</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {orders.map((order: Order) => (
-                  <tr key={order.id}>
-                    <td className="font-medium text-gray-900">
-                      {order.orderNumber}
-                      {order.orderType === 'LEISURE' && (
-                        <span className="ml-1.5 inline-flex items-center rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700">Loisir</span>
-                      )}
-                      {order.orderType === 'LOCATION' && (
-                        <span className="ml-1.5 inline-flex items-center rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] font-medium text-teal-700">Location</span>
-                      )}
-                    </td>
-                    <td className="text-gray-500">{order.tableNumber || '-'}</td>
-                    <td className="text-sm text-gray-600">
-                      {order.items?.map((item) => (
-                        <div key={item.id}>{item.quantity}x {item.article?.name || item.articleId}</div>
-                      ))}
-                      {order.notes && (
-                        <div className="mt-1 text-xs text-primary-600 italic bg-primary-50 rounded px-1.5 py-0.5">
-                          📝 {order.notes}
-                        </div>
-                      )}
-                    </td>
-                    <td className="font-medium">{formatCurrency(order.totalAmount)}</td>
-                    <td><StatusBadge status={order.status} /></td>
-                    <td className="text-sm">
-                      <div className="flex items-center gap-1">
-                        <span className="text-gray-600">
-                          {order.paymentMethod === 'MOOV_MONEY' ? 'Flooz' : order.paymentMethod === 'MIXX_BY_YAS' ? 'Yas' : order.paymentMethod === 'FEDAPAY' ? 'FedaPay' : order.paymentMethod || '-'}
-                        </span>
-                        {order.invoiceId && (
-                          <button
-                            onClick={async () => {
-                              try {
-                                const qrRes = await apiGet<any>(`/invoices/${order.invoiceId}/qrcode`);
-                                if (qrRes?.data) {
-                                  setQrModal({
-                                    open: true,
-                                    invoiceId: order.invoiceId!,
-                                    qrCode: qrRes.data.qrCode,
-                                    invoiceNumber: qrRes.data.invoice?.invoiceNumber,
-                                    totalAmount: qrRes.data.invoice?.totalAmount,
-                                    paymentLabel: qrRes.data.paymentLabel,
-                                    currency: qrRes.data.invoice?.currency || 'XOF',
-                                    fedapayCheckoutUrl: qrRes.data.fedapayCheckoutUrl,
-                                  });
-                                }
-                              } catch {
-                                toast.error('QR code indisponible');
-                              }
-                            }}
-                            className="btn-ghost p-1 text-primary-600 hover:text-primary-700"
-                            title="Afficher QR code de paiement"
-                          >
-                            <QrCode className="h-4 w-4" />
-                          </button>
-                        )}
-                        {canDownloadReceipt && (
-                          <button
-                            onClick={() => downloadReceipt(order.id, order.orderNumber)}
-                            className="btn-ghost p-1 text-gray-600 hover:text-gray-800"
-                            title="Télécharger le reçu PDF"
-                          >
-                            <FileDown className="h-4 w-4" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                    <td className="text-gray-500 text-sm">{order.createdBy ? `${order.createdBy.firstName} ${order.createdBy.lastName}` : '-'}</td>
-                    <td className="text-gray-400 text-xs">{formatDateTime(order.createdAt)}</td>
-                    <td>
-                      <div className="flex gap-1">
-                        {getNextStatuses(order.status).filter((action) => {
-                          if (isSuperAdmin) return true;
-                          const role = currentEstRole;
-                          if (role === 'COOK') return ['IN_PROGRESS', 'READY'].includes(action.status);
-                          if (role === 'SERVER') return action.status === 'SERVED';
-                          if (role === 'MANAGER' || role === 'DAF') return action.status === 'CANCELLED';
-                          return false;
-                        }).map((action) => (
-                          <button
-                            key={action.status}
-                            onClick={() => updateStatusMutation.mutate({ id: order.id, status: action.status })}
-                            className={`btn-ghost text-xs px-2 py-1 ${action.color}`}
-                          >
-                            {action.label}
-                          </button>
-                        ))}
-                      </div>
-                    </td>
+        <>
+          {/* Desktop table — hidden on mobile */}
+          <div className="card hidden lg:block">
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>N° Commande</th>
+                    <th>Table</th>
+                    <th>Articles</th>
+                    <th>Total</th>
+                    <th>Statut</th>
+                    <th>Paiement</th>
+                    <th>Créée par</th>
+                    <th>Date</th>
+                    <th></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {orders.map((order: Order) => (
+                    <tr key={order.id}>
+                      <td className="font-medium text-gray-900">
+                        {order.orderNumber}
+                        {order.orderType === 'LEISURE' && (
+                          <span className="ml-1.5 inline-flex items-center rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700">Loisir</span>
+                        )}
+                        {order.orderType === 'LOCATION' && (
+                          <span className="ml-1.5 inline-flex items-center rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] font-medium text-teal-700">Location</span>
+                        )}
+                      </td>
+                      <td className="text-gray-500">{order.tableNumber || '-'}</td>
+                      <td className="text-sm text-gray-600">
+                        {order.items?.map((item) => (
+                          <div key={item.id}>{item.quantity}x {item.article?.name || item.articleId}</div>
+                        ))}
+                        {order.notes && (
+                          <div className="mt-1 text-xs text-primary-600 italic bg-primary-50 rounded px-1.5 py-0.5">
+                            {order.notes}
+                          </div>
+                        )}
+                      </td>
+                      <td className="font-medium">{formatCurrency(order.totalAmount)}</td>
+                      <td><StatusBadge status={order.status} /></td>
+                      <td className="text-sm">
+                        <div className="flex items-center gap-1">
+                          <span className="text-gray-600">
+                            {order.paymentMethod === 'MOOV_MONEY' ? 'Flooz' : order.paymentMethod === 'MIXX_BY_YAS' ? 'Yas' : order.paymentMethod === 'FEDAPAY' ? 'FedaPay' : order.paymentMethod || '-'}
+                          </span>
+                          {order.invoiceId && (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const qrRes = await apiGet<any>(`/invoices/${order.invoiceId}/qrcode`);
+                                  if (qrRes?.data) {
+                                    setQrModal({
+                                      open: true,
+                                      invoiceId: order.invoiceId!,
+                                      qrCode: qrRes.data.qrCode,
+                                      invoiceNumber: qrRes.data.invoice?.invoiceNumber,
+                                      totalAmount: qrRes.data.invoice?.totalAmount,
+                                      paymentLabel: qrRes.data.paymentLabel,
+                                      currency: qrRes.data.invoice?.currency || 'XOF',
+                                      fedapayCheckoutUrl: qrRes.data.fedapayCheckoutUrl,
+                                    });
+                                  }
+                                } catch {
+                                  toast.error('QR code indisponible');
+                                }
+                              }}
+                              className="btn-ghost p-1 text-primary-600 hover:text-primary-700"
+                              title="Afficher QR code de paiement"
+                            >
+                              <QrCode className="h-4 w-4" />
+                            </button>
+                          )}
+                          {canDownloadReceipt && (
+                            <button
+                              onClick={() => downloadReceipt(order.id, order.orderNumber)}
+                              className="btn-ghost p-1 text-gray-600 hover:text-gray-800"
+                              title="Télécharger le reçu PDF"
+                            >
+                              <FileDown className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                      <td className="text-gray-500 text-sm">{order.createdBy ? `${order.createdBy.firstName} ${order.createdBy.lastName}` : '-'}</td>
+                      <td className="text-gray-400 text-xs">{formatDateTime(order.createdAt)}</td>
+                      <td>
+                        <div className="flex gap-1">
+                          {getNextStatuses(order.status).filter((action) => {
+                            if (isSuperAdmin) return true;
+                            const role = currentEstRole;
+                            if (role === 'COOK') return ['IN_PROGRESS', 'READY'].includes(action.status);
+                            if (role === 'SERVER') return action.status === 'SERVED';
+                            if (role === 'MANAGER' || role === 'DAF') return action.status === 'CANCELLED';
+                            return false;
+                          }).map((action) => (
+                            <button
+                              key={action.status}
+                              onClick={() => updateStatusMutation.mutate({ id: order.id, status: action.status })}
+                              className={`btn-ghost text-xs px-2 py-1 ${action.color}`}
+                            >
+                              {action.label}
+                            </button>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {meta && <Pagination page={meta.page} totalPages={meta.totalPages} total={meta.total} onPageChange={setPage} />}
           </div>
-          {meta && <Pagination page={meta.page} totalPages={meta.totalPages} total={meta.total} onPageChange={setPage} />}
-        </div>
+
+          {/* Mobile card layout — hidden on desktop */}
+          <div className="lg:hidden space-y-3">
+            {orders.map((order: Order) => (
+              <div key={order.id} className="card p-4 space-y-3">
+                {/* Header row */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-gray-900">{order.orderNumber}</span>
+                    {order.orderType === 'LEISURE' && (
+                      <span className="inline-flex items-center rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700">Loisir</span>
+                    )}
+                    {order.orderType === 'LOCATION' && (
+                      <span className="inline-flex items-center rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] font-medium text-teal-700">Location</span>
+                    )}
+                    <StatusBadge status={order.status} />
+                  </div>
+                  <span className="font-bold text-gray-900">{formatCurrency(order.totalAmount)}</span>
+                </div>
+
+                {/* Articles */}
+                <div className="text-sm text-gray-600">
+                  {order.items?.map((item) => (
+                    <span key={item.id} className="inline-block mr-2">{item.quantity}x {item.article?.name || item.articleId}</span>
+                  ))}
+                </div>
+
+                {order.notes && (
+                  <div className="text-xs text-primary-600 italic bg-primary-50 rounded px-2 py-1">{order.notes}</div>
+                )}
+
+                {/* Meta row */}
+                <div className="flex items-center justify-between text-xs text-gray-500">
+                  <div className="flex items-center gap-2">
+                    {order.tableNumber && <span className="bg-gray-100 rounded px-1.5 py-0.5">Table {order.tableNumber}</span>}
+                    <span>{order.paymentMethod === 'MOOV_MONEY' ? 'Flooz' : order.paymentMethod === 'MIXX_BY_YAS' ? 'Yas' : order.paymentMethod === 'FEDAPAY' ? 'FedaPay' : order.paymentMethod || '-'}</span>
+                  </div>
+                  <span>{formatDateTime(order.createdAt)}</span>
+                </div>
+
+                {order.createdBy && (
+                  <div className="text-xs text-gray-400">Par {order.createdBy.firstName} {order.createdBy.lastName}</div>
+                )}
+
+                {/* Actions row */}
+                <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-gray-100">
+                  {order.invoiceId && (
+                    <button
+                      onClick={async () => {
+                        try {
+                          const qrRes = await apiGet<any>(`/invoices/${order.invoiceId}/qrcode`);
+                          if (qrRes?.data) {
+                            setQrModal({
+                              open: true,
+                              invoiceId: order.invoiceId!,
+                              qrCode: qrRes.data.qrCode,
+                              invoiceNumber: qrRes.data.invoice?.invoiceNumber,
+                              totalAmount: qrRes.data.invoice?.totalAmount,
+                              paymentLabel: qrRes.data.paymentLabel,
+                              currency: qrRes.data.invoice?.currency || 'XOF',
+                              fedapayCheckoutUrl: qrRes.data.fedapayCheckoutUrl,
+                            });
+                          }
+                        } catch {
+                          toast.error('QR code indisponible');
+                        }
+                      }}
+                      className="btn-ghost text-xs px-2 py-1 text-primary-600"
+                    >
+                      <QrCode className="h-3.5 w-3.5 mr-1 inline" /> QR
+                    </button>
+                  )}
+                  {canDownloadReceipt && (
+                    <button
+                      onClick={() => downloadReceipt(order.id, order.orderNumber)}
+                      className="btn-ghost text-xs px-2 py-1 text-gray-600"
+                    >
+                      <FileDown className="h-3.5 w-3.5 mr-1 inline" /> Reçu
+                    </button>
+                  )}
+                  {getNextStatuses(order.status).filter((action) => {
+                    if (isSuperAdmin) return true;
+                    const role = currentEstRole;
+                    if (role === 'COOK') return ['IN_PROGRESS', 'READY'].includes(action.status);
+                    if (role === 'SERVER') return action.status === 'SERVED';
+                    if (role === 'MANAGER' || role === 'DAF') return action.status === 'CANCELLED';
+                    return false;
+                  }).map((action) => (
+                    <button
+                      key={action.status}
+                      onClick={() => updateStatusMutation.mutate({ id: order.id, status: action.status })}
+                      className={`btn-ghost text-xs px-2 py-1 ${action.color}`}
+                    >
+                      {action.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {meta && <Pagination page={meta.page} totalPages={meta.totalPages} total={meta.total} onPageChange={setPage} />}
+          </div>
+        </>
       )}
 
       {/* QR Code payment modal */}
@@ -426,7 +530,7 @@ export default function OrdersPage() {
           };
           createMutation.mutate(body);
         }} className="space-y-4">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="label">Type</label>
               <select value={form.orderType} onChange={(e) => setForm({ ...form, orderType: e.target.value as any })} className="input">

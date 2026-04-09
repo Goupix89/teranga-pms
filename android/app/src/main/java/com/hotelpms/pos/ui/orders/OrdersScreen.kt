@@ -182,6 +182,7 @@ fun OrdersScreen(
 // MENU VIEW — Restaurant menu card layout
 // =============================================================================
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MenuView(viewModel: OrdersViewModel, uiState: OrdersUiState) {
     Column(modifier = Modifier.fillMaxSize()) {
@@ -428,14 +429,29 @@ private fun MenuCard(
     onAdd: () -> Unit,
     onRemove: () -> Unit
 ) {
+    var showDetail by remember { mutableStateOf(false) }
+
+    // Article detail dialog
+    if (showDetail) {
+        ArticleDetailDialog(
+            article = article,
+            cartQuantity = cartQuantity,
+            onAdd = onAdd,
+            onRemove = onRemove,
+            onDismiss = { showDetail = false }
+        )
+    }
+
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { showDetail = true },
         colors = CardDefaults.cardColors(containerColor = CremeGanvie),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(12.dp)
     ) {
         Column {
-            // Image
+            // Image — aspect ratio preserved
             if (article.imageUrl != null) {
                 val fullUrl = if (article.imageUrl.startsWith("http")) article.imageUrl
                     else "${BuildConfig.API_BASE_URL}${article.imageUrl}"
@@ -444,15 +460,15 @@ private fun MenuCard(
                     contentDescription = article.name,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(100.dp)
+                        .aspectRatio(4f / 3f)
                         .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
-                    contentScale = ContentScale.Crop
+                    contentScale = ContentScale.Fit
                 )
             } else {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(80.dp)
+                        .aspectRatio(4f / 3f)
                         .background(
                             when (article.category?.name) {
                                 "Restaurant" -> RougeDahomey.copy(alpha = 0.1f)
@@ -492,19 +508,6 @@ private fun MenuCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-
-                // Description
-                if (article.description != null) {
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = article.description,
-                        fontSize = 11.sp,
-                        color = BronzeAbomey,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        lineHeight = 14.sp
-                    )
-                }
 
                 Spacer(Modifier.height(6.dp))
 
@@ -575,6 +578,219 @@ private fun MenuCard(
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(2.dp))
                             Text("Ajouter", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// =============================================================================
+// ARTICLE DETAIL DIALOG
+// =============================================================================
+
+@Composable
+private fun ArticleDetailDialog(
+    article: Article,
+    cartQuantity: Int,
+    onAdd: () -> Unit,
+    onRemove: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = CremeGanvie),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        ) {
+            Column {
+                // Close button
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(4.dp)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Fermer", tint = BronzeAbomey)
+                    }
+                }
+
+                // Full image
+                if (article.imageUrl != null) {
+                    val fullUrl = if (article.imageUrl.startsWith("http")) article.imageUrl
+                        else "${BuildConfig.API_BASE_URL}${article.imageUrl}"
+                    AsyncImage(
+                        model = fullUrl,
+                        contentDescription = article.name,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 180.dp, max = 280.dp),
+                        contentScale = ContentScale.Fit
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(140.dp)
+                            .background(
+                                when (article.category?.name) {
+                                    "Restaurant" -> RougeDahomey.copy(alpha = 0.1f)
+                                    "Loisirs", "Loisir" -> Color(0xFF9C27B0).copy(alpha = 0.1f)
+                                    "Location" -> Color(0xFF00796B).copy(alpha = 0.1f)
+                                    else -> OrBeninois.copy(alpha = 0.1f)
+                                }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            when (article.category?.name) {
+                                "Restaurant" -> Icons.Default.Restaurant
+                                "Loisirs", "Loisir" -> Icons.Default.SportsEsports
+                                "Location" -> Icons.Default.Key
+                                else -> Icons.Default.LocalBar
+                            },
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = when (article.category?.name) {
+                                "Restaurant" -> RougeDahomey
+                                "Loisirs", "Loisir" -> Color(0xFF9C27B0)
+                                "Location" -> Color(0xFF00796B)
+                                else -> OrBeninois
+                            }
+                        )
+                    }
+                }
+
+                Column(modifier = Modifier.padding(16.dp)) {
+                    // Name
+                    Text(
+                        text = article.name,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp,
+                        color = TerreFon
+                    )
+
+                    Spacer(Modifier.height(4.dp))
+
+                    // Category badge
+                    if (article.category?.name != null) {
+                        Surface(
+                            color = when (article.category.name) {
+                                "Restaurant" -> RougeDahomey.copy(alpha = 0.1f)
+                                "Boissons", "Bar" -> OrBeninois.copy(alpha = 0.1f)
+                                "Loisirs", "Loisir" -> Color(0xFF9C27B0).copy(alpha = 0.1f)
+                                "Location" -> Color(0xFF00796B).copy(alpha = 0.1f)
+                                else -> BronzeAbomey.copy(alpha = 0.1f)
+                            },
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = article.category.name,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = when (article.category.name) {
+                                    "Restaurant" -> RougeDahomey
+                                    "Boissons", "Bar" -> OrBeninois
+                                    "Loisirs", "Loisir" -> Color(0xFF9C27B0)
+                                    "Location" -> Color(0xFF00796B)
+                                    else -> BronzeAbomey
+                                },
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    // Price
+                    Text(
+                        text = formatFcfa(article.unitPrice),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 22.sp,
+                        color = RougeDahomey
+                    )
+
+                    // Description
+                    if (!article.description.isNullOrBlank()) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            text = article.description,
+                            fontSize = 14.sp,
+                            color = BronzeAbomey,
+                            lineHeight = 20.sp
+                        )
+                    }
+
+                    // Stock info
+                    if (article.currentStock > 0) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = "En stock : ${article.currentStock} ${article.unit}",
+                            fontSize = 12.sp,
+                            color = VertBeninois
+                        )
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    // Add / quantity controls
+                    if (cartQuantity > 0) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            FilledTonalButton(
+                                onClick = onRemove,
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = RougeDahomey.copy(alpha = 0.1f),
+                                    contentColor = RougeDahomey
+                                )
+                            ) {
+                                Icon(Icons.Default.Remove, contentDescription = "Retirer", modifier = Modifier.size(20.dp))
+                            }
+                            Spacer(Modifier.width(16.dp))
+                            Surface(
+                                color = OrBeninois.copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    text = "$cartQuantity",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 20.sp,
+                                    color = TerreFon,
+                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
+                                )
+                            }
+                            Spacer(Modifier.width(16.dp))
+                            FilledTonalButton(
+                                onClick = onAdd,
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = VertBeninois.copy(alpha = 0.15f),
+                                    contentColor = VertBeninois
+                                )
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = "Ajouter", modifier = Modifier.size(20.dp))
+                            }
+                        }
+                    } else {
+                        Button(
+                            onClick = onAdd,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = VertBeninois,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Ajouter au panier", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         }
                     }
                 }
