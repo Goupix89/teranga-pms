@@ -15,7 +15,8 @@
       "Bash(find . -name \"MainActivity.kt\" -exec cat {} \\\\;)",
       "Bash(sudo mkdir:*)",
       "Bash(sudo chown:*)",
-      "Bash(grep -n \"data class\\\\|enum class\" /home/user/hotel-pms/android/app/src/main/java/com/hotelpms/pos/domain/model/*.kt)"
+      "Bash(grep -n \"data class\\\\|enum class\" /home/user/hotel-pms/android/app/src/main/java/com/hotelpms/pos/domain/model/*.kt)",
+      "Bash(git status:*)"
     ]
   }
 }

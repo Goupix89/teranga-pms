@@ -525,7 +525,7 @@ export class ArticleService {
       ...(filters.establishmentId && { establishmentId: filters.establishmentId }),
       ...(filters.categoryId && { categoryId: filters.categoryId }),
       ...(filters.menuOnly && {
-        category: { name: { in: ['Restaurant', 'Nourriture', 'Boissons'] } },
+        category: { name: { in: ['Restaurant', 'Nourriture', 'Boissons', 'Loisirs', 'Loisir', 'Location'] } },
       }),
       ...(filters.search && {
         OR: [
