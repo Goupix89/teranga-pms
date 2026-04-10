@@ -276,6 +276,7 @@ class OrdersViewModel @Inject constructor(
                 val isLocation = uiState.menuTab == "Location"
                 val request = CreateOrderRequest(
                     establishmentId = estId,
+                    idempotencyKey = java.util.UUID.randomUUID().toString(),
                     tableNumber = uiState.tableNumber.ifBlank { null },
                     orderType = when {
                         isLeisure -> "LEISURE"

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gcm_defaultSenderId" translatable="false">858864118265</string>
+    <string name="google_api_key" translatable="false">AIzaSyALQBgh32Aw8fedJL_83P3QK-CTpjwKhSE</string>
+    <string name="google_app_id" translatable="false">1:858864118265:android:1f43c9b55257198519f528</string>
+    <string name="google_crash_reporting_api_key" translatable="false">AIzaSyALQBgh32Aw8fedJL_83P3QK-CTpjwKhSE</string>
+    <string name="google_storage_bucket" translatable="false">teranga-pms.firebasestorage.app</string>
+    <string name="project_id" translatable="false">teranga-pms</string>
+</resources>

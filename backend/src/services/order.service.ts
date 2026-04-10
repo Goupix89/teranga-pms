@@ -92,6 +92,7 @@ export class OrderService {
     userId: string,
     data: {
       establishmentId: string;
+      idempotencyKey?: string;
       tableNumber?: string;
       orderType?: string; // RESTAURANT | LEISURE | LOCATION
       items: Array<{ articleId: string; quantity: number }>;
@@ -103,6 +104,20 @@ export class OrderService {
   ) {
     if (!data.items || data.items.length === 0) {
       throw new ValidationError('La commande doit contenir au moins un article');
+    }
+
+    // Idempotency: if key provided and order already exists, return it instead of creating a duplicate
+    if (data.idempotencyKey) {
+      const existing = await prisma.order.findUnique({
+        where: { idempotencyKey: data.idempotencyKey },
+        include: {
+          items: { include: { article: { select: { id: true, name: true } } } },
+          createdBy: { select: { id: true, firstName: true, lastName: true } },
+        },
+      });
+      if (existing) {
+        return { ...existing, totalAmount: Number(existing.totalAmount) };
+      }
     }
 
     // Retry loop to handle concurrent order number collisions
@@ -167,6 +182,7 @@ export class OrderService {
           establishmentId: data.establishmentId,
           createdById: userId,
           orderNumber,
+          idempotencyKey: data.idempotencyKey || null,
           orderType: data.orderType || 'RESTAURANT',
           tableNumber: data.tableNumber,
           paymentMethod: data.paymentMethod as any,
@@ -451,6 +467,147 @@ export class OrderService {
     ]);
 
     return { today, thisWeek, thisMonth };
+  }
+
+  /**
+   * Detect duplicate orders: same creator, same items (articles+quantities),
+   * same totalAmount, created within 2 minutes of each other.
+   */
+  async findDuplicates(tenantId: string, establishmentId?: string) {
+    const db = createTenantClient(tenantId);
+
+    const where: any = {
+      status: { notIn: ['CANCELLED'] },
+      ...(establishmentId && { establishmentId }),
+    };
+
+    const orders = await db.order.findMany({
+      where,
+      include: {
+        items: { select: { articleId: true, quantity: true }, orderBy: { articleId: 'asc' } },
+        createdBy: { select: { id: true, firstName: true, lastName: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // Group by creator + items fingerprint
+    const groups = new Map<string, typeof orders>();
+    for (const order of orders) {
+      const itemsFingerprint = order.items
+        .map((i: any) => `${i.articleId}:${i.quantity}`)
+        .join('|');
+      const key = `${order.createdById}__${itemsFingerprint}__${Number(order.totalAmount)}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(order);
+    }
+
+    // Within each group, find orders created within 2 minutes of each other
+    const duplicateGroups: Array<{
+      original: any;
+      duplicates: any[];
+      totalDuplicateAmount: number;
+    }> = [];
+
+    for (const [, group] of groups) {
+      if (group.length < 2) continue;
+
+      // Sort by createdAt, then cluster by 2-minute windows
+      const sorted = group.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+      let i = 0;
+      while (i < sorted.length) {
+        const cluster = [sorted[i]];
+        let j = i + 1;
+        while (j < sorted.length) {
+          const diff = sorted[j].createdAt.getTime() - sorted[j - 1].createdAt.getTime();
+          if (diff <= 120_000) { // 2 minutes
+            cluster.push(sorted[j]);
+            j++;
+          } else break;
+        }
+
+        if (cluster.length > 1) {
+          const [original, ...dupes] = cluster;
+          duplicateGroups.push({
+            original: {
+              id: original.id,
+              orderNumber: original.orderNumber,
+              totalAmount: Number(original.totalAmount),
+              status: original.status,
+              createdAt: original.createdAt,
+              createdBy: original.createdBy,
+              tableNumber: original.tableNumber,
+              itemCount: original.items.length,
+            },
+            duplicates: dupes.map((d) => ({
+              id: d.id,
+              orderNumber: d.orderNumber,
+              totalAmount: Number(d.totalAmount),
+              status: d.status,
+              createdAt: d.createdAt,
+              invoiceId: d.invoiceId,
+            })),
+            totalDuplicateAmount: dupes.reduce((sum, d) => sum + Number(d.totalAmount), 0),
+          });
+        }
+        i = j;
+      }
+    }
+
+    const totalDuplicateOrders = duplicateGroups.reduce((s, g) => s + g.duplicates.length, 0);
+    const totalDuplicateAmount = duplicateGroups.reduce((s, g) => s + g.totalDuplicateAmount, 0);
+
+    return {
+      duplicateGroups,
+      summary: {
+        totalGroups: duplicateGroups.length,
+        totalDuplicateOrders,
+        totalDuplicateAmount,
+      },
+    };
+  }
+
+  /**
+   * Cancel duplicate orders and their invoices — keeps the original, cancels the rest.
+   * Safe: does not delete anything, only sets status to CANCELLED.
+   */
+  async cancelDuplicates(tenantId: string, duplicateOrderIds: string[]) {
+    if (duplicateOrderIds.length === 0) return { cancelled: 0 };
+
+    const db = createTenantClient(tenantId);
+
+    // Verify all orders exist and are not already cancelled
+    const orders = await db.order.findMany({
+      where: { id: { in: duplicateOrderIds }, status: { not: 'CANCELLED' } },
+      select: { id: true, invoiceId: true, orderNumber: true },
+    });
+
+    const cancelled: string[] = [];
+
+    for (const order of orders) {
+      await prisma.$transaction(async (tx) => {
+        // Cancel the order
+        await tx.order.update({
+          where: { id: order.id },
+          data: { status: 'CANCELLED', notes: '[AUTO] Doublon annulé' },
+        });
+
+        // Cancel the linked invoice
+        if (order.invoiceId) {
+          await tx.invoice.update({
+            where: { id: order.invoiceId },
+            data: { status: 'CANCELLED', notes: `[AUTO] Facture annulée — doublon de commande ${order.orderNumber}` },
+          });
+        }
+      });
+
+      cancelled.push(order.id);
+    }
+
+    return {
+      cancelled: cancelled.length,
+      cancelledOrderIds: cancelled,
+    };
   }
 }
 

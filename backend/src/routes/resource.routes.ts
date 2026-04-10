@@ -458,6 +458,27 @@ orderRouter.get('/:id/receipt', authenticate, requireDAFOrManagerOrServer,
   })
 );
 
+// Duplicate detection — DAF/MANAGER/OWNER only
+orderRouter.get('/duplicates', authenticate, requireEstablishmentRole('DAF', 'MANAGER', 'OWNER'),
+  asyncHandler(async (req, res) => {
+    const { establishmentId } = req.query as any;
+    const data = await orderService.findDuplicates(req.user!.tenantId, establishmentId);
+    res.json({ success: true, data });
+  })
+);
+
+// Cancel duplicates — DAF/MANAGER/OWNER only
+orderRouter.post('/duplicates/cancel', authenticate, requireEstablishmentRole('DAF', 'MANAGER', 'OWNER'),
+  asyncHandler(async (req, res) => {
+    const { orderIds } = req.body;
+    if (!Array.isArray(orderIds) || orderIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'orderIds requis (tableau d\'IDs)' });
+    }
+    const data = await orderService.cancelDuplicates(req.user!.tenantId, orderIds);
+    res.json({ success: true, data });
+  })
+);
+
 // Servers create orders — LEISURE/LOCATION orders restricted to POS/OWNER/SUPERADMIN
 orderRouter.post('/', authenticate, requireDAFOrManagerOrServer, validate(v.createOrderSchema),
   asyncHandler(async (req, res) => {

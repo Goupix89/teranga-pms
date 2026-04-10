@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch } from '@/lib/api';
 import { PageHeader, StatusBadge, Pagination, Modal, SearchInput, EmptyState, LoadingPage } from '@/components/ui';
-import { UtensilsCrossed, Plus, Loader2, BarChart3, QrCode, X, CheckCircle2, FileDown } from 'lucide-react';
+import { UtensilsCrossed, Plus, Loader2, BarChart3, QrCode, X, CheckCircle2, FileDown, AlertTriangle, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDateTime, formatCurrency, statusLabels } from '@/lib/utils';
 import { useAuthStore } from '@/hooks/useAuthStore';
@@ -25,7 +25,9 @@ export default function OrdersPage() {
   const [serverFilter, setServerFilter] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [showStats, setShowStats] = useState(false);
+  const [showDuplicates, setShowDuplicates] = useState(false);
 
+  const canManageDuplicates = isSuperAdmin || ['OWNER', 'DAF', 'MANAGER'].includes(currentEstRole || '');
   const isDAFOrManager = isSuperAdmin || ['DAF', 'MANAGER'].includes(currentEstRole || '');
 
   const [form, setForm] = useState({ establishmentId: '', tableNumber: '', orderType: 'RESTAURANT' as 'RESTAURANT' | 'LEISURE' | 'LOCATION', paymentMethod: 'MOOV_MONEY' as PaymentMethod, items: [{ articleId: '', quantity: 1 }] as Array<{ articleId: string; quantity: number }>, notes: '', startTime: '', endTime: '' });
@@ -127,6 +129,24 @@ export default function OrdersPage() {
     }));
   };
 
+  // Duplicate detection
+  const { data: duplicatesData, isLoading: isLoadingDuplicates, refetch: refetchDuplicates } = useQuery({
+    queryKey: ['order-duplicates', currentEstId],
+    queryFn: () => apiGet<any>(`/orders/duplicates${currentEstId ? `?establishmentId=${currentEstId}` : ''}`),
+    enabled: showDuplicates && canManageDuplicates,
+  });
+
+  const cancelDuplicatesMutation = useMutation({
+    mutationFn: (orderIds: string[]) => apiPost<any>('/orders/duplicates/cancel', { orderIds }),
+    onSuccess: (res: any) => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['order-stats'] });
+      refetchDuplicates();
+      toast.success(`${res?.data?.cancelled || 0} doublon(s) annulé(s)`);
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
+  });
+
   const articles = articlesData?.data || [];
   const orders = data?.data || [];
   const meta = data?.meta;
@@ -161,6 +181,11 @@ export default function OrdersPage() {
             {stats && (
               <button onClick={() => setShowStats(!showStats)} className="btn-secondary">
                 <BarChart3 className="mr-2 h-4 w-4" /> Stats
+              </button>
+            )}
+            {canManageDuplicates && (
+              <button onClick={() => setShowDuplicates(true)} className="btn-secondary text-amber-700 border-amber-300 hover:bg-amber-50">
+                <Copy className="mr-2 h-4 w-4" /> Doublons
               </button>
             )}
             {canCreate && (
@@ -520,6 +545,7 @@ export default function OrdersPage() {
           e.preventDefault();
           const body = {
             establishmentId: form.establishmentId || currentEstId,
+            idempotencyKey: crypto.randomUUID(),
             tableNumber: form.tableNumber || undefined,
             orderType: form.orderType,
             paymentMethod: form.paymentMethod,
@@ -622,6 +648,101 @@ export default function OrdersPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Duplicates detection modal */}
+      <Modal open={showDuplicates} onClose={() => setShowDuplicates(false)} title="Détection des doublons" size="lg">
+        <div className="space-y-4">
+          {isLoadingDuplicates ? (
+            <div className="flex items-center justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-amber-600" /></div>
+          ) : !duplicatesData?.data?.duplicateGroups?.length ? (
+            <div className="text-center py-8 text-gray-500">
+              <CheckCircle2 className="h-10 w-10 mx-auto mb-2 text-green-500" />
+              <p className="font-medium">Aucun doublon détecté</p>
+              <p className="text-sm mt-1">Toutes les commandes sont uniques.</p>
+            </div>
+          ) : (
+            <>
+              {/* Summary */}
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-medium text-amber-800">
+                    {duplicatesData.data.summary.totalDuplicateOrders} doublon(s) détecté(s) dans {duplicatesData.data.summary.totalGroups} groupe(s)
+                  </p>
+                  <p className="text-sm text-amber-700 mt-1">
+                    Montant total des doublons : {formatCurrency(duplicatesData.data.summary.totalDuplicateAmount)}
+                  </p>
+                  <p className="text-xs text-amber-600 mt-1">
+                    Critères : mêmes articles, mêmes quantités, même créateur, créées à moins de 2 min d&apos;intervalle.
+                  </p>
+                </div>
+              </div>
+
+              {/* Groups */}
+              <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                {duplicatesData.data.duplicateGroups.map((group: any, idx: number) => (
+                  <div key={idx} className="border rounded-lg p-3">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-medium text-sm">
+                          Original : <span className="text-green-700">{group.original.orderNumber}</span>
+                          {group.original.tableNumber && <span className="text-gray-500"> — Table {group.original.tableNumber}</span>}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {formatCurrency(group.original.totalAmount)} · {group.original.itemCount} article(s) · {formatDateTime(group.original.createdAt)}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          Par {group.original.createdBy?.firstName} {group.original.createdBy?.lastName}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-2 space-y-1">
+                      {group.duplicates.map((dup: any) => (
+                        <div key={dup.id} className="flex justify-between items-center bg-red-50 rounded px-2 py-1 text-sm">
+                          <span className="text-red-700 font-medium">{dup.orderNumber}</span>
+                          <span className="text-red-600 text-xs">{formatCurrency(dup.totalAmount)} · {formatDateTime(dup.createdAt)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => {
+                        const ids = group.duplicates.map((d: any) => d.id);
+                        if (confirm(`Annuler ${ids.length} doublon(s) de ${group.original.orderNumber} ? L'original sera conservé.`)) {
+                          cancelDuplicatesMutation.mutate(ids);
+                        }
+                      }}
+                      disabled={cancelDuplicatesMutation.isPending}
+                      className="mt-2 text-xs btn-ghost text-red-600 hover:bg-red-50 px-2 py-1"
+                    >
+                      Annuler ces doublons
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Cancel all */}
+              <div className="flex justify-between items-center pt-2 border-t">
+                <p className="text-sm text-gray-500">
+                  Total à récupérer : <span className="font-bold text-red-600">{formatCurrency(duplicatesData.data.summary.totalDuplicateAmount)}</span>
+                </p>
+                <button
+                  onClick={() => {
+                    const allIds = duplicatesData.data.duplicateGroups.flatMap((g: any) => g.duplicates.map((d: any) => d.id));
+                    if (confirm(`Annuler tous les ${allIds.length} doublon(s) ? Les commandes originales seront conservées.`)) {
+                      cancelDuplicatesMutation.mutate(allIds);
+                    }
+                  }}
+                  disabled={cancelDuplicatesMutation.isPending}
+                  className="btn-primary bg-red-600 hover:bg-red-700"
+                >
+                  {cancelDuplicatesMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Annuler tous les doublons
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </Modal>
     </div>
   );

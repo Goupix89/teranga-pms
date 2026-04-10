@@ -380,6 +380,7 @@ export const registerTenantSchema = z.object({
 
 export const createOrderSchema = z.object({
   establishmentId: z.string().uuid(),
+  idempotencyKey: z.string().uuid().optional(),
   tableNumber: z.string().max(20).optional(),
   orderType: z.enum(['RESTAURANT', 'LEISURE', 'LOCATION']).default('RESTAURANT'),
   paymentMethod: z.enum(['CASH', 'CARD', 'BANK_TRANSFER', 'MOBILE_MONEY', 'MOOV_MONEY', 'MIXX_BY_YAS', 'FEDAPAY', 'OTHER']).optional(),

@@ -156,6 +156,7 @@ export default function PosPage() {
     }
     createMutation.mutate({
       establishmentId: currentEstId,
+      idempotencyKey: crypto.randomUUID(),
       tableNumber: tableNumber || undefined,
       paymentMethod,
       notes: notes || undefined,

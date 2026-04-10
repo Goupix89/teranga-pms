@@ -263,6 +263,7 @@ data class OrderStatusRequest(
 
 data class CreateOrderRequest(
     val establishmentId: String,
+    val idempotencyKey: String? = null,
     val tableNumber: String? = null,
     val orderType: String? = "RESTAURANT",
     val paymentMethod: String? = null,

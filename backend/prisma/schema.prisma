@@ -390,6 +390,7 @@ model Order {
   notes           String?
   totalAmount     Decimal        @default(0) @map("total_amount") @db.Decimal(10, 2)
   invoiceId       String?        @map("invoice_id")
+  idempotencyKey  String?     @unique @map("idempotency_key")
   startTime       DateTime?   @map("start_time")
   endTime         DateTime?   @map("end_time")
   readyAt         DateTime?   @map("ready_at")
