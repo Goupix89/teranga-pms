@@ -623,6 +623,28 @@ invoiceRouter.post('/:id/cancel', authenticate, requireDAF,
   })
 );
 
+// Payment status check (polling endpoint for FedaPay confirmation)
+invoiceRouter.get('/:id/payment-status', authenticate,
+  asyncHandler(async (req, res) => {
+    const invoice = await invoiceService.getById(req.user!.tenantId, req.params.id);
+    if (!invoice) {
+      res.status(404).json({ success: false, error: 'Facture introuvable' });
+      return;
+    }
+    const paid = invoice.status === 'PAID';
+    res.json({
+      success: true,
+      data: {
+        invoiceId: invoice.id,
+        status: invoice.status,
+        paid,
+        paidAt: (invoice as any).paidAt || null,
+        totalAmount: Number(invoice.totalAmount),
+      },
+    });
+  })
+);
+
 // Simulate payment (dev/test only) — marks invoice as PAID
 invoiceRouter.post('/:id/simulate-payment', authenticate,
   asyncHandler(async (req, res) => {

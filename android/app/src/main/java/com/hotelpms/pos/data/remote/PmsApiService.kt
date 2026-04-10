@@ -89,6 +89,10 @@ interface PmsApiService {
         @Query("paymentMethod") paymentMethod: String? = null
     ): Response<QrCodeResponse>
 
+    // Payment status check (polling for FedaPay confirmation)
+    @GET("api/invoices/{id}/payment-status")
+    suspend fun getPaymentStatus(@Path("id") id: String): Response<PaymentStatusResponse>
+
     // Simulate payment (dev/test)
     @POST("api/invoices/{id}/simulate-payment")
     suspend fun simulatePayment(@Path("id") id: String): Response<GenericResponse>

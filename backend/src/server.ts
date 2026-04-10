@@ -194,6 +194,12 @@ app.post('/api/webhooks/fedapay', async (req: express.Request, res: express.Resp
             data: { status: 'PAID', paidAt: new Date() },
           });
 
+          // Mark linked order as SERVED
+          await prisma.order.updateMany({
+            where: { invoiceId: invoice.id, status: { notIn: ['SERVED', 'CANCELLED'] } },
+            data: { status: 'SERVED', servedAt: new Date() },
+          });
+
           // Notify external system (WordPress)
           try {
             const tenantData = await prisma.tenant.findUnique({

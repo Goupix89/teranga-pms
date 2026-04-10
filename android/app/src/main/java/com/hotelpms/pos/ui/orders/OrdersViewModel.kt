@@ -11,6 +11,7 @@ import com.hotelpms.pos.data.remote.PmsApiService
 import com.hotelpms.pos.domain.model.*
 import com.hotelpms.pos.domain.model.RestaurantTable
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -46,6 +47,8 @@ data class OrdersUiState(
     val menuSearchQuery: String = "",
     val qrCodeData: QrCodeData? = null,
     val showQrCode: Boolean = false,
+    val pollingInvoiceId: String? = null,
+    val paymentConfirmed: Boolean = false,
     val isCreating: Boolean = false,
     val isSimulating: Boolean = false,
     val simulationSuccess: Boolean = false,
@@ -102,6 +105,8 @@ class OrdersViewModel @Inject constructor(
 
     var uiState by mutableStateOf(OrdersUiState())
         private set
+
+    private var paymentPollingJob: Job? = null
 
     init {
         fetchOrders()
@@ -362,15 +367,47 @@ class OrdersViewModel @Inject constructor(
                 if (response.isSuccessful && response.body()?.data != null) {
                     uiState = uiState.copy(
                         qrCodeData = response.body()!!.data,
-                        showQrCode = true
+                        showQrCode = true,
+                        pollingInvoiceId = invoiceId,
+                        paymentConfirmed = false
                     )
+                    startPaymentPolling(invoiceId)
                 }
             } catch (_: Exception) { }
         }
     }
 
+    private fun startPaymentPolling(invoiceId: String) {
+        paymentPollingJob?.cancel()
+        paymentPollingJob = viewModelScope.launch {
+            while (isActive) {
+                delay(3000)
+                try {
+                    val res = apiService.getPaymentStatus(invoiceId)
+                    if (res.isSuccessful && res.body()?.data?.paid == true) {
+                        uiState = uiState.copy(
+                            paymentConfirmed = true,
+                            simulationSuccess = true,
+                            successMessage = "Paiement reçu !"
+                        )
+                        fetchOrders()
+                        break
+                    }
+                } catch (_: Exception) { }
+            }
+        }
+    }
+
     fun dismissQrCode() {
-        uiState = uiState.copy(showQrCode = false, qrCodeData = null, simulationSuccess = false)
+        paymentPollingJob?.cancel()
+        paymentPollingJob = null
+        uiState = uiState.copy(
+            showQrCode = false,
+            qrCodeData = null,
+            simulationSuccess = false,
+            paymentConfirmed = false,
+            pollingInvoiceId = null
+        )
     }
 
     fun simulatePayment(invoiceId: String) {

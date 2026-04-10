@@ -86,11 +86,11 @@ fun OrdersScreen(
             qrData = uiState.qrCodeData!!,
             onDismiss = {
                 viewModel.dismissQrCode()
-                if (uiState.simulationSuccess) viewModel.fetchOrders()
             },
             onSimulatePayment = { invoiceId -> viewModel.simulatePayment(invoiceId) },
             isSimulating = uiState.isSimulating,
-            simulationSuccess = uiState.simulationSuccess
+            simulationSuccess = uiState.simulationSuccess || uiState.paymentConfirmed,
+            paymentConfirmed = uiState.paymentConfirmed
         )
     }
 
@@ -1243,7 +1243,8 @@ private fun QrCodePaymentDialog(
     onDismiss: () -> Unit,
     onSimulatePayment: ((String) -> Unit)? = null,
     isSimulating: Boolean = false,
-    simulationSuccess: Boolean = false
+    simulationSuccess: Boolean = false,
+    paymentConfirmed: Boolean = false
 ) {
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -1298,6 +1299,19 @@ private fun QrCodePaymentDialog(
                 }
                 Spacer(Modifier.height(16.dp))
 
+                // Waiting for payment indicator
+                if (!simulationSuccess && !paymentConfirmed && qrData.fedapayCheckoutUrl != null) {
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), color = BronzeAbomey, strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("En attente du paiement...", fontSize = 12.sp, color = BronzeAbomey)
+                    }
+                }
+
                 // FedaPay checkout button
                 if (qrData.fedapayCheckoutUrl != null) {
                     val uriHandler = LocalUriHandler.current
@@ -1311,21 +1325,29 @@ private fun QrCodePaymentDialog(
                     Spacer(Modifier.height(8.dp))
                 }
 
-                if (simulationSuccess) {
+                if (simulationSuccess || paymentConfirmed) {
                     // Payment confirmed
                     Surface(
                         color = VertBeninois.copy(alpha = 0.15f),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Row(
+                        Column(
                             modifier = Modifier.padding(12.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = VertBeninois, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Paiement reçu !", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = VertBeninois)
+                            Row(
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = VertBeninois, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Paiement reçu !", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = VertBeninois)
+                            }
+                            if (paymentConfirmed) {
+                                Spacer(Modifier.height(4.dp))
+                                Text("Confirmé par FedaPay", fontSize = 12.sp, color = VertBeninois.copy(alpha = 0.7f))
+                            }
                         }
                     }
                     Spacer(Modifier.height(8.dp))

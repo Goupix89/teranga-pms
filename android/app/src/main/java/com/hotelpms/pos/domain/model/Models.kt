@@ -290,6 +290,19 @@ data class CreateOrderRequest(
     val endTime: String? = null
 )
 
+data class PaymentStatusResponse(
+    val success: Boolean,
+    val data: PaymentStatusData? = null
+)
+
+data class PaymentStatusData(
+    val invoiceId: String,
+    val status: String,
+    val paid: Boolean,
+    val paidAt: String? = null,
+    val totalAmount: Double? = null
+)
+
 data class QrCodeResponse(
     val success: Boolean,
     val data: QrCodeData? = null

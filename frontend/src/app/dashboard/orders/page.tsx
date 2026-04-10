@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch } from '@/lib/api';
 import { PageHeader, StatusBadge, Pagination, Modal, SearchInput, EmptyState, LoadingPage } from '@/components/ui';
@@ -99,6 +99,28 @@ export default function OrdersPage() {
     },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
   });
+
+  // Poll invoice payment status when QR modal is open (FedaPay confirmation)
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (qrModal.open && qrModal.invoiceId && !qrModal.paid) {
+      pollingRef.current = setInterval(async () => {
+        try {
+          const res = await apiGet<any>(`/invoices/${qrModal.invoiceId}/payment-status`);
+          if (res?.data?.paid) {
+            setQrModal((prev) => ({ ...prev, paid: true }));
+            toast.success('Paiement reçu !');
+            queryClient.invalidateQueries({ queryKey: ['orders'] });
+            queryClient.invalidateQueries({ queryKey: ['order-stats'] });
+            if (pollingRef.current) clearInterval(pollingRef.current);
+          }
+        } catch {}
+      }, 3000);
+    }
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
+  }, [qrModal.open, qrModal.invoiceId, qrModal.paid]);
 
   const updateStatusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: OrderStatus }) => apiPatch(`/orders/${id}/status`, { status }),

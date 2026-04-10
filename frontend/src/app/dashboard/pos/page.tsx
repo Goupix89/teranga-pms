@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost } from '@/lib/api';
 import { api } from '@/lib/api';
@@ -190,6 +190,27 @@ export default function PosPage() {
     },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur paiement'),
   });
+
+  // Poll invoice payment status when QR modal is open (FedaPay confirmation)
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (qrModal.open && qrModal.invoiceId && !qrModal.paid) {
+      pollingRef.current = setInterval(async () => {
+        try {
+          const res = await apiGet<any>(`/invoices/${qrModal.invoiceId}/payment-status`);
+          if (res?.data?.paid) {
+            setQrModal((prev) => ({ ...prev, paid: true }));
+            toast.success('Paiement reçu !');
+            queryClient.invalidateQueries({ queryKey: ['orders'] });
+            if (pollingRef.current) clearInterval(pollingRef.current);
+          }
+        } catch {}
+      }, 3000);
+    }
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
+  }, [qrModal.open, qrModal.invoiceId, qrModal.paid]);
 
   // Receipt download
   const downloadReceipt = async (orderId: string) => {
