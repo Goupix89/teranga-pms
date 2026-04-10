@@ -393,14 +393,19 @@ function WidgetInvoicesPending() {
 
 // --- Revenue Today Widget ---
 function WidgetRevenueToday({ establishmentId }: { establishmentId: string | null }) {
-  const { data: allOrdersData } = useAllOrders(establishmentId);
-  const allOrders = allOrdersData?.data || [];
-  const nonVoucherOrders = allOrders.filter((o: any) => !o.isVoucher);
-  const voucherOrders = allOrders.filter((o: any) => o.isVoucher);
-  const totalRevenue = nonVoucherOrders.reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0);
-  const voucherTotal = voucherOrders.reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0);
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: dailyData } = useQuery({
+    queryKey: ['daily-report', today, establishmentId],
+    queryFn: () => apiGet<any>(`/reports/daily?date=${today}${establishmentId ? `&establishmentId=${establishmentId}` : ''}`),
+    enabled: !!establishmentId,
+    refetchInterval: 30000,
+  });
+  const report = dailyData?.data;
+  const totalEncaisse = report?.totalEncaisse || 0;
+  const voucherCount = report?.voucherCount || 0;
+  const voucherTotal = report?.voucherTotal || 0;
 
-  return <StatCard title="CA du jour (hors bons)" value={formatCurrency(totalRevenue)} subtitle={voucherOrders.length > 0 ? `+ ${voucherOrders.length} bon(s) : ${formatCurrency(voucherTotal)}` : undefined} icon={DollarSign} color="sage" />;
+  return <StatCard title="Encaissements du jour" value={formatCurrency(totalEncaisse)} subtitle={voucherCount > 0 ? `+ ${voucherCount} bon(s) : ${formatCurrency(voucherTotal)}` : `${report?.totalOrders || 0} commande(s)`} icon={DollarSign} color="sage" />;
 }
 
 // --- Stock Alerts Widget ---

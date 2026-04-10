@@ -3,13 +3,14 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '@/lib/api';
+import { api } from '@/lib/api';
 import { PageHeader, StatCard, StatusBadge, LoadingPage } from '@/components/ui';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import {
-  BedDouble, TrendingUp, Download,
+  BedDouble, TrendingUp, Download, FileText,
   UtensilsCrossed, DollarSign, Clock,
-  Package, ShoppingCart, Wallet,
+  Package, ShoppingCart, Wallet, Loader2,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -31,8 +32,31 @@ type ReportPeriod = 'today' | 'week' | 'month' | 'quarter';
 export default function ReportsPage() {
   const { user, currentEstablishmentId, currentEstablishmentRole } = useAuthStore();
   const [period, setPeriod] = useState<ReportPeriod>('month');
+  const [reportDate, setReportDate] = useState(new Date().toISOString().slice(0, 10));
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
   const isDAF = currentEstablishmentRole === 'DAF' || user?.role === 'SUPERADMIN';
+
+  // Daily report (encaissements for the selected date)
+  const { data: dailyReport } = useQuery({
+    queryKey: ['daily-report', reportDate, currentEstablishmentId],
+    queryFn: () => apiGet<any>(`/reports/daily?date=${reportDate}${currentEstablishmentId ? `&establishmentId=${currentEstablishmentId}` : ''}`),
+  });
+  const daily = dailyReport?.data;
+
+  const downloadDailyPdf = async () => {
+    setIsDownloadingPdf(true);
+    try {
+      const res = await api.get(`/reports/daily-pdf?date=${reportDate}${currentEstablishmentId ? `&establishmentId=${currentEstablishmentId}` : ''}`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `rapport-${reportDate}.pdf`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch { }
+    setIsDownloadingPdf(false);
+  };
 
   // Data hooks
   const { data: rooms } = useQuery({
@@ -267,7 +291,17 @@ export default function ReportsPage() {
         title="Rapports d'activité"
         subtitle="Analyse de performance de l'établissement"
         action={
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="date"
+              value={reportDate}
+              onChange={(e) => setReportDate(e.target.value)}
+              className="input text-sm h-9 w-40"
+            />
+            <button onClick={downloadDailyPdf} disabled={isDownloadingPdf} className="btn-primary text-sm">
+              {isDownloadingPdf ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <FileText className="mr-1.5 h-4 w-4" />}
+              PDF du jour
+            </button>
             <button onClick={() => exportCSV('orders')} className="btn-secondary text-sm">
               <Download className="mr-1.5 h-4 w-4" /> Commandes
             </button>
@@ -287,16 +321,13 @@ export default function ReportsPage() {
                 </button>
               </>
             )}
-            <button onClick={() => exportCSV('rooms')} className="btn-secondary text-sm">
-              <Download className="mr-1.5 h-4 w-4" /> Chambres
-            </button>
           </div>
         }
       />
 
       <div className="divider-teranga" />
 
-      {/* KPI Cards */}
+      {/* KPI Cards — from daily report (encaissements) */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard
           title="Taux d'occupation"
@@ -306,9 +337,9 @@ export default function ReportsPage() {
           color="sage"
         />
         <StatCard
-          title="CA (hors bons)"
-          value={formatCurrency(totalRevenue)}
-          subtitle={`${nonVoucherOrders.length} commandes${voucherOrders.length > 0 ? ` · ${voucherOrders.length} bon(s) : ${formatCurrency(voucherTotal)}` : ''}`}
+          title="Encaissements"
+          value={formatCurrency(daily?.totalEncaisse || 0)}
+          subtitle={`${daily?.totalOrders || 0} commande(s)${daily?.voucherCount > 0 ? ` · ${daily?.voucherCount} bon(s) : ${formatCurrency(daily?.voucherTotal || 0)}` : ''}`}
           icon={TrendingUp}
           color="accent"
         />

@@ -45,6 +45,7 @@ import {
   apiKeyRouter,
   tenantSettingsRouter,
   subscriptionRouter,
+  reportRouter,
 } from './routes/resource.routes';
 import { channelSyncService } from './services/channel-sync.service';
 
@@ -384,6 +385,7 @@ app.use('/api/tenant/settings', tenantSettingsRouter);
 
 // Subscription management — SUPERADMIN only
 app.use('/api/subscriptions', subscriptionRouter);
+app.use('/api/reports', reportRouter);
 
 // Integration endpoints (availability, external bookings, POS)
 app.use('/api', integrationRouter);

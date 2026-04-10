@@ -2179,3 +2179,300 @@ dashboardConfigRouter.put('/', authenticate, asyncHandler(async (req, res) => {
 
   res.json({ success: true, data: config });
 }));
+
+// =============================================================================
+// DAILY REPORTS
+// =============================================================================
+export const reportRouter = Router();
+
+reportRouter.get('/daily', authenticate, requireDAFOrManagerOrServer,
+  asyncHandler(async (req, res) => {
+    const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+    const establishmentId = req.query.establishmentId as string | undefined;
+    const tenantId = req.user!.tenantId;
+    const data = await buildDailyReport(tenantId, date, establishmentId);
+    res.json({ success: true, data });
+  })
+);
+
+reportRouter.get('/daily-pdf', authenticate, requireDAFOrManagerOrServer,
+  asyncHandler(async (req, res) => {
+    const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+    const establishmentId = req.query.establishmentId as string | undefined;
+    const tenantId = req.user!.tenantId;
+    const report = await buildDailyReport(tenantId, date, establishmentId);
+    const pdf = await generateDailyReportPdf(tenantId, report, date);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename=rapport-${date}.pdf`,
+    });
+    res.send(pdf);
+  })
+);
+
+// --- Build daily report data ---
+async function buildDailyReport(tenantId: string, date: string, establishmentId?: string) {
+  const db = createTenantClient(tenantId);
+  const dayStart = new Date(`${date}T00:00:00.000Z`);
+  const dayEnd = new Date(`${date}T23:59:59.999Z`);
+
+  const estFilter = establishmentId ? { establishmentId } : {};
+
+  // Payments made today (actual money collected)
+  const payments = await db.payment.findMany({
+    where: {
+      tenantId,
+      createdAt: { gte: dayStart, lte: dayEnd },
+      invoice: estFilter.establishmentId ? { orders: { some: { establishmentId } } } : undefined,
+    },
+    include: {
+      invoice: {
+        select: {
+          id: true, invoiceNumber: true, totalAmount: true, status: true,
+          isVoucher: true, voucherOwnerName: true,
+          orders: { select: { id: true, orderNumber: true, createdBy: { select: { firstName: true, lastName: true } }, paymentMethod: true, isVoucher: true, voucherOwnerName: true } },
+        },
+      },
+    },
+  });
+
+  // Orders created today
+  const orders = await db.order.findMany({
+    where: {
+      createdAt: { gte: dayStart, lte: dayEnd },
+      ...estFilter,
+    },
+    include: {
+      createdBy: { select: { id: true, firstName: true, lastName: true } },
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  // Group payments by method
+  const byMethod: Record<string, { count: number; total: number }> = {};
+  let totalEncaisse = 0;
+  let voucherTotal = 0;
+  let voucherCount = 0;
+
+  for (const p of payments) {
+    const amount = Number(p.amount);
+    const isVoucher = p.invoice?.isVoucher || p.invoice?.orders?.some((o: any) => o.isVoucher);
+    if (isVoucher) {
+      voucherTotal += amount;
+      voucherCount++;
+      continue;
+    }
+    totalEncaisse += amount;
+    const method = p.method || 'CASH';
+    if (!byMethod[method]) byMethod[method] = { count: 0, total: 0 };
+    byMethod[method].count++;
+    byMethod[method].total += amount;
+  }
+
+  // Payment details for PDF
+  const paymentDetails = payments
+    .filter((p: any) => !p.invoice?.isVoucher && !p.invoice?.orders?.some((o: any) => o.isVoucher))
+    .map((p: any) => {
+      const order = p.invoice?.orders?.[0];
+      return {
+        invoiceNumber: p.invoice?.invoiceNumber || '-',
+        orderNumber: order?.orderNumber || '-',
+        server: order?.createdBy ? `${order.createdBy.firstName} ${order.createdBy.lastName}` : '-',
+        method: p.method,
+        amount: Number(p.amount),
+        time: p.createdAt,
+      };
+    });
+
+  // Orders by server
+  const byServer: Record<string, { name: string; count: number; revenue: number }> = {};
+  const activeOrders = orders.filter((o: any) => !['CANCELLED', 'PENDING'].includes(o.status) && !o.isVoucher);
+  for (const o of activeOrders) {
+    if (o.createdBy) {
+      const key = (o.createdBy as any).id;
+      const name = `${(o.createdBy as any).firstName} ${(o.createdBy as any).lastName}`;
+      if (!byServer[key]) byServer[key] = { name, count: 0, revenue: 0 };
+      byServer[key].count++;
+      byServer[key].revenue += Number((o as any).totalAmount) || 0;
+    }
+  }
+
+  // Orders by status
+  const byStatus: Record<string, number> = {};
+  for (const o of orders) {
+    byStatus[o.status] = (byStatus[o.status] || 0) + 1;
+  }
+
+  return {
+    date,
+    totalEncaisse,
+    voucherTotal,
+    voucherCount,
+    totalOrders: orders.length,
+    byMethod,
+    byServer: Object.values(byServer).sort((a, b) => b.revenue - a.revenue),
+    byStatus,
+    paymentDetails,
+  };
+}
+
+// --- Generate PDF for daily report ---
+async function generateDailyReportPdf(tenantId: string, report: any, date: string): Promise<Buffer> {
+  const PDFDocument = (await import('pdfkit')).default;
+  const db = createTenantClient(tenantId);
+
+  // Get establishment info
+  const establishment = await db.establishment.findFirst({ select: { name: true, address: true, phone: true } });
+  const estName = establishment?.name || 'Établissement';
+
+  const PAYMENT_LABELS: Record<string, string> = {
+    CASH: 'Espèces', CARD: 'Carte', BANK_TRANSFER: 'Virement',
+    MOBILE_MONEY: 'Mobile Money', MOOV_MONEY: 'Flooz', MIXX_BY_YAS: 'Yas (MTN)',
+    FEDAPAY: 'FedaPay', OTHER: 'Autre',
+  };
+
+  const fmtCurrency = (n: number) => new Intl.NumberFormat('fr-FR').format(Math.round(n)) + ' FCFA';
+  const fmtDate = (d: string) => {
+    const dt = new Date(d);
+    return dt.toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric', timeZone: 'Africa/Lome' });
+  };
+  const fmtTime = (d: any) => new Date(d).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Lome' });
+
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    // --- Header ---
+    doc.fontSize(18).font('Helvetica-Bold').text(estName, { align: 'center' });
+    doc.fontSize(10).font('Helvetica').text(establishment?.address || '', { align: 'center' });
+    if (establishment?.phone) doc.text(`Tél : ${establishment.phone}`, { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(14).font('Helvetica-Bold').text(`Rapport d'activité — ${fmtDate(date)}`, { align: 'center' });
+    doc.moveDown(0.3);
+    doc.moveTo(40, doc.y).lineTo(555, doc.y).stroke('#B85042');
+    doc.moveDown(0.8);
+
+    // --- Résumé Encaissements ---
+    doc.fontSize(13).font('Helvetica-Bold').fillColor('#B85042').text('Encaissements du jour');
+    doc.fillColor('#000000');
+    doc.moveDown(0.3);
+
+    doc.fontSize(22).font('Helvetica-Bold').text(fmtCurrency(report.totalEncaisse));
+    doc.fontSize(10).font('Helvetica').text(`${report.totalOrders} commande(s) au total`);
+    if (report.voucherCount > 0) {
+      doc.fillColor('#92400E').text(`+ ${report.voucherCount} bon(s) propriétaire : ${fmtCurrency(report.voucherTotal)}`);
+      doc.fillColor('#000000');
+    }
+    doc.moveDown(0.8);
+
+    // --- Par mode de paiement ---
+    doc.fontSize(12).font('Helvetica-Bold').fillColor('#B85042').text('Par mode de paiement');
+    doc.fillColor('#000000');
+    doc.moveDown(0.3);
+
+    const colW = [200, 100, 150];
+    const drawTableRow = (cells: string[], bold = false) => {
+      const y = doc.y;
+      const font = bold ? 'Helvetica-Bold' : 'Helvetica';
+      doc.font(font).fontSize(10);
+      let x = 40;
+      cells.forEach((cell, i) => {
+        doc.text(cell, x, y, { width: colW[i], align: i === 0 ? 'left' : 'right' });
+        x += colW[i] + 10;
+      });
+      doc.moveDown(0.1);
+    };
+
+    drawTableRow(['Mode', 'Transactions', 'Montant'], true);
+    doc.moveTo(40, doc.y).lineTo(500, doc.y).stroke('#E5E7EB');
+    doc.moveDown(0.2);
+
+    for (const [method, info] of Object.entries(report.byMethod) as [string, any][]) {
+      drawTableRow([PAYMENT_LABELS[method] || method, String(info.count), fmtCurrency(info.total)]);
+    }
+    doc.moveTo(40, doc.y).lineTo(500, doc.y).stroke('#E5E7EB');
+    doc.moveDown(0.1);
+    drawTableRow(['TOTAL', '', fmtCurrency(report.totalEncaisse)], true);
+    doc.moveDown(0.8);
+
+    // --- Par serveur ---
+    if (report.byServer.length > 0) {
+      doc.fontSize(12).font('Helvetica-Bold').fillColor('#B85042').text('Performance par serveur');
+      doc.fillColor('#000000');
+      doc.moveDown(0.3);
+
+      drawTableRow(['Serveur', 'Commandes', 'CA généré'], true);
+      doc.moveTo(40, doc.y).lineTo(500, doc.y).stroke('#E5E7EB');
+      doc.moveDown(0.2);
+      for (const s of report.byServer) {
+        drawTableRow([s.name, String(s.count), fmtCurrency(s.revenue)]);
+      }
+      doc.moveDown(0.8);
+    }
+
+    // --- Détail des transactions ---
+    if (report.paymentDetails.length > 0) {
+      if (doc.y > 600) doc.addPage();
+      doc.fontSize(12).font('Helvetica-Bold').fillColor('#B85042').text('Détail des transactions');
+      doc.fillColor('#000000');
+      doc.moveDown(0.3);
+
+      const detailW = [80, 70, 80, 80, 80, 60];
+      const drawDetailRow = (cells: string[], bold = false) => {
+        const y = doc.y;
+        doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(8);
+        let x = 40;
+        cells.forEach((cell, i) => {
+          doc.text(cell, x, y, { width: detailW[i], align: i >= 4 ? 'right' : 'left' });
+          x += detailW[i] + 5;
+        });
+        doc.moveDown(0.1);
+      };
+
+      drawDetailRow(['Facture', 'Commande', 'Serveur', 'Mode', 'Montant', 'Heure'], true);
+      doc.moveTo(40, doc.y).lineTo(530, doc.y).stroke('#E5E7EB');
+      doc.moveDown(0.15);
+
+      for (const d of report.paymentDetails) {
+        if (doc.y > 750) doc.addPage();
+        drawDetailRow([
+          d.invoiceNumber,
+          d.orderNumber,
+          d.server,
+          PAYMENT_LABELS[d.method] || d.method,
+          fmtCurrency(d.amount),
+          fmtTime(d.time),
+        ]);
+      }
+    }
+
+    // --- Statuts des commandes ---
+    if (Object.keys(report.byStatus).length > 0) {
+      doc.moveDown(0.8);
+      if (doc.y > 680) doc.addPage();
+      doc.fontSize(12).font('Helvetica-Bold').fillColor('#B85042').text('Commandes par statut');
+      doc.fillColor('#000000');
+      doc.moveDown(0.3);
+
+      const STATUS_LABELS: Record<string, string> = {
+        PENDING: 'En attente', IN_PROGRESS: 'En cours', READY: 'Prêt',
+        SERVED: 'Servi', CANCELLED: 'Annulé',
+      };
+      for (const [status, count] of Object.entries(report.byStatus)) {
+        doc.fontSize(10).font('Helvetica').text(`${STATUS_LABELS[status] || status} : ${count}`, 60);
+      }
+    }
+
+    // --- Footer ---
+    doc.moveDown(1.5);
+    doc.fontSize(8).fillColor('#9CA3AF').text(
+      `Rapport généré le ${new Date().toLocaleString('fr-FR', { timeZone: 'Africa/Lome' })} — Teranga PMS`,
+      40, doc.y, { align: 'center' }
+    );
+
+    doc.end();
+  });
+}
