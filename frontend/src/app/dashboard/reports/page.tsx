@@ -115,8 +115,13 @@ export default function ReportsPage() {
     !mergedSourceOrderNumbers.has(o.orderNumber)
   );
 
-  // Revenue: orders (non-cancelled, non-pending, non-merged-source) + manual invoices paid
-  const orderRevenue = activeOrders.reduce((sum: number, o: any) => sum + (Number(o.totalAmount) || 0), 0);
+  // Separate voucher orders from CA
+  const voucherOrders = activeOrders.filter((o: any) => o.isVoucher);
+  const nonVoucherOrders = activeOrders.filter((o: any) => !o.isVoucher);
+  const voucherTotal = voucherOrders.reduce((sum: number, o: any) => sum + (Number(o.totalAmount) || 0), 0);
+
+  // Revenue: orders (non-cancelled, non-pending, non-merged-source, non-voucher) + manual invoices paid
+  const orderRevenue = nonVoucherOrders.reduce((sum: number, o: any) => sum + (Number(o.totalAmount) || 0), 0);
   const paidInvoices = invoiceList.filter((i: any) => i.status === 'PAID');
   // Manual invoices = paid invoices with no linked orders (created from invoices menu)
   const manualPaidInvoices = paidInvoices.filter((i: any) => !i.orders || i.orders.length === 0);
@@ -301,9 +306,9 @@ export default function ReportsPage() {
           color="sage"
         />
         <StatCard
-          title="Revenus totaux"
+          title="CA (hors bons)"
           value={formatCurrency(totalRevenue)}
-          subtitle={`${activeOrders.length} commandes (hors annulées/en attente)`}
+          subtitle={`${nonVoucherOrders.length} commandes${voucherOrders.length > 0 ? ` · ${voucherOrders.length} bon(s) : ${formatCurrency(voucherTotal)}` : ''}`}
           icon={TrendingUp}
           color="accent"
         />
@@ -510,11 +515,20 @@ export default function ReportsPage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between rounded-lg bg-sage-50/50 border border-sage-200 p-4">
               <div>
-                <p className="text-sm text-sage-600">Revenus des commandes (hors annulées)</p>
+                <p className="text-sm text-sage-600">CA des commandes (hors bons)</p>
                 <p className="text-2xl font-bold text-sage-800">{formatCurrency(totalRevenue)}</p>
               </div>
               <TrendingUp className="h-8 w-8 text-sage-400" />
             </div>
+            {voucherOrders.length > 0 && (
+              <div className="flex items-center justify-between rounded-lg bg-amber-50 border border-amber-200 p-4">
+                <div>
+                  <p className="text-sm text-amber-700">Bons Propriétaire ({voucherOrders.length})</p>
+                  <p className="text-2xl font-bold text-amber-800">{formatCurrency(voucherTotal)}</p>
+                  <p className="text-xs text-amber-600 mt-0.5">Exclu du CA — comptabilisé au bilan</p>
+                </div>
+              </div>
+            )}
             <div className="flex items-center justify-between rounded-lg bg-accent-50/50 border border-accent-200 p-4">
               <div>
                 <p className="text-sm text-accent-600">Factures payées</p>

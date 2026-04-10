@@ -215,11 +215,25 @@ data class ReservationCreated(
 // Orders
 // =============================================================================
 
+data class OwnerInfo(
+    val id: String,
+    val firstName: String? = null,
+    val lastName: String? = null,
+    val name: String
+)
+
+data class OwnersResponse(
+    val success: Boolean,
+    val data: List<OwnerInfo>
+)
+
 data class Order(
     val id: String,
     val orderNumber: String? = null,
     val tableNumber: String? = null,
     val orderType: String? = "RESTAURANT",
+    val isVoucher: Boolean = false,
+    val voucherOwnerName: String? = null,
     val status: String,
     val totalAmount: Double,
     val paymentMethod: String? = null,
@@ -266,6 +280,9 @@ data class CreateOrderRequest(
     val idempotencyKey: String? = null,
     val tableNumber: String? = null,
     val orderType: String? = "RESTAURANT",
+    val isVoucher: Boolean = false,
+    val voucherOwnerId: String? = null,
+    val voucherOwnerName: String? = null,
     val paymentMethod: String? = null,
     val items: List<CreateOrderItem>,
     val notes: String? = null,

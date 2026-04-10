@@ -100,6 +100,9 @@ export class OrderService {
       paymentMethod?: string;
       startTime?: string;
       endTime?: string;
+      isVoucher?: boolean;
+      voucherOwnerId?: string;
+      voucherOwnerName?: string;
     }
   ) {
     if (!data.items || data.items.length === 0) {
@@ -184,6 +187,9 @@ export class OrderService {
           orderNumber,
           idempotencyKey: data.idempotencyKey || null,
           orderType: data.orderType || 'RESTAURANT',
+          isVoucher: data.isVoucher || false,
+          voucherOwnerId: data.isVoucher ? (data.voucherOwnerId || null) : null,
+          voucherOwnerName: data.isVoucher ? (data.voucherOwnerName || null) : null,
           tableNumber: data.tableNumber,
           paymentMethod: data.paymentMethod as any,
           notes: data.notes,
@@ -226,7 +232,9 @@ export class OrderService {
           taxRate: 0,
           totalAmount,
           paymentMethod: data.paymentMethod as any || null,
-          notes: `Commande ${orderNumber}${data.tableNumber ? ` - Table ${data.tableNumber}` : ''}`,
+          notes: `${data.isVoucher ? `[BON PROPRIÉTAIRE${data.voucherOwnerName ? ` — ${data.voucherOwnerName}` : ''}] ` : ''}Commande ${orderNumber}${data.tableNumber ? ` - Table ${data.tableNumber}` : ''}`,
+          isVoucher: data.isVoucher || false,
+          voucherOwnerName: data.isVoucher ? (data.voucherOwnerName || null) : null,
           status: 'ISSUED',
           items: {
             create: itemsData.map((item) => {

@@ -395,9 +395,12 @@ function WidgetInvoicesPending() {
 function WidgetRevenueToday({ establishmentId }: { establishmentId: string | null }) {
   const { data: allOrdersData } = useAllOrders(establishmentId);
   const allOrders = allOrdersData?.data || [];
-  const totalRevenue = allOrders.reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0);
+  const nonVoucherOrders = allOrders.filter((o: any) => !o.isVoucher);
+  const voucherOrders = allOrders.filter((o: any) => o.isVoucher);
+  const totalRevenue = nonVoucherOrders.reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0);
+  const voucherTotal = voucherOrders.reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0);
 
-  return <StatCard title="Revenu du jour" value={formatCurrency(totalRevenue)} icon={DollarSign} color="sage" />;
+  return <StatCard title="CA du jour (hors bons)" value={formatCurrency(totalRevenue)} subtitle={voucherOrders.length > 0 ? `+ ${voucherOrders.length} bon(s) : ${formatCurrency(voucherTotal)}` : undefined} icon={DollarSign} color="sage" />;
 }
 
 // --- Stock Alerts Widget ---

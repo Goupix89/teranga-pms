@@ -35,6 +35,7 @@ import com.hotelpms.pos.BuildConfig
 import com.hotelpms.pos.domain.model.Article
 import com.hotelpms.pos.domain.model.Establishment
 import com.hotelpms.pos.domain.model.Order
+import com.hotelpms.pos.domain.model.OwnerInfo
 import com.hotelpms.pos.domain.model.QrCodeData
 import com.hotelpms.pos.ui.receipt.InvoiceReceiptScreen
 import com.hotelpms.pos.ui.receipt.ReceiptScreen
@@ -140,6 +141,11 @@ fun OrdersScreen(
                     total = uiState.cartTotal,
                     isCreating = uiState.isCreating,
                     cart = uiState.cart,
+                    isVoucher = uiState.isVoucher,
+                    owners = uiState.owners,
+                    selectedOwnerId = uiState.voucherOwnerId,
+                    onToggleVoucher = { viewModel.toggleVoucher() },
+                    onSelectOwner = { viewModel.setVoucherOwner(it) },
                     onAdd = { viewModel.addToCart(it) },
                     onRemove = { viewModel.removeFromCart(it) },
                     onCheckout = { viewModel.submitOrder() }
@@ -803,12 +809,18 @@ private fun ArticleDetailDialog(
 // CART BOTTOM BAR
 // =============================================================================
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CartBottomBar(
     itemCount: Int,
     total: Double,
     isCreating: Boolean,
     cart: List<CartEntry> = emptyList(),
+    isVoucher: Boolean = false,
+    owners: List<OwnerInfo> = emptyList(),
+    selectedOwnerId: String = "",
+    onToggleVoucher: () -> Unit = {},
+    onSelectOwner: (String) -> Unit = {},
     onAdd: (Article) -> Unit = {},
     onRemove: (String) -> Unit = {},
     onCheckout: () -> Unit
@@ -882,6 +894,66 @@ private fun CartBottomBar(
                     }
                     Spacer(Modifier.height(4.dp))
                     HorizontalDivider(color = SableOuidah.copy(alpha = 0.2f))
+                    Spacer(Modifier.height(4.dp))
+                    // Bon Propriétaire toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Bon Propriétaire", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (isVoucher) Color(0xFFD97706) else SableOuidah)
+                            Text("Exclu du CA", fontSize = 10.sp, color = SableOuidah.copy(alpha = 0.5f))
+                        }
+                        Switch(
+                            checked = isVoucher,
+                            onCheckedChange = { onToggleVoucher() },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Color(0xFFD97706)
+                            )
+                        )
+                    }
+                    // Owner dropdown when voucher is active
+                    if (isVoucher && owners.isNotEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        var ownerExpanded by remember { mutableStateOf(false) }
+                        val selectedOwner = owners.find { it.id == selectedOwnerId }
+                        ExposedDropdownMenuBox(
+                            expanded = ownerExpanded,
+                            onExpandedChange = { ownerExpanded = it }
+                        ) {
+                            OutlinedTextField(
+                                value = selectedOwner?.name ?: "Sélectionner le propriétaire",
+                                onValueChange = {},
+                                readOnly = true,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(),
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = ownerExpanded) },
+                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, color = SableOuidah),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = Color(0xFFD97706),
+                                    unfocusedBorderColor = SableOuidah.copy(alpha = 0.3f)
+                                ),
+                                singleLine = true
+                            )
+                            ExposedDropdownMenu(
+                                expanded = ownerExpanded,
+                                onDismissRequest = { ownerExpanded = false }
+                            ) {
+                                owners.forEach { owner ->
+                                    DropdownMenuItem(
+                                        text = { Text(owner.name, fontSize = 13.sp) },
+                                        onClick = {
+                                            onSelectOwner(owner.id)
+                                            ownerExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -903,11 +975,18 @@ private fun CartBottomBar(
                     )
                     Spacer(Modifier.width(8.dp))
                     Column {
-                        Text(
-                            text = "$itemCount article${if (itemCount > 1) "s" else ""}",
-                            fontSize = 12.sp,
-                            color = SableOuidah.copy(alpha = 0.7f)
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "$itemCount article${if (itemCount > 1) "s" else ""}",
+                                fontSize = 12.sp,
+                                color = SableOuidah.copy(alpha = 0.7f)
+                            )
+                            if (isVoucher) {
+                                Surface(color = Color(0xFFFEF3C7), shape = RoundedCornerShape(4.dp)) {
+                                    Text("Bon", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFD97706), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                }
+                            }
+                        }
                         Text(
                             text = formatFcfa(total),
                             fontWeight = FontWeight.Bold,
@@ -1044,12 +1123,25 @@ private fun OrderCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text(
-                            text = order.orderNumber ?: "---",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = TerreFon
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = order.orderNumber ?: "---",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = TerreFon
+                            )
+                            if (order.isVoucher) {
+                                Surface(color = Color(0xFFFEF3C7), shape = RoundedCornerShape(4.dp)) {
+                                    Text(
+                                        text = if (order.voucherOwnerName != null) "Bon — ${order.voucherOwnerName}" else "Bon",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFD97706),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
                         if (order.tableNumber != null) {
                             Text("Table ${order.tableNumber}", fontSize = 12.sp, color = BronzeAbomey)
                         }

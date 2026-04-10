@@ -39,6 +39,10 @@ data class OrdersUiState(
     val tableNumber: String = "",
     val paymentMethod: String = "CASH",
     val orderNotes: String = "",
+    val isVoucher: Boolean = false,
+    val voucherOwnerId: String = "",
+    val voucherOwnerName: String = "",
+    val owners: List<com.hotelpms.pos.domain.model.OwnerInfo> = emptyList(),
     val menuSearchQuery: String = "",
     val qrCodeData: QrCodeData? = null,
     val showQrCode: Boolean = false,
@@ -212,6 +216,33 @@ class OrdersViewModel @Inject constructor(
         uiState = uiState.copy(orderNotes = notes)
     }
 
+    fun toggleVoucher() {
+        val newValue = !uiState.isVoucher
+        uiState = uiState.copy(isVoucher = newValue, voucherOwnerId = "", voucherOwnerName = "")
+        if (newValue && uiState.owners.isEmpty()) {
+            fetchOwners()
+        }
+    }
+
+    fun setVoucherOwner(ownerId: String) {
+        val owner = uiState.owners.find { it.id == ownerId }
+        uiState = uiState.copy(
+            voucherOwnerId = ownerId,
+            voucherOwnerName = owner?.name ?: ""
+        )
+    }
+
+    private fun fetchOwners() {
+        viewModelScope.launch {
+            try {
+                val response = apiService.getOwners()
+                if (response.isSuccessful) {
+                    uiState = uiState.copy(owners = response.body()?.data ?: emptyList())
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
     fun addToCart(article: Article) {
         val existing = uiState.cart.find { it.article.id == article.id }
         val newCart = if (existing != null) {
@@ -283,6 +314,9 @@ class OrdersViewModel @Inject constructor(
                         isLocation -> "LOCATION"
                         else -> "RESTAURANT"
                     },
+                    isVoucher = uiState.isVoucher,
+                    voucherOwnerId = if (uiState.isVoucher) uiState.voucherOwnerId.ifBlank { null } else null,
+                    voucherOwnerName = if (uiState.isVoucher) uiState.voucherOwnerName.ifBlank { null } else null,
                     paymentMethod = uiState.paymentMethod,
                     notes = uiState.orderNotes.ifBlank { null },
                     items = uiState.cart.map { entry ->
@@ -303,6 +337,9 @@ class OrdersViewModel @Inject constructor(
                         cart = emptyList(),
                         tableNumber = "",
                         orderNotes = "",
+                        isVoucher = false,
+                        voucherOwnerId = "",
+                        voucherOwnerName = "",
                         viewMode = "orders"
                     )
                     fetchOrders()

@@ -30,7 +30,7 @@ export default function OrdersPage() {
   const canManageDuplicates = isSuperAdmin || ['OWNER', 'DAF', 'MANAGER'].includes(currentEstRole || '');
   const isDAFOrManager = isSuperAdmin || ['DAF', 'MANAGER'].includes(currentEstRole || '');
 
-  const [form, setForm] = useState({ establishmentId: '', tableNumber: '', orderType: 'RESTAURANT' as 'RESTAURANT' | 'LEISURE' | 'LOCATION', paymentMethod: 'MOOV_MONEY' as PaymentMethod, items: [{ articleId: '', quantity: 1 }] as Array<{ articleId: string; quantity: number }>, notes: '', startTime: '', endTime: '' });
+  const [form, setForm] = useState({ establishmentId: '', tableNumber: '', orderType: 'RESTAURANT' as 'RESTAURANT' | 'LEISURE' | 'LOCATION', paymentMethod: 'MOOV_MONEY' as PaymentMethod, items: [{ articleId: '', quantity: 1 }] as Array<{ articleId: string; quantity: number }>, notes: '', startTime: '', endTime: '', isVoucher: false, voucherOwnerId: '', voucherOwnerName: '' });
   const [qrModal, setQrModal] = useState<{ open: boolean; invoiceId?: string; qrCode?: string; invoiceNumber?: string; totalAmount?: number; paymentLabel?: string; currency?: string; paid?: boolean; fedapayCheckoutUrl?: string }>({ open: false });
 
   // Fetch users (servers) for filter — only for DAF/Manager
@@ -60,6 +60,12 @@ export default function OrdersPage() {
     queryKey: ['order-stats', currentEstId],
     queryFn: () => currentEstId ? apiGet<any>(`/orders/stats/${currentEstId}`) : null,
     enabled: !!currentEstId,
+  });
+
+  const { data: ownersData } = useQuery({
+    queryKey: ['owners'],
+    queryFn: () => apiGet<any>('/users/owners'),
+    enabled: form.isVoucher,
   });
 
   const createMutation = useMutation({
@@ -118,7 +124,7 @@ export default function OrdersPage() {
     }
   };
 
-  const resetForm = () => setForm({ establishmentId: currentEstId || '', tableNumber: '', orderType: 'RESTAURANT', paymentMethod: 'MOOV_MONEY', items: [{ articleId: '', quantity: 1 }], notes: '', startTime: '', endTime: '' });
+  const resetForm = () => setForm({ establishmentId: currentEstId || '', tableNumber: '', orderType: 'RESTAURANT', paymentMethod: 'MOOV_MONEY', items: [{ articleId: '', quantity: 1 }], notes: '', startTime: '', endTime: '', isVoucher: false, voucherOwnerId: '', voucherOwnerName: '' });
 
   const addItem = () => setForm((prev) => ({ ...prev, items: [...prev.items, { articleId: '', quantity: 1 }] }));
   const removeItem = (idx: number) => setForm((prev) => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
@@ -267,6 +273,9 @@ export default function OrdersPage() {
                         {order.orderType === 'LOCATION' && (
                           <span className="ml-1.5 inline-flex items-center rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] font-medium text-teal-700">Location</span>
                         )}
+                        {(order as any).isVoucher && (
+                          <span className="ml-1.5 inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">Bon{(order as any).voucherOwnerName ? ` — ${(order as any).voucherOwnerName}` : ''}</span>
+                        )}
                       </td>
                       <td className="text-gray-500">{order.tableNumber || '-'}</td>
                       <td className="text-sm text-gray-600">
@@ -367,6 +376,9 @@ export default function OrdersPage() {
                     )}
                     {order.orderType === 'LOCATION' && (
                       <span className="inline-flex items-center rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] font-medium text-teal-700">Location</span>
+                    )}
+                    {(order as any).isVoucher && (
+                      <span className="inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">Bon{(order as any).voucherOwnerName ? ` — ${(order as any).voucherOwnerName}` : ''}</span>
                     )}
                     <StatusBadge status={order.status} />
                   </div>
@@ -553,6 +565,9 @@ export default function OrdersPage() {
             notes: form.notes || undefined,
             startTime: (form.orderType === 'LEISURE' || form.orderType === 'LOCATION') && form.startTime ? new Date(form.startTime).toISOString() : undefined,
             endTime: (form.orderType === 'LEISURE' || form.orderType === 'LOCATION') && form.endTime ? new Date(form.endTime).toISOString() : undefined,
+            isVoucher: form.isVoucher || undefined,
+            voucherOwnerId: form.isVoucher && form.voucherOwnerId ? form.voucherOwnerId : undefined,
+            voucherOwnerName: form.isVoucher && form.voucherOwnerName ? form.voucherOwnerName : undefined,
           };
           createMutation.mutate(body);
         }} className="space-y-4">
@@ -590,6 +605,35 @@ export default function OrdersPage() {
               <label className="label">Notes (optionnel)</label>
               <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="input" placeholder="Instructions spéciales..." />
             </div>
+          </div>
+
+          {/* Bon Propriétaire */}
+          <div className={`rounded-lg border p-3 ${form.isVoucher ? 'bg-amber-50 border-amber-300' : 'bg-gray-50 border-gray-200'}`}>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input type="checkbox" checked={form.isVoucher} onChange={(e) => setForm({ ...form, isVoucher: e.target.checked, voucherOwnerId: '', voucherOwnerName: '' })} className="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
+              <div>
+                <span className={`font-medium ${form.isVoucher ? 'text-amber-800' : 'text-gray-700'}`}>Bon Propriétaire</span>
+                <span className="text-xs text-gray-500 ml-2">Exclu du CA — comptabilisé au bilan</span>
+              </div>
+            </label>
+            {form.isVoucher && (
+              <div className="mt-3">
+                <label className="label text-amber-800">Propriétaire</label>
+                <select
+                  value={form.voucherOwnerId}
+                  onChange={(e) => {
+                    const owner = (ownersData?.data || []).find((o: any) => o.id === e.target.value);
+                    setForm({ ...form, voucherOwnerId: e.target.value, voucherOwnerName: owner?.name || '' });
+                  }}
+                  className="input border-amber-300 focus:ring-amber-500"
+                >
+                  <option value="">— Sélectionner le propriétaire —</option>
+                  {(ownersData?.data || []).map((o: any) => (
+                    <option key={o.id} value={o.id}>{o.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           {(form.orderType === 'LEISURE' || form.orderType === 'LOCATION') && (

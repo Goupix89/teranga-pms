@@ -390,8 +390,11 @@ model Order {
   notes           String?
   totalAmount     Decimal        @default(0) @map("total_amount") @db.Decimal(10, 2)
   invoiceId       String?        @map("invoice_id")
-  idempotencyKey  String?     @unique @map("idempotency_key")
-  startTime       DateTime?   @map("start_time")
+  idempotencyKey   String?     @unique @map("idempotency_key")
+  isVoucher        Boolean     @default(false) @map("is_voucher")
+  voucherOwnerId   String?     @map("voucher_owner_id")
+  voucherOwnerName String?     @map("voucher_owner_name")
+  startTime        DateTime?   @map("start_time")
   endTime         DateTime?   @map("end_time")
   readyAt         DateTime?   @map("ready_at")
   servedAt        DateTime?   @map("served_at")
@@ -466,9 +469,11 @@ model Invoice {
   paymentMethod PaymentMethod? @map("payment_method")
   dueDate       DateTime?     @map("due_date") @db.Date
   paidAt        DateTime?     @map("paid_at")
-  notes         String?
-  createdAt     DateTime      @default(now()) @map("created_at")
-  updatedAt     DateTime      @updatedAt @map("updated_at")
+  notes            String?
+  isVoucher        Boolean       @default(false) @map("is_voucher")
+  voucherOwnerName String?       @map("voucher_owner_name")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
 
   tenant      Tenant       @relation(fields: [tenantId], references: [id])
   reservation Reservation? @relation(fields: [reservationId], references: [id])

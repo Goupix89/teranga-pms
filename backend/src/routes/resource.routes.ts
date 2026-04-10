@@ -67,6 +67,25 @@ userRouter.get('/', authenticate, requireDAFOrManager,
   })
 );
 
+// Lightweight owners list — accessible to all authenticated users (for Bon Propriétaire dropdown)
+userRouter.get('/owners', authenticate,
+  asyncHandler(async (req, res) => {
+    const db = createTenantClient(req.user!.tenantId);
+    const members = await db.establishmentMember.findMany({
+      where: { role: 'OWNER', isActive: true },
+      include: { user: { select: { id: true, firstName: true, lastName: true } } },
+      distinct: ['userId'],
+    });
+    const owners = members.map((m: any) => ({
+      id: m.user.id,
+      firstName: m.user.firstName,
+      lastName: m.user.lastName,
+      name: `${m.user.firstName} ${m.user.lastName}`,
+    }));
+    res.json({ success: true, data: owners });
+  })
+);
+
 userRouter.get('/:id', authenticate, requireSelfOrRole('DAF', 'MANAGER'),
   asyncHandler(async (req, res) => {
     const data = await userService.getById(req.user!.tenantId, req.params.id);

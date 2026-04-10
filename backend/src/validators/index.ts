@@ -391,6 +391,9 @@ export const createOrderSchema = z.object({
   notes: z.string().max(500).optional(),
   startTime: z.string().datetime().optional(),
   endTime: z.string().datetime().optional(),
+  isVoucher: z.boolean().default(false),
+  voucherOwnerId: z.string().uuid().optional(),
+  voucherOwnerName: z.string().max(200).optional(),
 });
 
 export const updateOrderStatusSchema = z.object({

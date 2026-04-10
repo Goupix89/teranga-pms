@@ -619,6 +619,86 @@ export class ArticleService {
       include: { category: { select: { id: true, name: true } } },
     });
   }
+
+  /**
+   * Permanently delete an article.
+   * Refuses if the article is referenced in existing orders or invoices.
+   * Cascades: removes stockMovements and stockAlerts.
+   */
+  async delete(tenantId: string, id: string) {
+    const article = await prisma.article.findFirst({ where: { id, tenantId } });
+    if (!article) throw new NotFoundError('Article');
+
+    // Check for order/invoice references
+    const [orderItemCount, invoiceItemCount] = await Promise.all([
+      prisma.orderItem.count({ where: { articleId: id } }),
+      prisma.invoiceItem.count({ where: { articleId: id } }),
+    ]);
+
+    if (orderItemCount > 0 || invoiceItemCount > 0) {
+      throw new ValidationError(
+        `Impossible de supprimer : cet article est référencé dans ${orderItemCount} commande(s) et ${invoiceItemCount} facture(s). Désactivez-le à la place.`
+      );
+    }
+
+    // Delete related data then article in a transaction
+    await prisma.$transaction([
+      prisma.stockAlert.deleteMany({ where: { articleId: id } }),
+      prisma.stockMovement.deleteMany({ where: { articleId: id } }),
+      prisma.article.delete({ where: { id } }),
+    ]);
+
+    return { deleted: true, id };
+  }
+
+  /**
+   * Find duplicate articles: same name (case-insensitive), including inactive.
+   */
+  async findDuplicates(tenantId: string) {
+    const db = createTenantClient(tenantId);
+
+    // Get all articles (active + inactive)
+    const articles = await db.article.findMany({
+      where: {},
+      include: { category: { select: { id: true, name: true } } },
+      orderBy: { name: 'asc' },
+    });
+
+    // Group by lowercased name
+    const groups = new Map<string, typeof articles>();
+    for (const article of articles) {
+      const key = article.name.trim().toLowerCase();
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(article);
+    }
+
+    // Keep only groups with >1 article
+    const duplicateGroups = [...groups.entries()]
+      .filter(([, g]) => g.length > 1)
+      .map(([name, group]) => ({
+        name,
+        count: group.length,
+        articles: group.map((a: any) => ({
+          id: a.id,
+          name: a.name,
+          sku: a.sku,
+          unitPrice: Number(a.unitPrice),
+          currentStock: a.currentStock,
+          isActive: a.isActive,
+          isApproved: a.isApproved,
+          category: a.category?.name || null,
+          createdAt: a.createdAt,
+        })),
+      }));
+
+    return {
+      duplicateGroups,
+      summary: {
+        totalGroups: duplicateGroups.length,
+        totalDuplicateArticles: duplicateGroups.reduce((s, g) => s + g.count - 1, 0),
+      },
+    };
+  }
 }
 
 export const articleService = new ArticleService();

@@ -184,6 +184,10 @@ interface PmsApiService {
     @HTTP(method = "DELETE", path = "api/notifications/device-token", hasBody = true)
     suspend fun removeDeviceToken(@Body body: Map<String, String>): Response<GenericResponse>
 
+    // Owners list (for Bon Propriétaire)
+    @GET("api/users/owners")
+    suspend fun getOwners(): Response<OwnersResponse>
+
     // Dashboard config (widget preferences)
     @GET("api/dashboard-config")
     suspend fun getDashboardConfig(): Response<DashboardConfigResponse>

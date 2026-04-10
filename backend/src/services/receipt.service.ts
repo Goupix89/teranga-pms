@@ -110,12 +110,19 @@ export class ReceiptService {
       // ── Order info ──
       const isLeisure = (order as any).orderType === 'LEISURE';
       const isLocation = (order as any).orderType === 'LOCATION';
-      const ticketTitle = isLeisure
-        ? `TICKET LOISIR N° ${order.orderNumber}`
-        : isLocation
-          ? `TICKET LOCATION N° ${order.orderNumber}`
-          : `Reçu N° ${order.orderNumber}`;
+      const isVoucher = (order as any).isVoucher === true;
+      const ticketTitle = isVoucher
+        ? `BON PROPRIÉTAIRE N° ${order.orderNumber}`
+        : isLeisure
+          ? `TICKET LOISIR N° ${order.orderNumber}`
+          : isLocation
+            ? `TICKET LOCATION N° ${order.orderNumber}`
+            : `Reçu N° ${order.orderNumber}`;
       doc.font('Helvetica-Bold').fontSize(9).text(ticketTitle, { align: 'center' });
+      if (isVoucher) {
+        const ownerName = (order as any).voucherOwnerName;
+        doc.font('Helvetica').fontSize(7).text(`*** BON PROPRIÉTAIRE${ownerName ? ` — ${ownerName}` : ''} ***`, { align: 'center' });
+      }
       doc.font('Helvetica').fontSize(7);
       doc.text(`Date: ${formatDate(order.createdAt)}`);
       if (order.tableNumber) doc.text(`Table: ${order.tableNumber}`);

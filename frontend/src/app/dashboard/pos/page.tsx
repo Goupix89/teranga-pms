@@ -49,6 +49,9 @@ export default function PosPage() {
   const [tableNumber, setTableNumber] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH');
   const [notes, setNotes] = useState('');
+  const [isVoucher, setIsVoucher] = useState(false);
+  const [voucherOwnerId, setVoucherOwnerId] = useState('');
+  const [voucherOwnerName, setVoucherOwnerName] = useState('');
   const [qrModal, setQrModal] = useState<{
     open: boolean;
     invoiceId?: string;
@@ -68,6 +71,12 @@ export default function PosPage() {
   const { data: categoriesData } = useQuery({
     queryKey: ['pos-categories', currentEstId],
     queryFn: () => apiGet<any>(`/article-categories?${currentEstId ? `establishmentId=${currentEstId}` : ''}`),
+  });
+
+  const { data: ownersData } = useQuery({
+    queryKey: ['owners'],
+    queryFn: () => apiGet<any>('/users/owners'),
+    enabled: isVoucher,
   });
 
   const articles: Article[] = articlesData?.data || [];
@@ -113,7 +122,7 @@ export default function PosPage() {
     setCart((prev) => prev.filter((item) => item.article.id !== articleId));
   };
 
-  const clearCart = () => setCart([]);
+  const clearCart = () => { setCart([]); setIsVoucher(false); setVoucherOwnerId(''); setVoucherOwnerName(''); };
 
   const cartTotal = cart.reduce((sum, item) => sum + item.article.unitPrice * item.quantity, 0);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -160,6 +169,9 @@ export default function PosPage() {
       tableNumber: tableNumber || undefined,
       paymentMethod,
       notes: notes || undefined,
+      isVoucher: isVoucher || undefined,
+      voucherOwnerId: isVoucher && voucherOwnerId ? voucherOwnerId : undefined,
+      voucherOwnerName: isVoucher && voucherOwnerName ? voucherOwnerName : undefined,
       items: cart.map((item) => ({
         articleId: item.article.id,
         quantity: item.quantity,
@@ -377,10 +389,34 @@ export default function PosPage() {
             />
           </div>
 
+          {/* Bon Propriétaire */}
+          <div className={`rounded-lg border p-2.5 ${isVoucher ? 'bg-amber-50 border-amber-300' : 'bg-wood-800/50 border-wood-700'}`}>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={isVoucher} onChange={(e) => { setIsVoucher(e.target.checked); setVoucherOwnerId(''); setVoucherOwnerName(''); }} className="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
+              <span className={`text-sm font-medium ${isVoucher ? 'text-amber-800' : 'text-wood-300'}`}>Bon Propriétaire</span>
+            </label>
+            {isVoucher && (
+              <select
+                value={voucherOwnerId}
+                onChange={(e) => {
+                  const owner = (ownersData?.data || []).find((o: any) => o.id === e.target.value);
+                  setVoucherOwnerId(e.target.value);
+                  setVoucherOwnerName(owner?.name || '');
+                }}
+                className="input mt-2 text-sm border-amber-300"
+              >
+                <option value="">— Propriétaire —</option>
+                {(ownersData?.data || []).map((o: any) => (
+                  <option key={o.id} value={o.id}>{o.name}</option>
+                ))}
+              </select>
+            )}
+          </div>
+
           {/* Total */}
-          <div className="flex items-center justify-between rounded-lg bg-wood-800 px-4 py-3">
-            <span className="text-sm font-medium text-wood-300">Total</span>
-            <span className="text-xl font-bold text-accent-500">{formatCurrency(cartTotal)}</span>
+          <div className={`flex items-center justify-between rounded-lg px-4 py-3 ${isVoucher ? 'bg-amber-100' : 'bg-wood-800'}`}>
+            <span className={`text-sm font-medium ${isVoucher ? 'text-amber-700' : 'text-wood-300'}`}>{isVoucher ? 'Total (Bon)' : 'Total'}</span>
+            <span className={`text-xl font-bold ${isVoucher ? 'text-amber-800' : 'text-accent-500'}`}>{formatCurrency(cartTotal)}</span>
           </div>
 
           {/* Submit */}
