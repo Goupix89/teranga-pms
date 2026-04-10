@@ -2,7 +2,7 @@
 
 import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiGet, apiPost, apiPatch } from '@/lib/api';
+import { apiGet, apiPost, apiPatch, apiDelete } from '@/lib/api';
 import { api } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 import { PageHeader, StatusBadge, Pagination, Modal, SearchInput, EmptyState, LoadingPage } from '@/components/ui';
@@ -43,6 +43,7 @@ export default function StockPage() {
 
   const [editingArticle, setEditingArticle] = useState<any>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<any>(null);
+  const [showDuplicates, setShowDuplicates] = useState(false);
 
   const { data: categories } = useQuery({
     queryKey: ['categories', currentEstId],
@@ -64,6 +65,12 @@ export default function StockPage() {
   const { data: allArticles } = useQuery({
     queryKey: ['articles-all', currentEstId],
     queryFn: () => apiGet<any>(`/articles?limit=200${currentEstId ? `&establishmentId=${currentEstId}` : ''}`),
+  });
+
+  const { data: duplicatesData, refetch: refetchDuplicates } = useQuery({
+    queryKey: ['article-duplicates'],
+    queryFn: () => apiGet<any>('/articles/duplicates'),
+    enabled: showDuplicates,
   });
 
   // Image upload handler
@@ -150,12 +157,13 @@ export default function StockPage() {
     },
   });
 
-  const deactivateArticleMutation = useMutation({
-    mutationFn: (id: string) => apiPatch(`/articles/${id}`, { isActive: false }),
+  const deleteArticleMutation = useMutation({
+    mutationFn: (id: string) => apiDelete(`/articles/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['articles'] });
+      queryClient.invalidateQueries({ queryKey: ['articles-all'] });
       setShowDeleteConfirm(null);
-      toast.success('Article désactivé');
+      toast.success('Article supprimé définitivement');
     },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
   });
@@ -253,6 +261,9 @@ export default function StockPage() {
         subtitle={isManager ? 'Créez des articles — ils seront validés par le DAF' : undefined}
         action={
           <div className="flex gap-2">
+            {(isSuperAdmin || isOwner || isDAF || isManager) && (
+              <button onClick={() => { setShowDuplicates(true); refetchDuplicates(); }} className="btn-secondary text-amber-700 border-amber-300 hover:bg-amber-50"><AlertTriangle className="mr-2 h-4 w-4" /> Doublons</button>
+            )}
             {(isDAF || isManager) && (
               <button onClick={() => setShowMovement(true)} className="btn-secondary"><Plus className="mr-2 h-4 w-4" /> Mouvement</button>
             )}
@@ -668,20 +679,21 @@ export default function StockPage() {
       </Modal>
 
       {/* Delete confirmation modal */}
-      <Modal open={!!showDeleteConfirm} onClose={() => setShowDeleteConfirm(null)} title="Désactiver l'article" size="sm">
+      <Modal open={!!showDeleteConfirm} onClose={() => setShowDeleteConfirm(null)} title="Supprimer l'article" size="sm">
         <div className="space-y-4">
           <p className="text-sm text-gray-600">
-            Êtes-vous sûr de vouloir désactiver l'article <strong>{showDeleteConfirm?.name}</strong> ? Il ne sera plus visible au menu.
+            Êtes-vous sûr de vouloir supprimer définitivement l'article <strong>{showDeleteConfirm?.name}</strong> ?
+            Cette action est irréversible. Si l'article est référencé dans des commandes ou factures, la suppression sera refusée.
           </p>
           <div className="flex justify-end gap-3">
             <button type="button" onClick={() => setShowDeleteConfirm(null)} className="btn-secondary">Annuler</button>
             <button
-              onClick={() => deactivateArticleMutation.mutate(showDeleteConfirm.id)}
+              onClick={() => deleteArticleMutation.mutate(showDeleteConfirm.id)}
               className="btn-primary bg-red-600 hover:bg-red-700"
-              disabled={deactivateArticleMutation.isPending}
+              disabled={deleteArticleMutation.isPending}
             >
-              {deactivateArticleMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Désactiver
+              {deleteArticleMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Supprimer
             </button>
           </div>
         </div>
@@ -720,6 +732,53 @@ export default function StockPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Duplicates Modal */}
+      <Modal open={showDuplicates} onClose={() => setShowDuplicates(false)} title="Articles en doublon" size="lg">
+        <div className="space-y-4">
+          {duplicatesData?.data?.summary && (
+            <div className="p-3 bg-amber-50 rounded-lg border border-amber-200 text-sm">
+              <strong>{duplicatesData.data.summary.totalGroups}</strong> groupe(s) de doublons detecté(s) — <strong>{duplicatesData.data.summary.totalDuplicateArticles}</strong> article(s) en surplus
+            </div>
+          )}
+          {duplicatesData?.data?.duplicateGroups?.length === 0 && (
+            <p className="text-sm text-gray-500 text-center py-4">Aucun doublon détecté.</p>
+          )}
+          {duplicatesData?.data?.duplicateGroups?.map((group: any, i: number) => (
+            <div key={i} className="border rounded-lg p-3 space-y-2">
+              <div className="font-medium text-sm capitalize">{group.name} <span className="text-gray-400">({group.count} articles)</span></div>
+              <div className="space-y-1">
+                {group.articles.map((a: any, j: number) => (
+                  <div key={a.id} className={`flex items-center justify-between text-xs px-2 py-1.5 rounded ${j === 0 ? 'bg-green-50 border border-green-200' : 'bg-gray-50'}`}>
+                    <div className="flex items-center gap-2">
+                      {j === 0 && <span className="text-green-600 font-medium">Original</span>}
+                      <span>{a.name}</span>
+                      {a.sku && <span className="text-gray-400">SKU: {a.sku}</span>}
+                      <span className="text-gray-500">{formatCurrency(a.unitPrice)}</span>
+                      <span className="text-gray-400">Stock: {a.currentStock}</span>
+                      {!a.isActive && <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[10px]">Inactif</span>}
+                      {a.category && <span className="text-gray-400">{a.category}</span>}
+                    </div>
+                    {j > 0 && (
+                      <button
+                        onClick={() => {
+                          deleteArticleMutation.mutate(a.id, {
+                            onSuccess: () => refetchDuplicates(),
+                          });
+                        }}
+                        className="text-red-600 hover:text-red-800 font-medium"
+                        disabled={deleteArticleMutation.isPending}
+                      >
+                        Supprimer
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       </Modal>
     </div>
   );

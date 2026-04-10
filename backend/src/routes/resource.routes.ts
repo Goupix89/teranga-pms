@@ -919,6 +919,13 @@ articleRouter.get('/', authenticate, requireAnyEstablishmentRole,
   })
 );
 
+articleRouter.get('/duplicates', authenticate, requireDAFOrManager,
+  asyncHandler(async (req, res) => {
+    const data = await articleService.findDuplicates(req.user!.tenantId);
+    res.json({ success: true, data });
+  })
+);
+
 articleRouter.get('/low-stock', authenticate, requireDAFOrManager,
   asyncHandler(async (req, res) => {
     const data = await articleService.getLowStock(req.user!.tenantId);
@@ -1001,6 +1008,13 @@ articleRouter.post('/', authenticate, requireDAFOrManager, validate(v.createArti
 articleRouter.patch('/:id', authenticate, requireDAFOrManager, validate(v.updateArticleSchema),
   asyncHandler(async (req, res) => {
     const data = await articleService.update(req.user!.tenantId, req.params.id, req.body);
+    res.json({ success: true, data });
+  })
+);
+
+articleRouter.delete('/:id', authenticate, requireDAFOrManager,
+  asyncHandler(async (req, res) => {
+    const data = await articleService.delete(req.user!.tenantId, req.params.id);
     res.json({ success: true, data });
   })
 );
