@@ -6,7 +6,7 @@ import { PaginationParams, PaginatedResponse } from '../types';
  */
 export function parsePagination(req: Request): PaginationParams {
   const page = Math.max(1, parseInt(req.query.page as string) || 1);
-  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+  const limit = Math.min(1000, Math.max(1, parseInt(req.query.limit as string) || 20));
   const sortBy = (req.query.sortBy as string) || 'createdAt';
   const sortOrder = req.query.sortOrder === 'asc' ? 'asc' : 'desc';
 

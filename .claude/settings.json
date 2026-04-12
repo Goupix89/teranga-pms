@@ -16,7 +16,9 @@
       "Bash(sudo mkdir:*)",
       "Bash(sudo chown:*)",
       "Bash(grep -n \"data class\\\\|enum class\" /home/user/hotel-pms/android/app/src/main/java/com/hotelpms/pos/domain/model/*.kt)",
-      "Bash(git status:*)"
+      "Bash(git status:*)",
+      "Bash(mv /tmp/check_articles.ts /home/user/hotel-pms/backend/check_articles.ts)",
+      "Bash(npx tsx:*)"
     ]
   }
 }
