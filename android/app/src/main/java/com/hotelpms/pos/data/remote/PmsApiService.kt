@@ -22,7 +22,8 @@ interface PmsApiService {
     suspend fun getArticles(
         @Query("page") page: Int = 1,
         @Query("limit") limit: Int = 200,
-        @Query("menuOnly") menuOnly: Boolean = false
+        @Query("menuOnly") menuOnly: Boolean = true,
+        @Query("establishmentId") establishmentId: String? = null
     ): Response<ArticlesResponse>
 
     // POS Transactions
@@ -73,7 +74,8 @@ interface PmsApiService {
     @GET("api/orders")
     suspend fun getOrders(
         @Query("establishmentId") establishmentId: String? = null,
-        @Query("status") status: String? = null
+        @Query("status") status: String? = null,
+        @Query("createdById") createdById: String? = null
     ): OrdersResponse
 
     @GET("api/orders/kitchen/{establishmentId}")

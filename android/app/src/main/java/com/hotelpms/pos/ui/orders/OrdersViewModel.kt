@@ -35,6 +35,7 @@ data class OrdersUiState(
     val error: String? = null,
     val successMessage: String? = null,
     val statusFilter: String? = null,
+    val myOrdersOnly: Boolean = false,
     val menuTab: String = "Restaurant", // "Restaurant" or "Boissons"
     val viewMode: String = "menu", // "menu" or "orders"
     val tableNumber: String = "",
@@ -138,7 +139,8 @@ class OrdersViewModel @Inject constructor(
     private fun fetchOrdersSilent() {
         viewModelScope.launch {
             try {
-                val response = apiService.getOrders()
+                val createdById = if (uiState.myOrdersOnly) tokenManager.userId else null
+                val response = apiService.getOrders(createdById = createdById)
                 if (response.data != uiState.orders) {
                     uiState = uiState.copy(orders = response.data)
                 }
@@ -155,7 +157,8 @@ class OrdersViewModel @Inject constructor(
         viewModelScope.launch {
             uiState = uiState.copy(isLoading = true, error = null)
             try {
-                val response = apiService.getOrders()
+                val createdById = if (uiState.myOrdersOnly) tokenManager.userId else null
+                val response = apiService.getOrders(createdById = createdById)
                 uiState = uiState.copy(
                     orders = response.data,
                     isLoading = false
@@ -169,11 +172,19 @@ class OrdersViewModel @Inject constructor(
         }
     }
 
+    fun toggleMyOrders() {
+        uiState = uiState.copy(myOrdersOnly = !uiState.myOrdersOnly)
+        fetchOrders()
+    }
+
     fun fetchArticles() {
         viewModelScope.launch {
             uiState = uiState.copy(isLoadingArticles = true)
             try {
-                val response = apiService.getArticles()
+                val response = apiService.getArticles(
+                    menuOnly = true,
+                    establishmentId = tokenManager.establishmentId
+                )
                 if (response.isSuccessful) {
                     uiState = uiState.copy(
                         articles = response.body()?.data ?: emptyList(),

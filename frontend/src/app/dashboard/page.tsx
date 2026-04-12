@@ -50,7 +50,9 @@ const ALL_WIDGETS: WidgetDef[] = [
   // — Finance —
   { id: 'recent_invoices', label: 'Dernières factures', description: '5 dernières factures avec statut', icon: Receipt, roles: ['SUPERADMIN', 'OWNER', 'DAF', 'MANAGER'], defaultSize: 'md', category: 'Finances' },
   { id: 'invoices_pending', label: 'Factures impayées', description: 'Nombre de factures en attente de paiement', icon: Receipt, roles: ['SUPERADMIN', 'OWNER', 'DAF', 'POS'], defaultSize: 'sm', category: 'Finances' },
-  { id: 'revenue_today', label: 'Revenu du jour', description: 'Chiffre d\'affaires total aujourd\'hui', icon: DollarSign, roles: ['SUPERADMIN', 'OWNER', 'DAF', 'MAITRE_HOTEL'], defaultSize: 'sm', category: 'Finances' },
+  { id: 'revenue_today', label: 'Encaissements du jour', description: 'Paiements encaissés aujourd\'hui', icon: DollarSign, roles: ['SUPERADMIN', 'OWNER', 'DAF', 'MAITRE_HOTEL'], defaultSize: 'sm', category: 'Finances' },
+  { id: 'revenue_week', label: 'Encaissements semaine', description: 'Paiements encaissés cette semaine', icon: TrendingUp, roles: ['SUPERADMIN', 'OWNER', 'DAF', 'MAITRE_HOTEL'], defaultSize: 'sm', category: 'Finances' },
+  { id: 'revenue_month', label: 'Encaissements mois', description: 'Paiements encaissés ce mois', icon: TrendingUp, roles: ['SUPERADMIN', 'OWNER', 'DAF', 'MAITRE_HOTEL'], defaultSize: 'sm', category: 'Finances' },
 
   // — Stock —
   { id: 'stock_alerts', label: 'Alertes stock bas', description: 'Articles sous le seuil minimum', icon: AlertTriangle, roles: ['SUPERADMIN', 'OWNER', 'DAF', 'MANAGER'], defaultSize: 'full', category: 'Stock' },
@@ -391,21 +393,32 @@ function WidgetInvoicesPending() {
   return <StatCard title="Factures en attente" value={pendingCount} icon={Receipt} color="amber" />;
 }
 
-// --- Revenue Today Widget ---
-function WidgetRevenueToday({ establishmentId }: { establishmentId: string | null }) {
-  const today = new Date().toISOString().slice(0, 10);
-  const { data: dailyData } = useQuery({
-    queryKey: ['daily-report', today, establishmentId],
-    queryFn: () => apiGet<any>(`/reports/daily?date=${today}${establishmentId ? `&establishmentId=${establishmentId}` : ''}`),
+// --- Revenue Widgets (shared query) ---
+function useRevenueSummary(establishmentId: string | null) {
+  return useQuery({
+    queryKey: ['revenue-summary', establishmentId],
+    queryFn: () => apiGet<any>(`/reports/revenue-summary${establishmentId ? `?establishmentId=${establishmentId}` : ''}`),
     enabled: !!establishmentId,
     refetchInterval: 30000,
   });
-  const report = dailyData?.data;
-  const totalEncaisse = report?.totalEncaisse || 0;
-  const voucherCount = report?.voucherCount || 0;
-  const voucherTotal = report?.voucherTotal || 0;
+}
 
-  return <StatCard title="Encaissements du jour" value={formatCurrency(totalEncaisse)} subtitle={voucherCount > 0 ? `+ ${voucherCount} bon(s) : ${formatCurrency(voucherTotal)}` : `${report?.totalOrders || 0} commande(s)`} icon={DollarSign} color="sage" />;
+function WidgetRevenueToday({ establishmentId }: { establishmentId: string | null }) {
+  const { data } = useRevenueSummary(establishmentId);
+  const d = data?.data?.today;
+  return <StatCard title="Encaissements du jour" value={formatCurrency(d?.total || 0)} subtitle={`${d?.count || 0} paiement(s)`} icon={DollarSign} color="sage" />;
+}
+
+function WidgetRevenueWeek({ establishmentId }: { establishmentId: string | null }) {
+  const { data } = useRevenueSummary(establishmentId);
+  const d = data?.data?.week;
+  return <StatCard title="Encaissements semaine" value={formatCurrency(d?.total || 0)} subtitle={`${d?.count || 0} paiement(s)`} icon={TrendingUp} color="accent" />;
+}
+
+function WidgetRevenueMonth({ establishmentId }: { establishmentId: string | null }) {
+  const { data } = useRevenueSummary(establishmentId);
+  const d = data?.data?.month;
+  return <StatCard title="Encaissements mois" value={formatCurrency(d?.total || 0)} subtitle={`${d?.count || 0} paiement(s)`} icon={TrendingUp} color="primary" />;
 }
 
 // --- Stock Alerts Widget ---
@@ -648,6 +661,8 @@ function RenderWidget({ id, establishmentId, userId, role }: { id: string; estab
     case 'recent_invoices': return <WidgetRecentInvoices />;
     case 'invoices_pending': return <WidgetInvoicesPending />;
     case 'revenue_today': return <WidgetRevenueToday establishmentId={establishmentId} />;
+    case 'revenue_week': return <WidgetRevenueWeek establishmentId={establishmentId} />;
+    case 'revenue_month': return <WidgetRevenueMonth establishmentId={establishmentId} />;
     case 'stock_alerts': return <WidgetStockAlerts />;
     case 'stock_levels_chart': return <WidgetStockLevelsChart />;
     case 'cleaning_status': return <WidgetCleaningStatus establishmentId={establishmentId} />;

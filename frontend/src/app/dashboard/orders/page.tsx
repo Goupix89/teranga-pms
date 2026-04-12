@@ -23,6 +23,7 @@ export default function OrdersPage() {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState('');
   const [serverFilter, setServerFilter] = useState('');
+  const [myOrdersOnly, setMyOrdersOnly] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [showDuplicates, setShowDuplicates] = useState(false);
@@ -40,10 +41,11 @@ export default function OrdersPage() {
     enabled: isDAFOrManager,
   });
 
+  const effectiveCreatedById = myOrdersOnly ? currentUser?.id : serverFilter;
   const { data, isLoading } = useQuery({
-    queryKey: ['orders', page, statusFilter, serverFilter, currentEstId],
-    queryFn: () => apiGet<any>(`/orders?page=${page}&limit=20${statusFilter ? `&status=${statusFilter}` : ''}${serverFilter ? `&createdById=${serverFilter}` : ''}${currentEstId ? `&establishmentId=${currentEstId}` : ''}`),
-    refetchInterval: 15000, // Auto-refresh every 15s for near-real-time
+    queryKey: ['orders', page, statusFilter, effectiveCreatedById, currentEstId],
+    queryFn: () => apiGet<any>(`/orders?page=${page}&limit=20${statusFilter ? `&status=${statusFilter}` : ''}${effectiveCreatedById ? `&createdById=${effectiveCreatedById}` : ''}${currentEstId ? `&establishmentId=${currentEstId}` : ''}`),
+    refetchInterval: 15000,
   });
 
   const { data: articlesData } = useQuery({
@@ -244,7 +246,7 @@ export default function OrdersPage() {
       )}
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-3 items-center">
         <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className="input w-full sm:w-48">
           <option value="">Tous les statuts</option>
           <option value="PENDING">En attente</option>
@@ -253,7 +255,13 @@ export default function OrdersPage() {
           <option value="SERVED">Servie</option>
           <option value="CANCELLED">Annulée</option>
         </select>
-        {isDAFOrManager && (
+        <button
+          onClick={() => { setMyOrdersOnly(!myOrdersOnly); setServerFilter(''); setPage(1); }}
+          className={`px-3 py-2 text-sm rounded-lg border transition-colors ${myOrdersOnly ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+        >
+          Mes commandes
+        </button>
+        {isDAFOrManager && !myOrdersOnly && (
           <select value={serverFilter} onChange={(e) => { setServerFilter(e.target.value); setPage(1); }} className="input w-full sm:w-56">
             <option value="">Tous les serveurs</option>
             {(usersData?.data || []).map((u: any) => (

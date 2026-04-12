@@ -131,6 +131,7 @@ enum ApprovalType {
   ROOM_CREATION
   STOCK_MOVEMENT
   ARTICLE_CREATION
+  VOUCHER_ORDER
 }
 
 enum ApprovalStatus {

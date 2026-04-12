@@ -5,6 +5,10 @@ import { paginate, toSkipTake } from '../utils/helpers';
 import { PaginationParams } from '../types';
 import { notificationService } from './notification.service';
 
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat('fr-FR').format(Math.round(amount)) + ' FCFA';
+}
+
 export class OrderService {
   /**
    * List orders with filters and pagination.
@@ -268,7 +272,47 @@ export class OrderService {
         data: { orderId: order.id, orderNumber, tableNumber: data.tableNumber },
       }).catch(() => {});
 
-      return { ...order, invoiceId: invoice.id };
+      // Voucher orders require Owner approval
+      let requiresApproval = false;
+      if (data.isVoucher && data.voucherOwnerId) {
+        requiresApproval = true;
+        await tx.approvalRequest.create({
+          data: {
+            tenantId,
+            establishmentId: data.establishmentId,
+            type: 'VOUCHER_ORDER',
+            requestedById: userId,
+            targetId: order.id,
+            payload: {
+              orderId: order.id,
+              orderNumber,
+              totalAmount,
+              voucherOwnerId: data.voucherOwnerId,
+              voucherOwnerName: data.voucherOwnerName,
+              tableNumber: data.tableNumber,
+              items: itemsData.map((i) => ({
+                articleId: i.articleId,
+                name: articleMap.get(i.articleId)?.name,
+                quantity: i.quantity,
+                unitPrice: i.unitPrice,
+              })),
+            },
+          },
+        });
+
+        // Notify the specific Owner
+        notificationService.notify({
+          tenantId,
+          userId: data.voucherOwnerId,
+          establishmentId: data.establishmentId,
+          type: 'APPROVAL_NEEDED',
+          title: 'Bon Propriétaire — Approbation requise',
+          message: `${order.createdBy.firstName} ${order.createdBy.lastName} demande un bon de ${formatCurrency(totalAmount)} (${orderNumber}).`,
+          data: { orderId: order.id, orderNumber, approvalType: 'VOUCHER_ORDER' },
+        }).catch(() => {});
+      }
+
+      return { ...order, invoiceId: invoice.id, requiresApproval };
     });
     } catch (err: any) {
       // Retry on unique constraint violation (P2002)

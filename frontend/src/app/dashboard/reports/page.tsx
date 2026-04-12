@@ -34,6 +34,12 @@ export default function ReportsPage() {
   const [period, setPeriod] = useState<ReportPeriod>('month');
   const [reportDate, setReportDate] = useState(new Date().toISOString().slice(0, 10));
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const today = new Date().toISOString().slice(0, 10);
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+  const [rangeFrom, setRangeFrom] = useState(thirtyDaysAgo);
+  const [rangeTo, setRangeTo] = useState(today);
+  const [showRange, setShowRange] = useState(false);
+  const [isDownloadingRangePdf, setIsDownloadingRangePdf] = useState(false);
 
   const isDAF = currentEstablishmentRole === 'DAF' || user?.role === 'SUPERADMIN';
 
@@ -43,6 +49,28 @@ export default function ReportsPage() {
     queryFn: () => apiGet<any>(`/reports/daily?date=${reportDate}${currentEstablishmentId ? `&establishmentId=${currentEstablishmentId}` : ''}`),
   });
   const daily = dailyReport?.data;
+
+  // Range report (multi-day)
+  const { data: rangeReport } = useQuery({
+    queryKey: ['range-report', rangeFrom, rangeTo, currentEstablishmentId, showRange],
+    queryFn: () => apiGet<any>(`/reports/range?from=${rangeFrom}&to=${rangeTo}${currentEstablishmentId ? `&establishmentId=${currentEstablishmentId}` : ''}`),
+    enabled: showRange && !!rangeFrom && !!rangeTo,
+  });
+  const range = rangeReport?.data;
+
+  const downloadRangePdf = async () => {
+    setIsDownloadingRangePdf(true);
+    try {
+      const res = await api.get(`/reports/range-pdf?from=${rangeFrom}&to=${rangeTo}${currentEstablishmentId ? `&establishmentId=${currentEstablishmentId}` : ''}`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `rapport-${rangeFrom}_${rangeTo}.pdf`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch { }
+    setIsDownloadingRangePdf(false);
+  };
 
   const downloadDailyPdf = async () => {
     setIsDownloadingPdf(true);
@@ -302,6 +330,10 @@ export default function ReportsPage() {
               {isDownloadingPdf ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <FileText className="mr-1.5 h-4 w-4" />}
               PDF du jour
             </button>
+            <button onClick={() => setShowRange((v) => !v)} className="btn-secondary text-sm">
+              <FileText className="mr-1.5 h-4 w-4" />
+              {showRange ? 'Masquer période' : 'Période multi-jours'}
+            </button>
             <button onClick={() => exportCSV('orders')} className="btn-secondary text-sm">
               <Download className="mr-1.5 h-4 w-4" /> Commandes
             </button>
@@ -326,6 +358,71 @@ export default function ReportsPage() {
       />
 
       <div className="divider-teranga" />
+
+      {showRange && (
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex flex-wrap items-end gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600">Du</label>
+              <input type="date" value={rangeFrom} onChange={(e) => setRangeFrom(e.target.value)} className="input h-9 w-40 text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600">Au</label>
+              <input type="date" value={rangeTo} onChange={(e) => setRangeTo(e.target.value)} className="input h-9 w-40 text-sm" />
+            </div>
+            <button onClick={downloadRangePdf} disabled={isDownloadingRangePdf} className="btn-primary text-sm">
+              {isDownloadingRangePdf ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <FileText className="mr-1.5 h-4 w-4" />}
+              PDF période
+            </button>
+          </div>
+          {range && (
+            <>
+              <div className="mb-4 grid gap-3 sm:grid-cols-4">
+                <div className="rounded-lg bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">Encaissements totaux</p>
+                  <p className="text-lg font-bold text-slate-900">{formatCurrency(range.grandTotal || 0)}</p>
+                </div>
+                <div className="rounded-lg bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">Bons propriétaires</p>
+                  <p className="text-lg font-bold text-slate-900">{formatCurrency(range.grandVoucher || 0)}</p>
+                </div>
+                <div className="rounded-lg bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">Paiements</p>
+                  <p className="text-lg font-bold text-slate-900">{range.grandPayments || 0}</p>
+                </div>
+                <div className="rounded-lg bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">Moy. / jour</p>
+                  <p className="text-lg font-bold text-slate-900">
+                    {formatCurrency(range.days?.length ? (range.grandTotal || 0) / range.days.length : 0)}
+                  </p>
+                </div>
+              </div>
+              <div className="max-h-72 overflow-auto">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-white">
+                    <tr className="border-b text-left text-xs uppercase text-slate-500">
+                      <th className="py-2">Date</th>
+                      <th className="py-2">Encaissements</th>
+                      <th className="py-2">Bons</th>
+                      <th className="py-2">Nb paiements</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(range.days || []).map((d: any) => (
+                      <tr key={d.date} className="border-b last:border-0">
+                        <td className="py-2">{d.date}</td>
+                        <td className="py-2 font-medium">{formatCurrency(d.total || 0)}</td>
+                        <td className="py-2 text-slate-500">{formatCurrency(d.voucherTotal || 0)}</td>
+                        <td className="py-2">{d.count || 0}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* KPI Cards — from daily report (encaissements) */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">

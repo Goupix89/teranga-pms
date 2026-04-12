@@ -80,6 +80,7 @@ export class ApprovalService {
       ROOM_CREATION: 'Nouvelle chambre',
       STOCK_MOVEMENT: 'Mouvement de stock',
       ARTICLE_CREATION: 'Nouvel article',
+      VOUCHER_ORDER: 'Bon Propriétaire',
     };
 
     notificationService.notifyRole({
@@ -205,6 +206,15 @@ export class ApprovalService {
         });
       }
 
+      // Approve voucher order — confirm the bon propriétaire
+      if (request.type === 'VOUCHER_ORDER' && request.targetId) {
+        const payload = request.payload as Record<string, any>;
+        await tx.order.updateMany({
+          where: { id: request.targetId, status: 'PENDING' },
+          data: { status: 'IN_PROGRESS', notes: `[BON VALIDÉ par propriétaire] ${payload.voucherOwnerName || ''}`.trim() },
+        });
+      }
+
       // Notify the requester about the approval
       notificationService.notify({
         tenantId,
@@ -244,12 +254,27 @@ export class ApprovalService {
       },
     });
 
-    // Deactivate rejected article
+    // Delete rejected article entirely (no silent deactivation that causes disappearance)
     if (request.type === 'ARTICLE_CREATION' && request.targetId) {
-      await prisma.article.update({
-        where: { id: request.targetId },
-        data: { isActive: false },
+      await prisma.article.deleteMany({
+        where: { id: request.targetId, isApproved: false },
       });
+    }
+
+    // Cancel rejected voucher order + its invoice
+    if (request.type === 'VOUCHER_ORDER' && request.targetId) {
+      await prisma.order.updateMany({
+        where: { id: request.targetId, status: { notIn: ['SERVED', 'CANCELLED'] } },
+        data: { status: 'CANCELLED', notes: `[BON REFUSÉ] ${reason || ''}`.trim() },
+      });
+      // Also cancel the linked invoice
+      const order = await prisma.order.findUnique({ where: { id: request.targetId }, select: { invoiceId: true } });
+      if (order?.invoiceId) {
+        await prisma.invoice.updateMany({
+          where: { id: order.invoiceId, status: { notIn: ['PAID', 'CANCELLED'] } },
+          data: { status: 'CANCELLED' },
+        });
+      }
     }
 
     // Notify the requester about the rejection

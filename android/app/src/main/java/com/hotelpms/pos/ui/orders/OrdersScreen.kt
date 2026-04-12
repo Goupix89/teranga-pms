@@ -1032,6 +1032,22 @@ private fun OrdersListView(
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         // Filter tabs
+        // "Mes commandes" toggle
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.Start
+        ) {
+            FilterChip(
+                selected = uiState.myOrdersOnly,
+                onClick = { viewModel.toggleMyOrders() },
+                label = { Text("Mes commandes", fontSize = 13.sp) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = RougeDahomey.copy(alpha = 0.15f),
+                    selectedLabelColor = RougeDahomey
+                )
+            )
+        }
+
         val filterTabs = listOf(
             "Toutes" to null,
             "En attente" to "PENDING",

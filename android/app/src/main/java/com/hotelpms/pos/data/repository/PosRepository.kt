@@ -58,7 +58,12 @@ class PosRepository(
      */
     suspend fun refreshArticles(): Result<List<CachedArticle>> {
         return try {
-            val response = api.getArticles(page = 1, limit = 200)
+            val response = api.getArticles(
+                page = 1,
+                limit = 200,
+                menuOnly = true,
+                establishmentId = tokenManager.establishmentId
+            )
             if (response.isSuccessful && response.body()?.success == true) {
                 val articles = response.body()!!.data
                 val cached = articles.map { article ->

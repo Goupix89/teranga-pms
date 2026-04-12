@@ -962,68 +962,24 @@ articleRouter.get('/:id', authenticate, requireAnyEstablishmentRole,
   })
 );
 
-// DAF and MANAGER can create articles — Manager articles require DAF approval
+// DAF and MANAGER can create articles — auto-approved so they show up immediately for all roles
 articleRouter.post('/', authenticate, requireDAFOrManager, validate(v.createArticleSchema),
   asyncHandler(async (req, res) => {
-    const userRole = req.user?.role;
     const { establishmentId: estId, ...articleData } = req.body;
     const resolvedEstId = estId || req.query.establishmentId as string || req.user?.establishmentIds?.[0] || '';
 
-    // Determine user's establishment role
-    let estRole: string | null = null;
-    if (userRole === 'SUPERADMIN') {
-      estRole = 'OWNER';
-    } else {
-      const membership = req.user?.memberships?.find(
-        (m) => resolvedEstId ? m.establishmentId === resolvedEstId : true
-      );
-      estRole = membership?.role || null;
-    }
-
-    // Check for duplicate article name
     const existingArticle = await articleService.findByName(req.user!.tenantId, articleData.name);
     if (existingArticle) {
       return res.status(409).json({ success: false, error: `Un article avec le nom "${articleData.name}" existe déjà` });
     }
 
-    if (estRole === 'MANAGER' || estRole === 'DAF') {
-      // Manager and DAF create articles requiring approval (from DAF/OWNER or OWNER respectively)
-      const article = await articleService.create(req.user!.tenantId, {
-        ...articleData,
-        establishmentId: resolvedEstId || undefined,
-        isApproved: false,
-        createdById: req.user!.id,
-      });
-      await approvalService.create(req.user!.tenantId, {
-        establishmentId: resolvedEstId,
-        type: 'ARTICLE_CREATION',
-        requestedById: req.user!.id,
-        payload: {
-          articleId: article.id,
-          name: article.name,
-          unitPrice: Number(article.unitPrice),
-          costPrice: Number(article.costPrice),
-          categoryId: article.categoryId,
-          categoryName: article.category?.name || '',
-          description: article.description || '',
-          imageUrl: article.imageUrl || '',
-          currentStock: article.currentStock,
-          minimumStock: article.minimumStock,
-          unit: article.unit,
-        },
-        targetId: article.id,
-      });
-      res.status(201).json({ success: true, data: article, requiresApproval: true });
-    } else {
-      // OWNER (and SUPERADMIN) creates article directly as approved
-      const data = await articleService.create(req.user!.tenantId, {
-        ...articleData,
-        establishmentId: resolvedEstId || undefined,
-        isApproved: true,
-        createdById: req.user!.id,
-      });
-      res.status(201).json({ success: true, data });
-    }
+    const data = await articleService.create(req.user!.tenantId, {
+      ...articleData,
+      establishmentId: resolvedEstId || undefined,
+      isApproved: true,
+      createdById: req.user!.id,
+    });
+    res.status(201).json({ success: true, data });
   })
 );
 
@@ -2195,6 +2151,64 @@ reportRouter.get('/daily', authenticate, requireDAFOrManagerOrServer,
   })
 );
 
+reportRouter.get('/revenue-summary', authenticate, requireDAFOrManagerOrServer,
+  asyncHandler(async (req, res) => {
+    const establishmentId = req.query.establishmentId as string | undefined;
+    const tenantId = req.user!.tenantId;
+    const db = createTenantClient(tenantId);
+
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayEnd = new Date(todayStart.getTime() + 86400000 - 1);
+
+    // Week start (Monday)
+    const dayOfWeek = now.getDay() || 7; // Sunday=7
+    const weekStart = new Date(todayStart);
+    weekStart.setDate(weekStart.getDate() - (dayOfWeek - 1));
+
+    // Month start
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const estInvoiceFilter = establishmentId
+      ? { invoice: { orders: { some: { establishmentId } } } }
+      : {};
+
+    const voucherExclude = {
+      invoice: {
+        ...estInvoiceFilter.invoice,
+        isVoucher: false,
+      },
+    };
+
+    const [today, week, month] = await Promise.all([
+      db.payment.aggregate({
+        where: { tenantId, createdAt: { gte: todayStart, lte: todayEnd }, ...voucherExclude },
+        _sum: { amount: true },
+        _count: true,
+      }),
+      db.payment.aggregate({
+        where: { tenantId, createdAt: { gte: weekStart, lte: todayEnd }, ...voucherExclude },
+        _sum: { amount: true },
+        _count: true,
+      }),
+      db.payment.aggregate({
+        where: { tenantId, createdAt: { gte: monthStart, lte: todayEnd }, ...voucherExclude },
+        _sum: { amount: true },
+        _count: true,
+      }),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        today: { total: Number(today._sum.amount || 0), count: today._count },
+        week: { total: Number(week._sum.amount || 0), count: week._count },
+        month: { total: Number(month._sum.amount || 0), count: month._count },
+      },
+    });
+  })
+);
+
 reportRouter.get('/daily-pdf', authenticate, requireDAFOrManagerOrServer,
   asyncHandler(async (req, res) => {
     const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
@@ -2205,6 +2219,42 @@ reportRouter.get('/daily-pdf', authenticate, requireDAFOrManagerOrServer,
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename=rapport-${date}.pdf`,
+    });
+    res.send(pdf);
+  })
+);
+
+// Range report: one row per day between from and to
+reportRouter.get('/range', authenticate, requireDAFOrManagerOrServer,
+  asyncHandler(async (req, res) => {
+    const from = req.query.from as string;
+    const to = req.query.to as string;
+    if (!from || !to) {
+      res.status(400).json({ success: false, error: 'Paramètres from et to requis (YYYY-MM-DD)' });
+      return;
+    }
+    const establishmentId = req.query.establishmentId as string | undefined;
+    const tenantId = req.user!.tenantId;
+    const data = await buildRangeReport(tenantId, from, to, establishmentId);
+    res.json({ success: true, data });
+  })
+);
+
+reportRouter.get('/range-pdf', authenticate, requireDAFOrManagerOrServer,
+  asyncHandler(async (req, res) => {
+    const from = req.query.from as string;
+    const to = req.query.to as string;
+    if (!from || !to) {
+      res.status(400).json({ success: false, error: 'Paramètres from et to requis' });
+      return;
+    }
+    const establishmentId = req.query.establishmentId as string | undefined;
+    const tenantId = req.user!.tenantId;
+    const report = await buildRangeReport(tenantId, from, to, establishmentId);
+    const pdf = await generateRangeReportPdf(tenantId, report, from, to);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename=rapport-${from}-${to}.pdf`,
     });
     res.send(pdf);
   })
@@ -2467,6 +2517,241 @@ async function generateDailyReportPdf(tenantId: string, report: any, date: strin
     }
 
     // --- Footer ---
+    doc.moveDown(1.5);
+    doc.fontSize(8).fillColor('#9CA3AF').text(
+      `Rapport généré le ${new Date().toLocaleString('fr-FR', { timeZone: 'Africa/Lome' })} — Teranga PMS`,
+      40, doc.y, { align: 'center' }
+    );
+
+    doc.end();
+  });
+}
+
+// --- Build range report (multi-day) ---
+async function buildRangeReport(tenantId: string, from: string, to: string, establishmentId?: string) {
+  const db = createTenantClient(tenantId);
+  const rangeStart = new Date(`${from}T00:00:00.000Z`);
+  const rangeEnd = new Date(`${to}T23:59:59.999Z`);
+
+  const estFilter = establishmentId
+    ? { invoice: { orders: { some: { establishmentId } } } }
+    : {};
+
+  // All payments in range
+  const payments = await db.payment.findMany({
+    where: {
+      tenantId,
+      createdAt: { gte: rangeStart, lte: rangeEnd },
+      ...estFilter,
+    },
+    include: {
+      invoice: {
+        select: { isVoucher: true, orders: { select: { isVoucher: true, paymentMethod: true, createdBy: { select: { id: true, firstName: true, lastName: true } } } } },
+      },
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  // Group by day
+  const days: Record<string, { total: number; voucherTotal: number; count: number; voucherCount: number; byMethod: Record<string, number> }> = {};
+
+  // Initialize all days in range
+  const cursor = new Date(rangeStart);
+  while (cursor <= rangeEnd) {
+    const key = cursor.toISOString().slice(0, 10);
+    days[key] = { total: 0, voucherTotal: 0, count: 0, voucherCount: 0, byMethod: {} };
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  let grandTotal = 0;
+  let grandVoucher = 0;
+  const grandByMethod: Record<string, { count: number; total: number }> = {};
+  const grandByServer: Record<string, { name: string; count: number; revenue: number }> = {};
+
+  for (const p of payments) {
+    const day = p.createdAt.toISOString().slice(0, 10);
+    const amount = Number(p.amount);
+    const isVoucher = p.invoice?.isVoucher || p.invoice?.orders?.some((o: any) => o.isVoucher);
+    const method = p.method || 'CASH';
+    const order = p.invoice?.orders?.[0];
+
+    if (!days[day]) days[day] = { total: 0, voucherTotal: 0, count: 0, voucherCount: 0, byMethod: {} };
+
+    if (isVoucher) {
+      days[day].voucherTotal += amount;
+      days[day].voucherCount++;
+      grandVoucher += amount;
+    } else {
+      days[day].total += amount;
+      days[day].count++;
+      days[day].byMethod[method] = (days[day].byMethod[method] || 0) + amount;
+      grandTotal += amount;
+
+      if (!grandByMethod[method]) grandByMethod[method] = { count: 0, total: 0 };
+      grandByMethod[method].count++;
+      grandByMethod[method].total += amount;
+
+      if (order?.createdBy) {
+        const key = (order.createdBy as any).id;
+        const name = `${(order.createdBy as any).firstName} ${(order.createdBy as any).lastName}`;
+        if (!grandByServer[key]) grandByServer[key] = { name, count: 0, revenue: 0 };
+        grandByServer[key].count++;
+        grandByServer[key].revenue += amount;
+      }
+    }
+  }
+
+  return {
+    from,
+    to,
+    days: Object.entries(days).map(([date, d]) => ({ date, ...d })),
+    grandTotal,
+    grandVoucher,
+    grandPayments: payments.length,
+    grandByMethod,
+    grandByServer: Object.values(grandByServer).sort((a, b) => b.revenue - a.revenue),
+  };
+}
+
+// --- Generate range PDF ---
+async function generateRangeReportPdf(tenantId: string, report: any, from: string, to: string): Promise<Buffer> {
+  const PDFDocument = (await import('pdfkit')).default;
+  const db = createTenantClient(tenantId);
+  const establishment = await db.establishment.findFirst({ select: { name: true, address: true, phone: true } });
+  const estName = establishment?.name || 'Établissement';
+
+  const PAYMENT_LABELS: Record<string, string> = {
+    CASH: 'Espèces', CARD: 'Carte', BANK_TRANSFER: 'Virement',
+    MOBILE_MONEY: 'Mobile Money', MOOV_MONEY: 'Flooz', MIXX_BY_YAS: 'Yas (MTN)',
+    FEDAPAY: 'FedaPay', OTHER: 'Autre',
+  };
+  const fmtCurrency = (n: number) => new Intl.NumberFormat('fr-FR').format(Math.round(n)) + ' FCFA';
+  const fmtDateShort = (d: string) => new Date(d + 'T12:00:00Z').toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const fmtDateLong = (d: string) => new Date(d + 'T12:00:00Z').toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    // Header
+    doc.fontSize(18).font('Helvetica-Bold').text(estName, { align: 'center' });
+    doc.fontSize(10).font('Helvetica').text(establishment?.address || '', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(14).font('Helvetica-Bold').text(`Rapport comptable — ${fmtDateLong(from)} au ${fmtDateLong(to)}`, { align: 'center' });
+    doc.moveDown(0.3);
+    doc.moveTo(40, doc.y).lineTo(555, doc.y).stroke('#B85042');
+    doc.moveDown(0.8);
+
+    // Grand totals
+    doc.fontSize(13).font('Helvetica-Bold').fillColor('#B85042').text('Résumé de la période');
+    doc.fillColor('#000000');
+    doc.moveDown(0.3);
+    doc.fontSize(22).font('Helvetica-Bold').text(fmtCurrency(report.grandTotal));
+    doc.fontSize(10).font('Helvetica').text(`${report.grandPayments} paiement(s) sur ${report.days.length} jour(s)`);
+    if (report.grandVoucher > 0) {
+      doc.fillColor('#92400E').text(`Bons propriétaire : ${fmtCurrency(report.grandVoucher)} (non comptabilisés dans le CA)`);
+      doc.fillColor('#000000');
+    }
+    doc.moveDown(0.8);
+
+    // Daily breakdown table
+    doc.fontSize(12).font('Helvetica-Bold').fillColor('#B85042').text('Détail par jour');
+    doc.fillColor('#000000');
+    doc.moveDown(0.3);
+
+    const colW = [80, 80, 100, 100, 80];
+    const drawRow = (cells: string[], bold = false) => {
+      const y = doc.y;
+      doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(9);
+      let x = 40;
+      cells.forEach((cell, i) => {
+        doc.text(cell, x, y, { width: colW[i], align: i === 0 ? 'left' : 'right' });
+        x += colW[i] + 8;
+      });
+      doc.moveDown(0.1);
+    };
+
+    drawRow(['Date', 'Paiements', 'Encaissements', 'Bons', 'Net'], true);
+    doc.moveTo(40, doc.y).lineTo(530, doc.y).stroke('#E5E7EB');
+    doc.moveDown(0.15);
+
+    for (const day of report.days) {
+      if (doc.y > 720) doc.addPage();
+      const hasData = day.count > 0 || day.voucherCount > 0;
+      if (hasData) {
+        drawRow([
+          fmtDateShort(day.date),
+          String(day.count),
+          fmtCurrency(day.total),
+          day.voucherCount > 0 ? fmtCurrency(day.voucherTotal) : '-',
+          fmtCurrency(day.total),
+        ]);
+      }
+    }
+    doc.moveTo(40, doc.y).lineTo(530, doc.y).stroke('#E5E7EB');
+    doc.moveDown(0.1);
+    drawRow(['TOTAL', '', fmtCurrency(report.grandTotal), fmtCurrency(report.grandVoucher), fmtCurrency(report.grandTotal)], true);
+    doc.moveDown(0.8);
+
+    // By payment method
+    if (Object.keys(report.grandByMethod).length > 0) {
+      if (doc.y > 650) doc.addPage();
+      doc.fontSize(12).font('Helvetica-Bold').fillColor('#B85042').text('Par mode de paiement');
+      doc.fillColor('#000000');
+      doc.moveDown(0.3);
+
+      const mColW = [200, 100, 150];
+      const drawMRow = (cells: string[], bold = false) => {
+        const y = doc.y;
+        doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(10);
+        let x = 40;
+        cells.forEach((cell, i) => {
+          doc.text(cell, x, y, { width: mColW[i], align: i === 0 ? 'left' : 'right' });
+          x += mColW[i] + 10;
+        });
+        doc.moveDown(0.1);
+      };
+
+      drawMRow(['Mode', 'Transactions', 'Montant'], true);
+      doc.moveTo(40, doc.y).lineTo(500, doc.y).stroke('#E5E7EB');
+      doc.moveDown(0.15);
+      for (const [method, info] of Object.entries(report.grandByMethod) as [string, any][]) {
+        drawMRow([PAYMENT_LABELS[method] || method, String(info.count), fmtCurrency(info.total)]);
+      }
+      doc.moveDown(0.8);
+    }
+
+    // By server
+    if (report.grandByServer.length > 0) {
+      if (doc.y > 650) doc.addPage();
+      doc.fontSize(12).font('Helvetica-Bold').fillColor('#B85042').text('Performance par serveur');
+      doc.fillColor('#000000');
+      doc.moveDown(0.3);
+
+      const sColW = [200, 100, 150];
+      const drawSRow = (cells: string[], bold = false) => {
+        const y = doc.y;
+        doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(10);
+        let x = 40;
+        cells.forEach((cell, i) => {
+          doc.text(cell, x, y, { width: sColW[i], align: i === 0 ? 'left' : 'right' });
+          x += sColW[i] + 10;
+        });
+        doc.moveDown(0.1);
+      };
+
+      drawSRow(['Serveur', 'Commandes', 'CA généré'], true);
+      doc.moveTo(40, doc.y).lineTo(500, doc.y).stroke('#E5E7EB');
+      doc.moveDown(0.15);
+      for (const s of report.grandByServer) {
+        drawSRow([s.name, String(s.count), fmtCurrency(s.revenue)]);
+      }
+    }
+
+    // Footer
     doc.moveDown(1.5);
     doc.fontSize(8).fillColor('#9CA3AF').text(
       `Rapport généré le ${new Date().toLocaleString('fr-FR', { timeZone: 'Africa/Lome' })} — Teranga PMS`,
