@@ -46,6 +46,8 @@ import {
   tenantSettingsRouter,
   subscriptionRouter,
   reportRouter,
+  clientRouter,
+  discountRouter,
 } from './routes/resource.routes';
 import { channelSyncService } from './services/channel-sync.service';
 
@@ -189,6 +191,37 @@ app.post('/api/webhooks/fedapay', async (req: express.Request, res: express.Resp
               transactionUuid,
             },
           });
+
+          // Extract customer info from FedaPay transaction and link to Client
+          const customer = txn.customer || {};
+          const firstName = customer.firstname || customer.first_name || '';
+          const lastName = customer.lastname || customer.last_name || '';
+          const email = customer.email || undefined;
+          const phone = customer.phone?.number || customer.phone_number || undefined;
+          if ((firstName || lastName) || email || phone) {
+            try {
+              const { clientService } = await import('./services/client.service');
+              const client = await clientService.findOrCreate(invoice.tenantId, {
+                firstName: firstName || 'Client',
+                lastName: lastName || 'FedaPay',
+                email,
+                phone,
+                source: 'FEDAPAY',
+              });
+              await prisma.invoice.update({
+                where: { id: invoice.id },
+                data: { clientId: client.id },
+              });
+              if (invoice.reservationId) {
+                await prisma.reservation.update({
+                  where: { id: invoice.reservationId },
+                  data: { clientId: client.id },
+                });
+              }
+            } catch (e) {
+              logger.warn('Failed to link client from FedaPay', { error: (e as Error).message });
+            }
+          }
 
           await prisma.invoice.update({
             where: { id: invoice.id },
@@ -386,6 +419,8 @@ app.use('/api/tenant/settings', tenantSettingsRouter);
 // Subscription management — SUPERADMIN only
 app.use('/api/subscriptions', subscriptionRouter);
 app.use('/api/reports', reportRouter);
+app.use('/api/clients', clientRouter);
+app.use('/api/discount-rules', discountRouter);
 
 // Integration endpoints (availability, external bookings, POS)
 app.use('/api', integrationRouter);

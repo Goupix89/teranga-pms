@@ -1,0 +1,155 @@
+import { prisma, createTenantClient } from '../utils/prisma';
+import { NotFoundError, ValidationError } from '../utils/errors';
+
+export type DiscountAppliesTo = 'RESERVATION' | 'ORDER' | 'BOTH';
+export type DiscountType = 'PERCENTAGE' | 'FIXED';
+
+export class DiscountService {
+  async list(tenantId: string, filters: { appliesTo?: DiscountAppliesTo; isActive?: boolean } = {}) {
+    const db = createTenantClient(tenantId);
+    const where: any = {};
+    if (filters.isActive !== undefined) where.isActive = filters.isActive;
+    if (filters.appliesTo) where.appliesTo = { in: [filters.appliesTo, 'BOTH'] };
+    return db.discountRule.findMany({ where, orderBy: { createdAt: 'desc' } });
+  }
+
+  async create(tenantId: string, data: {
+    name: string; description?: string;
+    type: DiscountType; value: number;
+    appliesTo: DiscountAppliesTo;
+    minNights?: number; minAmount?: number;
+    autoApply?: boolean;
+  }) {
+    if (data.type === 'PERCENTAGE' && (data.value < 0 || data.value > 100)) {
+      throw new ValidationError('Le pourcentage doit être entre 0 et 100');
+    }
+    if (data.value < 0) throw new ValidationError('La valeur doit être positive');
+    return prisma.discountRule.create({
+      data: {
+        tenantId,
+        name: data.name,
+        description: data.description,
+        type: data.type,
+        value: data.value,
+        appliesTo: data.appliesTo,
+        minNights: data.minNights,
+        minAmount: data.minAmount,
+        autoApply: data.autoApply ?? false,
+      },
+    });
+  }
+
+  async update(tenantId: string, id: string, data: any) {
+    const rule = await prisma.discountRule.findFirst({ where: { id, tenantId } });
+    if (!rule) throw new NotFoundError('Règle de remise');
+    return prisma.discountRule.update({ where: { id }, data });
+  }
+
+  async delete(tenantId: string, id: string) {
+    const rule = await prisma.discountRule.findFirst({ where: { id, tenantId } });
+    if (!rule) throw new NotFoundError('Règle de remise');
+    // Soft disable — keeps historical records intact
+    return prisma.discountRule.update({ where: { id }, data: { isActive: false } });
+  }
+
+  /**
+   * Compute discount amount against a subtotal.
+   */
+  computeAmount(rule: { type: string; value: any }, subtotal: number): number {
+    const val = Number(rule.value);
+    if (rule.type === 'PERCENTAGE') {
+      return Math.round(subtotal * val / 100);
+    }
+    return Math.min(val, subtotal);
+  }
+
+  /**
+   * Built-in long-stay reservation discount tiers:
+   *  - 3 à 5 nuits → 10%
+   *  - 6 nuits → 20%
+   *  - > 6 nuits → 25%
+   */
+  getLongStayPercentage(nights: number): number {
+    if (nights > 6) return 25;
+    if (nights === 6) return 20;
+    if (nights >= 3) return 10;
+    return 0;
+  }
+
+  /**
+   * Find the best auto-applicable reservation discount.
+   * Combines built-in long-stay tiers (always active) with owner-defined auto rules.
+   * Returns { rule, amount } or null.
+   */
+  async findAutoReservationDiscount(
+    tenantId: string,
+    ctx: { nights: number; subtotal: number }
+  ): Promise<{ rule: any; amount: number } | null> {
+    let best: { rule: any; amount: number } | null = null;
+
+    // Built-in long-stay tiers
+    const pct = this.getLongStayPercentage(ctx.nights);
+    if (pct > 0) {
+      const amount = Math.round(ctx.subtotal * pct / 100);
+      best = {
+        rule: {
+          id: null,
+          name: `Remise long séjour ${pct}%`,
+          type: 'PERCENTAGE',
+          value: pct,
+          appliesTo: 'RESERVATION',
+          builtIn: true,
+        },
+        amount,
+      };
+    }
+
+    // Owner-defined auto rules (can override built-in if more generous)
+    const rules = await prisma.discountRule.findMany({
+      where: {
+        tenantId,
+        isActive: true,
+        autoApply: true,
+        appliesTo: { in: ['RESERVATION', 'BOTH'] },
+      },
+    });
+    for (const rule of rules) {
+      if (rule.minNights && ctx.nights < rule.minNights) continue;
+      if (rule.minAmount && ctx.subtotal < Number(rule.minAmount)) continue;
+      const amount = this.computeAmount(rule, ctx.subtotal);
+      if (!best || amount > best.amount) best = { rule, amount };
+    }
+    return best;
+  }
+
+  /**
+   * Orders: no automatic discount — manager picks a rule manually.
+   */
+  async findAutoOrderDiscount(
+    _tenantId: string,
+    _ctx: { subtotal: number }
+  ): Promise<{ rule: any; amount: number } | null> {
+    return null;
+  }
+
+  /**
+   * Apply a specific rule (manual). Returns { rule, amount } or throws.
+   */
+  async apply(tenantId: string, ruleId: string, ctx: { nights?: number; subtotal: number; appliesTo: DiscountAppliesTo }) {
+    const rule = await prisma.discountRule.findFirst({ where: { id: ruleId, tenantId, isActive: true } });
+    if (!rule) throw new NotFoundError('Règle de remise');
+    if (rule.appliesTo !== 'BOTH' && rule.appliesTo !== ctx.appliesTo) {
+      throw new ValidationError(`Cette remise ne s'applique pas à ce type (${ctx.appliesTo})`);
+    }
+    if (rule.minNights && ctx.nights !== undefined && ctx.nights < rule.minNights) {
+      throw new ValidationError(`Minimum ${rule.minNights} nuits requis`);
+    }
+    if (rule.minAmount && ctx.subtotal < Number(rule.minAmount)) {
+      throw new ValidationError(`Montant minimum ${Number(rule.minAmount)} FCFA`);
+    }
+    const amount = this.computeAmount(rule, ctx.subtotal);
+    return { rule, amount };
+  }
+}
+
+export const discountService = new DiscountService();

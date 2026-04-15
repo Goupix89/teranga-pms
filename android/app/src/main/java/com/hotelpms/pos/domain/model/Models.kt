@@ -528,6 +528,46 @@ data class DashboardConfigSaveRequest(
 )
 
 // =============================================================================
+// Reports
+// =============================================================================
+
+data class DailyReportResponse(
+    val success: Boolean,
+    val data: DailyReportData? = null
+)
+
+data class DailyReportData(
+    val date: String,
+    val totalEncaisse: Double = 0.0,
+    val voucherTotal: Double = 0.0,
+    val voucherCount: Int = 0,
+    val totalOrders: Int = 0,
+    val byMethod: Map<String, PaymentMethodTotal> = emptyMap(),
+    val byStatus: Map<String, Int> = emptyMap()
+)
+
+data class PaymentMethodTotal(
+    val count: Int = 0,
+    val total: Double = 0.0
+)
+
+data class RevenueSummaryResponse(
+    val success: Boolean,
+    val data: RevenueSummaryData? = null
+)
+
+data class RevenueSummaryData(
+    val today: RevenueBucket = RevenueBucket(),
+    val week: RevenueBucket = RevenueBucket(),
+    val month: RevenueBucket = RevenueBucket()
+)
+
+data class RevenueBucket(
+    val total: Double = 0.0,
+    val count: Int = 0
+)
+
+// =============================================================================
 // Generic Response
 // =============================================================================
 

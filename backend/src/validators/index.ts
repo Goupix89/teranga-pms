@@ -394,6 +394,7 @@ export const createOrderSchema = z.object({
   isVoucher: z.boolean().default(false),
   voucherOwnerId: z.string().uuid().optional(),
   voucherOwnerName: z.string().max(200).optional(),
+  discountRuleId: z.string().uuid().optional(),
 });
 
 export const updateOrderStatusSchema = z.object({

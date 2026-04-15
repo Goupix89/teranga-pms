@@ -31,7 +31,7 @@ export default function OrdersPage() {
   const canManageDuplicates = isSuperAdmin || ['OWNER', 'DAF', 'MANAGER'].includes(currentEstRole || '');
   const isDAFOrManager = isSuperAdmin || ['DAF', 'MANAGER'].includes(currentEstRole || '');
 
-  const [form, setForm] = useState({ establishmentId: '', tableNumber: '', orderType: 'RESTAURANT' as 'RESTAURANT' | 'LEISURE' | 'LOCATION', paymentMethod: 'MOOV_MONEY' as PaymentMethod, items: [{ articleId: '', quantity: 1 }] as Array<{ articleId: string; quantity: number }>, notes: '', startTime: '', endTime: '', isVoucher: false, voucherOwnerId: '', voucherOwnerName: '' });
+  const [form, setForm] = useState({ establishmentId: '', tableNumber: '', orderType: 'RESTAURANT' as 'RESTAURANT' | 'LEISURE' | 'LOCATION', paymentMethod: 'CASH' as PaymentMethod, items: [{ articleId: '', quantity: 1 }] as Array<{ articleId: string; quantity: number }>, notes: '', startTime: '', endTime: '', isVoucher: false, voucherOwnerId: '', voucherOwnerName: '', discountRuleId: '' });
   const [qrModal, setQrModal] = useState<{ open: boolean; invoiceId?: string; qrCode?: string; invoiceNumber?: string; totalAmount?: number; paymentLabel?: string; currency?: string; paid?: boolean; fedapayCheckoutUrl?: string }>({ open: false });
 
   // Fetch users (servers) for filter — only for DAF/Manager
@@ -69,6 +69,12 @@ export default function OrdersPage() {
     queryFn: () => apiGet<any>('/users/owners'),
     enabled: form.isVoucher,
   });
+
+  const { data: discountRulesData } = useQuery({
+    queryKey: ['discount-rules-order'],
+    queryFn: () => apiGet<any>('/discount-rules?appliesTo=ORDER&isActive=true'),
+  });
+  const discountRules: any[] = discountRulesData?.data || [];
 
   const createMutation = useMutation({
     mutationFn: (body: any) => apiPost<any>('/orders', body),
@@ -148,7 +154,7 @@ export default function OrdersPage() {
     }
   };
 
-  const resetForm = () => setForm({ establishmentId: currentEstId || '', tableNumber: '', orderType: 'RESTAURANT', paymentMethod: 'MOOV_MONEY', items: [{ articleId: '', quantity: 1 }], notes: '', startTime: '', endTime: '', isVoucher: false, voucherOwnerId: '', voucherOwnerName: '' });
+  const resetForm = () => setForm({ establishmentId: currentEstId || '', tableNumber: '', orderType: 'RESTAURANT', paymentMethod: 'CASH', items: [{ articleId: '', quantity: 1 }], notes: '', startTime: '', endTime: '', isVoucher: false, voucherOwnerId: '', voucherOwnerName: '', discountRuleId: '' });
 
   const addItem = () => setForm((prev) => ({ ...prev, items: [...prev.items, { articleId: '', quantity: 1 }] }));
   const removeItem = (idx: number) => setForm((prev) => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
@@ -598,6 +604,7 @@ export default function OrdersPage() {
             isVoucher: form.isVoucher || undefined,
             voucherOwnerId: form.isVoucher && form.voucherOwnerId ? form.voucherOwnerId : undefined,
             voucherOwnerName: form.isVoucher && form.voucherOwnerName ? form.voucherOwnerName : undefined,
+            discountRuleId: !form.isVoucher && form.discountRuleId ? form.discountRuleId : undefined,
           };
           createMutation.mutate(body);
         }} className="space-y-4">
@@ -622,8 +629,6 @@ export default function OrdersPage() {
             <div>
               <label className="label">Moyen de paiement</label>
               <select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value as PaymentMethod })} className="input">
-                <option value="MOOV_MONEY">Flooz (Moov Money)</option>
-                <option value="MIXX_BY_YAS">Yas (MTN)</option>
                 <option value="CASH">Espèces</option>
                 <option value="CARD">Carte bancaire</option>
                 <option value="MOBILE_MONEY">Mobile Money</option>
@@ -636,6 +641,25 @@ export default function OrdersPage() {
               <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="input" placeholder="Instructions spéciales..." />
             </div>
           </div>
+
+          {/* Remise manuelle */}
+          {!form.isVoucher && discountRules.length > 0 && (
+            <div>
+              <label className="label">Remise (optionnel)</label>
+              <select
+                value={form.discountRuleId}
+                onChange={(e) => setForm({ ...form, discountRuleId: e.target.value })}
+                className="input"
+              >
+                <option value="">Aucune remise</option>
+                {discountRules.map((r: any) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name} — {r.type === 'PERCENTAGE' ? `${Number(r.value)}%` : `${Math.round(Number(r.value)).toLocaleString('fr-FR')} FCFA`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Bon Propriétaire */}
           <div className={`rounded-lg border p-3 ${form.isVoucher ? 'bg-amber-50 border-amber-300' : 'bg-gray-50 border-gray-200'}`}>

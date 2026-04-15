@@ -18,7 +18,17 @@
       "Bash(grep -n \"data class\\\\|enum class\" /home/user/hotel-pms/android/app/src/main/java/com/hotelpms/pos/domain/model/*.kt)",
       "Bash(git status:*)",
       "Bash(mv /tmp/check_articles.ts /home/user/hotel-pms/backend/check_articles.ts)",
-      "Bash(npx tsx:*)"
+      "Bash(npx tsx:*)",
+      "Bash(npx tsc:*)",
+      "Bash(echo \"EXIT=$?\")",
+      "Read(//tmp/**)",
+      "Bash(grep -n \"createOrderSchema\" /home/user/hotel-pms/backend/src/validation/*.ts)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:4000/api/clients)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:4000/api/discount-rules)"
+    ],
+    "additionalDirectories": [
+      "/home/user/hotel-pms/frontend/src/app/dashboard/clients",
+      "/tmp"
     ]
   }
 }

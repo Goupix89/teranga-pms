@@ -35,6 +35,8 @@ import { memberService } from '../services/member.service';
 import { channelSyncService } from '../services/channel-sync.service';
 import { receiptService } from '../services/receipt.service';
 import { registrationService } from '../services/registration.service';
+import { clientService } from '../services/client.service';
+import { discountService } from '../services/discount.service';
 // QR code and prisma for invoice QR endpoint
 const QRCode = require('qrcode');
 import { PrismaClient } from '@prisma/client';
@@ -1434,6 +1436,7 @@ integrationRouter.post('/external-bookings', authenticateApiKey, validate(v.exte
       source: source || 'CHANNEL_MANAGER',
       externalRef,
       paymentMethod: paymentMethod || (fedapayTransactionId ? 'FEDAPAY' : undefined),
+      paidAmount: Number(amountPaid || 0),
     }, tenantMember?.id); // Pass userId to auto-generate invoice
 
     // Update invoice notes with room and guest details
@@ -2137,6 +2140,98 @@ dashboardConfigRouter.put('/', authenticate, asyncHandler(async (req, res) => {
 }));
 
 // =============================================================================
+// CLIENTS (fidelity)
+// =============================================================================
+export const clientRouter = Router();
+
+clientRouter.get('/', authenticate, requireDAFOrManager,
+  asyncHandler(async (req, res) => {
+    const params = parsePagination(req);
+    const search = req.query.search as string | undefined;
+    const data = await clientService.list(req.user!.tenantId, params, search);
+    res.json({ success: true, ...data });
+  })
+);
+
+clientRouter.get('/:id', authenticate, requireDAFOrManager,
+  asyncHandler(async (req, res) => {
+    const data = await clientService.getById(req.user!.tenantId, req.params.id);
+    res.json({ success: true, data });
+  })
+);
+
+clientRouter.get('/:id/pdf', authenticate, requireDAFOrManager,
+  asyncHandler(async (req, res) => {
+    const pdfBuffer = await generateClientPdf(req.user!.tenantId, req.params.id);
+    res.set('Content-Type', 'application/pdf');
+    res.set('Content-Disposition', `inline; filename="carte-client-${req.params.id}.pdf"`);
+    res.end(pdfBuffer);
+  })
+);
+
+clientRouter.post('/', authenticate, requireDAFOrManager,
+  asyncHandler(async (req, res) => {
+    const { firstName, lastName, email, phone, notes } = req.body;
+    if (!firstName || !lastName) return res.status(400).json({ success: false, error: 'Prénom et nom requis' });
+    const data = await clientService.findOrCreate(req.user!.tenantId, { firstName, lastName, email, phone, source: 'DIRECT' });
+    if (notes) await clientService.update(req.user!.tenantId, data.id, { notes });
+    res.status(201).json({ success: true, data });
+  })
+);
+
+clientRouter.patch('/:id', authenticate, requireDAFOrManager,
+  asyncHandler(async (req, res) => {
+    const data = await clientService.update(req.user!.tenantId, req.params.id, req.body);
+    res.json({ success: true, data });
+  })
+);
+
+clientRouter.delete('/:id', authenticate, requireDAF,
+  asyncHandler(async (req, res) => {
+    await clientService.delete(req.user!.tenantId, req.params.id);
+    res.json({ success: true });
+  })
+);
+
+// =============================================================================
+// DISCOUNT RULES
+// =============================================================================
+export const discountRouter = Router();
+
+discountRouter.get('/', authenticate, requireAnyEstablishmentRole,
+  asyncHandler(async (req, res) => {
+    const { appliesTo, isActive } = req.query as any;
+    const data = await discountService.list(req.user!.tenantId, {
+      appliesTo,
+      isActive: isActive === undefined ? true : isActive === 'true',
+    });
+    res.json({ success: true, data });
+  })
+);
+
+// Only OWNER creates rules
+discountRouter.post('/', authenticate, requireOwner,
+  asyncHandler(async (req, res) => {
+    const data = await discountService.create(req.user!.tenantId, req.body);
+    res.status(201).json({ success: true, data });
+  })
+);
+
+discountRouter.patch('/:id', authenticate, requireOwner,
+  asyncHandler(async (req, res) => {
+    const data = await discountService.update(req.user!.tenantId, req.params.id, req.body);
+    res.json({ success: true, data });
+  })
+);
+
+discountRouter.delete('/:id', authenticate, requireOwner,
+  asyncHandler(async (req, res) => {
+    await discountService.delete(req.user!.tenantId, req.params.id);
+    res.json({ success: true });
+  })
+);
+
+// =============================================================================
 // DAILY REPORTS
 // =============================================================================
 export const reportRouter = Router();
@@ -2758,6 +2853,78 @@ async function generateRangeReportPdf(tenantId: string, report: any, from: strin
       40, doc.y, { align: 'center' }
     );
 
+    doc.end();
+  });
+}
+
+// --- Client "Carte de fidélité" PDF ---
+async function generateClientPdf(tenantId: string, clientId: string): Promise<Buffer> {
+  const PDFDocument = (await import('pdfkit')).default;
+  const client = await clientService.getById(tenantId, clientId);
+  const db = createTenantClient(tenantId);
+  const establishment = await db.establishment.findFirst({ select: { name: true, address: true, phone: true } });
+  const estName = establishment?.name || 'Établissement';
+  const fmtCurrency = (n: number) => new Intl.NumberFormat('fr-FR').format(Math.round(n)) + ' FCFA';
+  const fmtDate = (d: Date | string | null) => d ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
+
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    doc.fontSize(18).font('Helvetica-Bold').text(estName, { align: 'center' });
+    doc.fontSize(10).font('Helvetica').text(establishment?.address || '', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(14).font('Helvetica-Bold').text('Carte de fidélité', { align: 'center' });
+    doc.moveDown(0.3);
+    doc.moveTo(40, doc.y).lineTo(555, doc.y).stroke('#B85042');
+    doc.moveDown(0.8);
+
+    doc.fontSize(16).font('Helvetica-Bold').fillColor('#111827').text(`${client.firstName} ${client.lastName}`);
+    doc.moveDown(0.2);
+    doc.fontSize(10).font('Helvetica').fillColor('#6B7280');
+    if (client.email) doc.text(`Email : ${client.email}`);
+    if (client.phone) doc.text(`Téléphone : ${client.phone}`);
+    doc.text(`Source : ${client.source}`);
+    doc.moveDown(0.8);
+
+    const tierColors: Record<string, string> = { FIDELE: '#D4A857', NEW: '#7A9E88' };
+    const tierLabels: Record<string, string> = { FIDELE: 'CLIENT FIDÈLE', NEW: 'Nouveau client' };
+    const tier = client.stats.fidelityTier;
+    doc.fontSize(12).font('Helvetica-Bold').fillColor(tierColors[tier] || '#000').text(`Statut fidélité : ${tierLabels[tier] || tier}`);
+    if (!client.stats.isFidele) {
+      const remaining = Math.max(0, 5 - (client.stats.paidReservations || 0));
+      doc.fontSize(9).font('Helvetica').fillColor('#6B7280').text(
+        `Encore ${remaining} réservation${remaining > 1 ? 's' : ''} payée${remaining > 1 ? 's' : ''} pour devenir client fidèle.`
+      );
+    }
+    doc.moveDown(0.5);
+    doc.fillColor('#000');
+
+    doc.fontSize(12).font('Helvetica-Bold').text('Statistiques');
+    doc.fontSize(10).font('Helvetica');
+    doc.text(`CA total : ${fmtCurrency(client.stats.totalRevenue)}`);
+    doc.text(`Réservations payées : ${client.stats.paidReservations}`);
+    doc.text(`Séjours complétés : ${client.stats.totalStays}`);
+    doc.text(`Réservations totales : ${client.stats.totalReservations}`);
+    doc.text(`Factures : ${client.stats.totalInvoices}`);
+    doc.text(`Dernière visite : ${fmtDate(client.stats.lastVisit)}`);
+    doc.moveDown(0.8);
+
+    doc.fontSize(12).font('Helvetica-Bold').text('Historique des séjours');
+    doc.moveDown(0.3);
+    doc.fontSize(9).font('Helvetica');
+    (client.reservations || []).slice(0, 20).forEach((r: any) => {
+      doc.text(`• ${fmtDate(r.checkIn)} → ${fmtDate(r.checkOut)}  —  Ch. ${r.room?.number || '?'}  —  ${r.status}  —  ${fmtCurrency(Number(r.totalPrice))}`);
+    });
+
+    doc.moveDown(1);
+    doc.fontSize(8).fillColor('#9CA3AF').text(
+      `Généré le ${new Date().toLocaleString('fr-FR', { timeZone: 'Africa/Lome' })} — Teranga PMS`,
+      40, doc.y, { align: 'center' }
+    );
     doc.end();
   });
 }

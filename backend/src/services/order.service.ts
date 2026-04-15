@@ -107,6 +107,7 @@ export class OrderService {
       isVoucher?: boolean;
       voucherOwnerId?: string;
       voucherOwnerName?: string;
+      discountRuleId?: string;
     }
   ) {
     if (!data.items || data.items.length === 0) {
@@ -149,18 +150,31 @@ export class OrderService {
 
       const articleMap = new Map(articles.map((a) => [a.id, a]));
 
-      // Calculate total amount
-      let totalAmount = 0;
+      // Calculate subtotal
+      let subtotal = 0;
       const itemsData = data.items.map((item) => {
         const article = articleMap.get(item.articleId)!;
         const unitPrice = article.unitPrice.toNumber();
-        totalAmount += unitPrice * item.quantity;
+        subtotal += unitPrice * item.quantity;
         return {
           articleId: item.articleId,
           quantity: item.quantity,
           unitPrice,
         };
       });
+
+      // Apply manual discount rule if provided (orders only accept manual discounts)
+      let discountRuleId: string | null = null;
+      let discountAmount = 0;
+      if (data.discountRuleId && !data.isVoucher) {
+        const { discountService } = await import('./discount.service');
+        const applied = await discountService.apply(tenantId, data.discountRuleId, {
+          subtotal, appliesTo: 'ORDER',
+        });
+        discountRuleId = applied.rule.id || null;
+        discountAmount = applied.amount;
+      }
+      const totalAmount = Math.max(0, subtotal - discountAmount);
 
       // Generate order number: CMD-YYYYMMDD-NNNN
       const now = new Date();
@@ -198,6 +212,8 @@ export class OrderService {
           paymentMethod: data.paymentMethod as any,
           notes: data.notes,
           totalAmount,
+          discountRuleId,
+          discountAmount,
           startTime: data.startTime ? new Date(data.startTime) : null,
           endTime: data.endTime ? new Date(data.endTime) : null,
           items: {
@@ -231,9 +247,11 @@ export class OrderService {
           tenantId,
           createdById: userId,
           invoiceNumber,
-          subtotal: totalAmount,
+          subtotal,
           taxAmount: 0,
           taxRate: 0,
+          discountRuleId,
+          discountAmount,
           totalAmount,
           paymentMethod: data.paymentMethod as any || null,
           notes: `${data.isVoucher ? `[BON PROPRIÉTAIRE${data.voucherOwnerName ? ` — ${data.voucherOwnerName}` : ''}] ` : ''}Commande ${orderNumber}${data.tableNumber ? ` - Table ${data.tableNumber}` : ''}`,

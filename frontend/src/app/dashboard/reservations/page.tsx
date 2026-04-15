@@ -442,8 +442,6 @@ export default function ReservationsPage() {
               <label className="label">Moyen de paiement</label>
               <select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value as PaymentMethod })} className="input">
                 <option value="CASH">Espèces</option>
-                <option value="MOOV_MONEY">Flooz (Moov Money)</option>
-                <option value="MIXX_BY_YAS">Yas (MTN)</option>
                 <option value="CARD">Carte bancaire</option>
                 <option value="MOBILE_MONEY">Mobile Money</option>
                 <option value="FEDAPAY">FedaPay</option>

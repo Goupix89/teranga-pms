@@ -183,9 +183,9 @@ fun PosScreen(
 
                 val methods = listOf(
                     "CASH" to "Especes",
-                    "MOOV_MONEY" to "Flooz",
-                    "MIXX_BY_YAS" to "Yas",
-                    "FEDAPAY" to "FedaPay"
+                    "FEDAPAY" to "FedaPay",
+                    "CARD" to "Carte",
+                    "MOBILE_MONEY" to "Mobile"
                 )
                 methods.forEach { (value, label) ->
                     FilterChip(

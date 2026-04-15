@@ -708,8 +708,6 @@ private fun CreateReservationDialog(
 
     val paymentMethods = listOf(
         "CASH" to "Esp\u00e8ces",
-        "MOOV_MONEY" to "Flooz (Moov Money)",
-        "MIXX_BY_YAS" to "Yas (MTN)",
         "CARD" to "Carte bancaire",
         "MOBILE_MONEY" to "Mobile Money",
         "FEDAPAY" to "FedaPay",

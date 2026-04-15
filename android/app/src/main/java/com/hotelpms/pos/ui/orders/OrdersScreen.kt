@@ -255,7 +255,7 @@ private fun MenuView(viewModel: OrdersViewModel, uiState: OrdersUiState) {
             }
 
             // Payment method chips
-            val methods = listOf("CASH" to "Espèces", "MOOV_MONEY" to "Flooz", "MIXX_BY_YAS" to "Yas", "FEDAPAY" to "FedaPay")
+            val methods = listOf("CASH" to "Espèces", "FEDAPAY" to "FedaPay", "CARD" to "Carte", "MOBILE_MONEY" to "Mobile")
             methods.forEach { (value, label) ->
                 FilterChip(
                     selected = uiState.paymentMethod == value,
