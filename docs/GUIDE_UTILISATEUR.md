@@ -118,7 +118,7 @@ Le dashboard du Serveur affiche :
 
 ## 3. Gestion du menu (Manager)
 
-Le Manager est responsable de la création des éléments du menu. Les articles sont organisés en catégories : **Restaurant** (plats) et **Boissons**.
+Le Manager est responsable de la création des éléments du menu. Les articles sont organisés en **catégories dynamiques** créées par l'utilisateur (par défaut : Restaurant, Boissons, Loisirs, Location — vous pouvez en ajouter autant que nécessaire en ligne pendant la création d'un article).
 
 ### Créer un article
 
@@ -128,7 +128,7 @@ Le Manager est responsable de la création des éléments du menu. Les articles 
 
 | Champ | Obligatoire | Description |
 |-------|:-----------:|-------------|
-| **Catégorie** | Oui | Restaurant ou Boissons |
+| **Catégorie** | Oui | Sélectionnez une catégorie existante ou cliquez sur **+** pour en créer une nouvelle. La nouvelle catégorie apparaît immédiatement dans le POS web et dans les onglets de l'app mobile. |
 | **Nom** | Oui | Nom du plat ou de la boisson (ex : "Poulet braisé") |
 | **Prix de vente** | Oui | Prix en FCFA |
 | **Photo** | Non | Cliquez sur la zone d'upload pour ajouter une image depuis votre appareil (JPG, PNG ou WebP, max 5 Mo) |
@@ -147,7 +147,7 @@ Le Manager est responsable de la création des éléments du menu. Les articles 
 Le formulaire affiche des messages d'erreur clairs sous chaque champ :
 - *"Le nom de l'article est requis"* → Saisissez un nom
 - *"Le prix de vente est requis et doit être positif"* → Entrez un prix valide
-- *"Veuillez sélectionner une catégorie"* → Choisissez Restaurant ou Boissons
+- *"Veuillez sélectionner une catégorie"* → Choisissez une catégorie existante ou créez-en une via le bouton **+**
 - *"L'image ne doit pas dépasser 5 Mo"* → Réduisez la taille de votre photo
 
 ### Voir le statut d'un article
@@ -934,4 +934,48 @@ La clé n'est affichée qu'une seule fois à la création. Si vous l'avez perdue
 
 ---
 
-*Document mis à jour le 28 mars 2026 — Teranga PMS v2.5*
+---
+
+## Clients & Fidélité
+
+Page **Clients** (OWNER, DAF, MANAGER) — barre latérale.
+
+- Liste consolidée des clients (réservations + commandes + paiements FedaPay)
+- Recherche par nom, email, téléphone
+- Tier `FIDELE` après **5 réservations payées**, sinon `NEW`
+- Fiche détaillée avec stats, historique des réservations et factures
+- Téléchargement d'une **carte de fidélité PDF** (badge or pour les FIDELE)
+- Liaison automatique des paiements FedaPay (web, mobile, channel manager) au client correspondant
+
+## Remises (Discounts)
+
+Page **Remises** (OWNER, DAF, MANAGER) — barre latérale.
+
+### Remises automatiques sur les réservations (intégrées)
+
+| Nuits | Remise |
+|-------|--------|
+| 1-2 | 0 % |
+| 3-5 | 10 % |
+| 6 | 20 % |
+| > 6 | 25 % |
+
+Appliquées automatiquement à la création d'une réservation. Si plusieurs règles sont éligibles, la **plus avantageuse** est retenue.
+
+### Remises manuelles sur les commandes
+
+Le OWNER crée des règles (PERCENTAGE ou FIXED) avec condition de panier minimum. Ces règles apparaissent dans un sélecteur sur la page **Commandes** et sur le **POS web** ; le serveur en applique une à la création.
+
+## Rapports & CA consolidé
+
+Le widget **Encaissement du jour** et le PDF de rapport quotidien comptabilisent désormais :
+- Les paiements de **commandes** (Resto + Bar + Loisirs + Location)
+- Les paiements de **réservations** (FedaPay, espèces, virement, etc.)
+
+Le PDF utilise un séparateur de milliers compatible Helvetica (les anciens "/" qui apparaissaient sont corrigés).
+
+---
+
+*Document mis à jour le 15 avril 2026 — Teranga PMS v2.6*
+
+**v2.6** : Module Clients & Fidélité, remises automatiques + manuelles, catégories d'articles dynamiques (web + Android), CA consolidé incluant les revenus de réservations, correctifs PDF (séparateurs de milliers + colonnes du détail des transactions).

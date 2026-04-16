@@ -718,9 +718,21 @@ export default function OrdersPage() {
                     required
                   >
                     <option value="">Sélectionner un article</option>
-                    {articles.map((a: any) => (
-                      <option key={a.id} value={a.id}>{a.name} — {formatCurrency(a.unitPrice)}</option>
-                    ))}
+                    {Object.entries(
+                      articles.reduce((acc: Record<string, any[]>, a: any) => {
+                        const cat = a.category?.name || 'Sans catégorie';
+                        (acc[cat] ||= []).push(a);
+                        return acc;
+                      }, {})
+                    )
+                      .sort(([a], [b]) => a.localeCompare(b, 'fr'))
+                      .map(([catName, items]) => (
+                        <optgroup key={catName} label={catName}>
+                          {(items as any[]).map((a: any) => (
+                            <option key={a.id} value={a.id}>{a.name} — {formatCurrency(a.unitPrice)}</option>
+                          ))}
+                        </optgroup>
+                      ))}
                   </select>
                   <input
                     type="number"

@@ -24,7 +24,10 @@
       "Read(//tmp/**)",
       "Bash(grep -n \"createOrderSchema\" /home/user/hotel-pms/backend/src/validation/*.ts)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:4000/api/clients)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:4000/api/discount-rules)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:4000/api/discount-rules)",
+      "Bash(grep -n \"category\\\\|list\\\\b\" /home/user/hotel-pms/backend/src/services/category*.ts /home/user/hotel-pms/backend/src/services/article*.ts)",
+      "Bash(ls /home/user/hotel-pms/*.md /home/user/hotel-pms/CLAUDE.md /home/user/hotel-pms/docs)",
+      "Bash(wc -l /home/user/hotel-pms/README.md /home/user/hotel-pms/GUIDE_UTILISATEUR.md /home/user/hotel-pms/docs/*.md)"
     ],
     "additionalDirectories": [
       "/home/user/hotel-pms/frontend/src/app/dashboard/clients",

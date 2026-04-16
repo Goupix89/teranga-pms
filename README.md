@@ -48,7 +48,7 @@ hotel-pms/
 7. **Factures** — Lifecycle complet (brouillon → émise → payée), numérotation auto `FAC-YYYYMMDD-NNNN`
 8. **Paiements** — Multi-méthodes (Espèces, Carte, Mobile Money, Flooz, Yas, FedaPay, Virement), idempotence POS via UUID, intégration FedaPay par tenant (chaque propriétaire connecte son compte FedaPay)
 9. **Commandes** — Création avec moyen de paiement, auto-génération facture, QR code pour paiement client
-10. **Menu & Articles** — Catégories Restaurant/Boissons, upload d'images, workflow d'approbation DAF, stock optionnel pour plats préparés
+10. **Menu & Articles** — Catégories dynamiques créées par l'utilisateur (Restaurant, Boissons, Loisirs, Location, ou toute catégorie personnalisée), upload d'images, workflow d'approbation DAF, stock optionnel pour plats préparés. Les catégories créées en ligne lors de la création d'un article apparaissent immédiatement dans le POS web/mobile et dans les tabs de l'app Android.
 11. **Cuisine** — Vue temps réel des commandes pour les cuisiniers, notification serveur quand prêt
 12. **Stock & Inventaire** — Mouvements, alertes stock bas, approbation DAF pour écarts
 13. **Fournisseurs** — CRUD complet
@@ -61,6 +61,9 @@ hotel-pms/
 20. **Profil utilisateur** — Modification des informations personnelles, changement de mot de passe
 21. **Reçus & Factures PDF** — Génération de reçus (format ticket 80mm) et factures (A4) en PDF avec QR code, téléchargement depuis les pages Commandes et Factures
 22. **Configuration FedaPay par tenant** — Chaque propriétaire peut connecter son propre compte FedaPay via l'interface Paramètres (clés chiffrées AES-256-GCM)
+23. **Clients & Fidélité** — Fiche client unifiée (orders + réservations), tier `FIDELE` après 5 réservations payées, sinon `NEW`. Liaison automatique des paiements FedaPay et des paiements en ligne (WordPress/channel manager) via le webhook. Carte de fidélité PDF téléchargeable depuis la fiche client.
+24. **Remises (Discounts)** — Remises automatiques sur les réservations selon la durée du séjour : 3-5 nuits = 10 %, 6 nuits = 20 %, > 6 nuits = 25 %. Remises manuelles applicables aux commandes restaurant via des règles définies par le OWNER (montant fixe ou pourcentage, condition de panier minimum). Interface OWNER : `/dashboard/discounts`.
+25. **Rapports CA consolidés** — L'encaissement du jour comptabilise désormais à la fois les paiements de commandes ET les paiements de réservations (FedaPay, espèces, virement, etc.). PDF avec colonnes élargies, séparateur de milliers compatible Helvetica.
 
 ## Flux de Paiement (Commandes & Réservations)
 
@@ -274,7 +277,9 @@ Le système utilise un **RBAC à 2 niveaux** :
 
 ### Menu & Stock
 - `/api/articles` — Articles du menu (+ `/low-stock`, filtre `?menuOnly=true`)
-- `/api/categories` — Catégories (Restaurant, Boissons, etc.)
+- `/api/categories` — Catégories dynamiques (créées via le module Stock)
+- `/api/clients` — Clients consolidés, calcul de fidélité, PDF carte de fidélité
+- `/api/discount-rules` — CRUD des règles de remise OWNER (commandes uniquement)
 - `/api/stock-movements` — Mouvements de stock (+ approve)
 - `/api/stock-alerts` — Alertes de stock
 - `/api/suppliers` — Fournisseurs

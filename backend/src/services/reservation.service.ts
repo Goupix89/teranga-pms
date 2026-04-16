@@ -89,7 +89,7 @@ export class ReservationService {
     notes?: string;
     externalRef?: string;
     paidAmount?: number;      // amount already paid upstream (channel manager / online)
-    discountRuleId?: string;  // manager-selected discount rule
+    discountRuleId?: string;  // staff-selected owner-created discount rule (applied directly)
   }, userId?: string) {
     const checkInDate = new Date(data.checkIn);
     const checkOutDate = new Date(data.checkOut);
@@ -276,6 +276,8 @@ export class ReservationService {
         checkOut: data.checkOut,
         source: data.source,
         invoiceId,
+        discountRuleId,
+        discountAmount,
       });
 
       return { ...reservation, invoiceId, paymentMethod: data.paymentMethod };

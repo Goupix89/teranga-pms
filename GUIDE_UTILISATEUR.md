@@ -22,7 +22,9 @@
 18. [Utilisateurs](#18-utilisateurs)
 19. [Paramètres](#19-paramètres)
 20. [Rôles et permissions](#20-rôles-et-permissions)
-21. [FAQ](#21-faq)
+21. [Clients & Fidélité](#22-clients--fidélité)
+22. [Remises (Discounts)](#23-remises-discounts)
+23. [FAQ](#24-faq)
 
 ---
 
@@ -272,6 +274,15 @@ Le rôle **POS** regroupe toutes les facturations et permet d'effectuer les paie
 
 Le DAF crée les produits mis en vente et fixe les prix : boissons, menu du restaurant, prix des activités, etc.
 
+### Catégories dynamiques
+
+Lors de la création d'un article, le DAF choisit une catégorie existante ou en crée une nouvelle en ligne (bouton **+** à côté du sélecteur).
+
+Les nouvelles catégories apparaissent **immédiatement** :
+- Dans le filtre du POS web (`/dashboard/pos`)
+- Comme `<optgroup>` dans le sélecteur d'articles de la page Commandes (`/dashboard/orders`)
+- Comme onglet dans l'application mobile Android (les onglets sont chargés depuis l'API, plus aucune valeur n'est codée en dur)
+
 ### Mouvements de stock
 
 Le DAF et le Manager peuvent enregistrer des mouvements de stock (achat, vente, ajustement, transfert, perte, retour).
@@ -482,7 +493,67 @@ Les utilisateurs ne voient dans le menu latéral **que les sections auxquelles i
 
 ---
 
-## 21. FAQ
+## 22. Clients & Fidélité
+
+Le module **Clients** consolide toutes les personnes ayant interagi avec l'établissement (réservations en ligne, facturation FedaPay, channel manager, paiements en boutique).
+
+### Fiche client
+
+Chaque client regroupe :
+- **Identité** : prénom, nom, email, téléphone, source (FEDAPAY, WORDPRESS, MANUAL, etc.)
+- **Statistiques** : nombre total de réservations, réservations payées, nombre de commandes, CA total
+- **Tier de fidélité** :
+  - `FIDELE` — au moins **5 réservations payées**, badge or
+  - `NEW` — moins de 5 réservations payées (le compteur affiche « Encore N réservations avant FIDELE »)
+
+### Liaison automatique
+
+Lorsqu'un client paie via FedaPay (depuis le site WordPress, le channel manager ou le QR code), le webhook récupère ses informations (nom, email, téléphone) et :
+1. Crée le client s'il n'existe pas, ou met à jour ses infos
+2. Lie la facture et la réservation au client
+3. Recalcule automatiquement son tier de fidélité
+
+### Carte de fidélité PDF
+
+Depuis la liste `/dashboard/clients` ou la fiche détaillée `/dashboard/clients/[id]`, téléchargez une **carte de fidélité PDF** (format A4) avec stats, badge tier et historique des réservations.
+
+### Accès
+
+OWNER, DAF, MANAGER. Lien dans la barre latérale : **Clients**.
+
+---
+
+## 23. Remises (Discounts)
+
+### Remises automatiques sur les réservations
+
+Le système applique une remise automatique selon la durée du séjour :
+
+| Nuits | Remise |
+|-------|--------|
+| 1-2 | 0 % |
+| 3-5 | 10 % |
+| 6 | 20 % |
+| > 6 | 25 % |
+
+Ces remises sont **intégrées au moteur** et n'ont pas besoin d'être configurées. Si le OWNER définit en plus des règles automatiques personnalisées (`appliesTo: RESERVATION` + `isAuto: true`), le système choisit la **plus avantageuse** pour le client.
+
+### Remises manuelles sur les commandes restaurant
+
+Le OWNER (ou DAF) peut créer des règles depuis `/dashboard/discounts` :
+- **Type** : `PERCENTAGE` (ex : 10 %) ou `FIXED` (ex : 1 000 FCFA)
+- **Condition** : montant minimum de commande
+- **Actif/Inactif** : désactivable sans suppression
+
+Lors de la création d'une commande (web `/dashboard/orders` ou POS `/dashboard/pos`), le serveur sélectionne la remise dans un menu déroulant. La remise est appliquée sur le sous-total et persistée sur la commande et la facture.
+
+### Accès
+
+OWNER, DAF, MANAGER. Lien dans la barre latérale : **Remises**.
+
+---
+
+## 24. FAQ
 
 **Q : J'ai oublié mon mot de passe, que faire ?**
 R : Cliquez sur « Mot de passe oublié ? » sur la page de connexion et suivez les instructions.
@@ -516,6 +587,8 @@ R : Le serveur génère un QR code depuis l'application. Le client scanne le QR 
 
 ---
 
-*Document mis à jour le 26 mars 2026 — Teranga PMS v2.4*
+*Document mis à jour le 15 avril 2026 — Teranga PMS v2.5*
+
+**Nouveautés v2.5** : module Clients & Fidélité, remises automatiques sur réservations longues, remises manuelles sur commandes, catégories d'articles dynamiques (web + Android), CA consolidé incluant les revenus de réservations.
 
 > **Note** : Le guide utilisateur complet et à jour se trouve dans [`docs/GUIDE_UTILISATEUR.md`](docs/GUIDE_UTILISATEUR.md).

@@ -719,7 +719,8 @@ invoiceRouter.get('/:id/qrcode', authenticate,
       orderBy: { paidAt: 'desc' },
     });
 
-    const paymentMethod = order?.paymentMethod || (invoice as any).paymentMethod || existingPayment?.method || (req.query.paymentMethod as string) || 'MOBILE_MONEY';
+    // Priority: explicit query param (user's current choice on the page) > order > invoice > existing payment > default
+    const paymentMethod = (req.query.paymentMethod as string) || order?.paymentMethod || (invoice as any).paymentMethod || existingPayment?.method || 'MOBILE_MONEY';
 
     // FedaPay: create a transaction and get checkout URL
     let fedapayCheckoutUrl: string | undefined;
@@ -746,6 +747,12 @@ invoiceRouter.get('/:id/qrcode', authenticate,
         callbackUrl = config.fedapay.callbackUrl;
       }
 
+      if (!fedapayKey) {
+        appLogger.warn('FedaPay QR requested but no FedaPay secret key is configured (tenant settings or global env)', {
+          tenantId: req.user!.tenantId,
+          invoiceId: invoice.id,
+        });
+      }
       if (fedapayKey) {
         try {
           const apiBase = isSandbox
@@ -882,7 +889,16 @@ invoiceRouter.get('/:id/qrcode', authenticate,
           currency: invoice.currency || 'XOF',
         },
         paymentMethod,
-        paymentLabel: paymentMethod === 'MOOV_MONEY' ? 'Flooz' : paymentMethod === 'MIXX_BY_YAS' ? 'Yas' : paymentMethod === 'FEDAPAY' ? 'FedaPay' : paymentMethod,
+        paymentLabel: ({
+          CASH: 'Espèces',
+          CARD: 'Carte',
+          BANK_TRANSFER: 'Virement',
+          MOBILE_MONEY: 'Mobile Money',
+          MOOV_MONEY: 'Flooz',
+          MIXX_BY_YAS: 'Yas',
+          FEDAPAY: 'FedaPay',
+          OTHER: 'Autre',
+        } as Record<string, string>)[paymentMethod] || paymentMethod,
         fedapayCheckoutUrl,
       },
     });
@@ -2264,13 +2280,19 @@ reportRouter.get('/revenue-summary', authenticate, requireDAFOrManagerOrServer,
     // Month start
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const estInvoiceFilter = establishmentId
-      ? { invoice: { orders: { some: { establishmentId } } } }
+    // Scope invoices to establishment: match order invoices OR reservation invoices for this establishment
+    const estInvoiceScope: any = establishmentId
+      ? {
+          OR: [
+            { orders: { some: { establishmentId } } },
+            { reservation: { room: { establishmentId } } },
+          ],
+        }
       : {};
 
     const voucherExclude = {
       invoice: {
-        ...estInvoiceFilter.invoice,
+        ...estInvoiceScope,
         isVoucher: false,
       },
     };
@@ -2368,13 +2390,28 @@ async function buildDailyReport(tenantId: string, date: string, establishmentId?
     where: {
       tenantId,
       createdAt: { gte: dayStart, lte: dayEnd },
-      invoice: estFilter.establishmentId ? { orders: { some: { establishmentId } } } : undefined,
+      // When scoped to an establishment: include payments from orders OR from reservations of that establishment
+      invoice: establishmentId
+        ? {
+            OR: [
+              { orders: { some: { establishmentId } } },
+              { reservation: { room: { establishmentId } } },
+            ],
+          }
+        : undefined,
     },
     include: {
       invoice: {
         select: {
           id: true, invoiceNumber: true, totalAmount: true, status: true,
           isVoucher: true, voucherOwnerName: true,
+          reservationId: true,
+          reservation: {
+            select: {
+              id: true, guestName: true, checkIn: true, checkOut: true, source: true,
+              room: { select: { number: true, establishmentId: true } },
+            },
+          },
           orders: { select: { id: true, orderNumber: true, createdBy: { select: { firstName: true, lastName: true } }, paymentMethod: true, isVoucher: true, voucherOwnerName: true } },
         },
       },
@@ -2393,11 +2430,15 @@ async function buildDailyReport(tenantId: string, date: string, establishmentId?
     orderBy: { createdAt: 'asc' },
   });
 
-  // Group payments by method
+  // Group payments by method + split CA by source (orders vs reservations)
   const byMethod: Record<string, { count: number; total: number }> = {};
   let totalEncaisse = 0;
   let voucherTotal = 0;
   let voucherCount = 0;
+  let reservationRevenue = 0;
+  let reservationCount = 0;
+  let orderRevenue = 0;
+  let orderPaymentCount = 0;
 
   for (const p of payments) {
     const amount = Number(p.amount);
@@ -2412,6 +2453,15 @@ async function buildDailyReport(tenantId: string, date: string, establishmentId?
     if (!byMethod[method]) byMethod[method] = { count: 0, total: 0 };
     byMethod[method].count++;
     byMethod[method].total += amount;
+
+    // Classify source: reservation invoice vs order invoice
+    if (p.invoice?.reservationId) {
+      reservationRevenue += amount;
+      reservationCount++;
+    } else {
+      orderRevenue += amount;
+      orderPaymentCount++;
+    }
   }
 
   // Payment details for PDF
@@ -2419,13 +2469,19 @@ async function buildDailyReport(tenantId: string, date: string, establishmentId?
     .filter((p: any) => !p.invoice?.isVoucher && !p.invoice?.orders?.some((o: any) => o.isVoucher))
     .map((p: any) => {
       const order = p.invoice?.orders?.[0];
+      const reservation = p.invoice?.reservation;
       return {
         invoiceNumber: p.invoice?.invoiceNumber || '-',
-        orderNumber: order?.orderNumber || '-',
-        server: order?.createdBy ? `${order.createdBy.firstName} ${order.createdBy.lastName}` : '-',
+        orderNumber: order?.orderNumber || (reservation ? `Réservation ch. ${reservation.room?.number || '?'}` : '-'),
+        server: order?.createdBy
+          ? `${order.createdBy.firstName} ${order.createdBy.lastName}`
+          : reservation
+            ? (reservation.guestName || reservation.source || '-')
+            : '-',
         method: p.method,
         amount: Number(p.amount),
         time: p.createdAt,
+        kind: p.invoice?.reservationId ? 'RESERVATION' : 'ORDER',
       };
     });
 
@@ -2454,6 +2510,10 @@ async function buildDailyReport(tenantId: string, date: string, establishmentId?
     voucherTotal,
     voucherCount,
     totalOrders: orders.length,
+    reservationRevenue,
+    reservationCount,
+    orderRevenue,
+    orderPaymentCount,
     byMethod,
     byServer: Object.values(byServer).sort((a, b) => b.revenue - a.revenue),
     byStatus,
@@ -2476,7 +2536,8 @@ async function generateDailyReportPdf(tenantId: string, report: any, date: strin
     FEDAPAY: 'FedaPay', OTHER: 'Autre',
   };
 
-  const fmtCurrency = (n: number) => new Intl.NumberFormat('fr-FR').format(Math.round(n)) + ' FCFA';
+  const fmtCurrency = (n: number) =>
+    new Intl.NumberFormat('fr-FR').format(Math.round(n)).replace(/[\u202F\u00A0]/g, ' ') + ' FCFA';
   const fmtDate = (d: string) => {
     const dt = new Date(d);
     return dt.toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric', timeZone: 'Africa/Lome' });
@@ -2565,20 +2626,24 @@ async function generateDailyReportPdf(tenantId: string, report: any, date: strin
       doc.fillColor('#000000');
       doc.moveDown(0.3);
 
-      const detailW = [80, 70, 80, 80, 80, 60];
+      const detailW = [95, 105, 85, 75, 85, 45];
       const drawDetailRow = (cells: string[], bold = false) => {
-        const y = doc.y;
+        const startY = doc.y;
         doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(8);
         let x = 40;
+        let maxH = 0;
         cells.forEach((cell, i) => {
-          doc.text(cell, x, y, { width: detailW[i], align: i >= 4 ? 'right' : 'left' });
+          const opts = { width: detailW[i], align: (i >= 4 ? 'right' : 'left') as 'right' | 'left' };
+          const h = doc.heightOfString(cell, opts);
+          doc.text(cell, x, startY, opts);
+          if (h > maxH) maxH = h;
           x += detailW[i] + 5;
         });
-        doc.moveDown(0.1);
+        doc.y = startY + maxH + 2;
       };
 
       drawDetailRow(['Facture', 'Commande', 'Serveur', 'Mode', 'Montant', 'Heure'], true);
-      doc.moveTo(40, doc.y).lineTo(530, doc.y).stroke('#E5E7EB');
+      doc.moveTo(40, doc.y).lineTo(535, doc.y).stroke('#E5E7EB');
       doc.moveDown(0.15);
 
       for (const d of report.paymentDetails) {
@@ -2628,8 +2693,15 @@ async function buildRangeReport(tenantId: string, from: string, to: string, esta
   const rangeStart = new Date(`${from}T00:00:00.000Z`);
   const rangeEnd = new Date(`${to}T23:59:59.999Z`);
 
-  const estFilter = establishmentId
-    ? { invoice: { orders: { some: { establishmentId } } } }
+  const estFilter: any = establishmentId
+    ? {
+        invoice: {
+          OR: [
+            { orders: { some: { establishmentId } } },
+            { reservation: { room: { establishmentId } } },
+          ],
+        },
+      }
     : {};
 
   // All payments in range
@@ -2720,7 +2792,8 @@ async function generateRangeReportPdf(tenantId: string, report: any, from: strin
     MOBILE_MONEY: 'Mobile Money', MOOV_MONEY: 'Flooz', MIXX_BY_YAS: 'Yas (MTN)',
     FEDAPAY: 'FedaPay', OTHER: 'Autre',
   };
-  const fmtCurrency = (n: number) => new Intl.NumberFormat('fr-FR').format(Math.round(n)) + ' FCFA';
+  const fmtCurrency = (n: number) =>
+    new Intl.NumberFormat('fr-FR').format(Math.round(n)).replace(/[\u202F\u00A0]/g, ' ') + ' FCFA';
   const fmtDateShort = (d: string) => new Date(d + 'T12:00:00Z').toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const fmtDateLong = (d: string) => new Date(d + 'T12:00:00Z').toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
 
@@ -2864,7 +2937,8 @@ async function generateClientPdf(tenantId: string, clientId: string): Promise<Bu
   const db = createTenantClient(tenantId);
   const establishment = await db.establishment.findFirst({ select: { name: true, address: true, phone: true } });
   const estName = establishment?.name || 'Établissement';
-  const fmtCurrency = (n: number) => new Intl.NumberFormat('fr-FR').format(Math.round(n)) + ' FCFA';
+  const fmtCurrency = (n: number) =>
+    new Intl.NumberFormat('fr-FR').format(Math.round(n)).replace(/[\u202F\u00A0]/g, ' ') + ' FCFA';
   const fmtDate = (d: Date | string | null) => d ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
 
   return new Promise((resolve, reject) => {

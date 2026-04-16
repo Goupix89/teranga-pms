@@ -147,7 +147,7 @@ export default function PosPage() {
       // If payment method requires QR code, show it
       if (order?.invoiceId && paymentMethod !== 'CASH') {
         try {
-          const qr = await apiGet<any>(`/invoices/${order.invoiceId}/qrcode?method=${paymentMethod}`);
+          const qr = await apiGet<any>(`/invoices/${order.invoiceId}/qrcode?paymentMethod=${paymentMethod}`);
           setQrModal({
             open: true,
             invoiceId: order.invoiceId,

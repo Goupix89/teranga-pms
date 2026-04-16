@@ -234,6 +234,14 @@ app.post('/api/webhooks/fedapay', async (req: express.Request, res: express.Resp
             data: { status: 'SERVED', servedAt: new Date() },
           });
 
+          // Promote linked reservation PENDING → CONFIRMED (paid online)
+          if (invoice.reservationId) {
+            await prisma.reservation.updateMany({
+              where: { id: invoice.reservationId, status: 'PENDING' },
+              data: { status: 'CONFIRMED' },
+            });
+          }
+
           // Notify external system (WordPress)
           try {
             const tenantData = await prisma.tenant.findUnique({

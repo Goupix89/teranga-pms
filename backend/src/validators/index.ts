@@ -166,6 +166,7 @@ export const createReservationSchema = z.object({
   numberOfGuests: z.number().int().min(1).max(20).default(1),
   source: z.enum(['DIRECT', 'BOOKING_COM', 'EXPEDIA', 'AIRBNB', 'CHANNEL_MANAGER', 'PHONE', 'WALK_IN']).default('DIRECT'),
   paymentMethod: z.enum(['CASH', 'CARD', 'BANK_TRANSFER', 'MOBILE_MONEY', 'MOOV_MONEY', 'MIXX_BY_YAS', 'FEDAPAY', 'OTHER']).optional(),
+  discountRuleId: z.string().uuid('ID de remise invalide').optional(),
   notes: z.string().max(1000).optional(),
 }).refine(
   (d) => new Date(d.checkOut) > new Date(d.checkIn),

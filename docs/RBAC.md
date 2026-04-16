@@ -37,6 +37,8 @@ Le propriétaire a les mêmes permissions que le DAF, plus la gestion des canaux
 | **Configuration FedaPay** | Connecter / tester / déconnecter | Oui |
 | **Fournisseurs** | CRUD complet | Oui |
 | **Abonnement** | Voir / renouveler via FedaPay | Oui |
+| **Remises (Discount Rules)** | Créer / modifier / activer (hébergements et commandes) | Oui |
+| **Clients** | Voir liste, fiche, télécharger carte de fidélité PDF | Oui |
 
 ---
 
