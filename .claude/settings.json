@@ -18,7 +18,17 @@
       "Bash(grep -n \"data class\\\\|enum class\" /home/user/hotel-pms/android/app/src/main/java/com/hotelpms/pos/domain/model/*.kt)",
       "Bash(git status:*)",
       "Bash(mv /tmp/check_articles.ts /home/user/hotel-pms/backend/check_articles.ts)",
-      "Bash(npx tsx:*)"
+      "Bash(npx tsx:*)",
+      "Bash(python3)",
+      "Bash(docker compose *)",
+      "Bash(python3 -c \"import sys,json; [print\\(e\\) for e in json.load\\(sys.stdin\\) if 'FIREBASE' in e or 'NEXT_PUBLIC' in e]\")",
+      "Bash(python3 -c \"import sys,json; logs=json.load\\(sys.stdin\\); [print\\(l['Output']\\) for l in logs[-2:]]\")",
+      "Bash(docker exec *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://teranga.jdidit.cloud/firebase-messaging-sw.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" --connect-timeout 5 https://fcm.googleapis.com/)",
+      "Bash(curl -sI https://teranga.jdidit.cloud/firebase-messaging-sw.js)",
+      "Bash(curl -s -o /dev/null -w \"FCM status: %{http_code}\\\\n\" --connect-timeout 5 https://fcm.googleapis.com/fcm/send)",
+      "Bash(git config *)"
     ]
   }
 }

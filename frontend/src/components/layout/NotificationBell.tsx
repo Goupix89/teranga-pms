@@ -126,7 +126,7 @@ export function NotificationBell({ collapsed }: { collapsed: boolean }) {
   useEffect(() => {
     if (!accessToken) return;
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+    const apiUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000').replace(/\/$/, '');
     const eventSource = new EventSource(`${apiUrl}/api/notifications/stream?token=${encodeURIComponent(accessToken)}`);
 
     eventSource.onmessage = (event) => {

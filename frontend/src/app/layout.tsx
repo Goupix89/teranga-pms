@@ -19,8 +19,10 @@ const playfair = Playfair_Display({
 export const metadata: Metadata = {
   title: 'Teranga PMS — Gestion Hôtelière',
   description: 'Plateforme SaaS de gestion hôtelière multi-tenant',
+  manifest: '/manifest.json',
   icons: {
     icon: '/favicon.svg',
+    apple: '/icons/icon-192x192.png',
   },
 };
 

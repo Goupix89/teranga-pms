@@ -58,9 +58,19 @@ export async function requestNotificationPermission(): Promise<string | null> {
       return null;
     }
 
+    const swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+    await navigator.serviceWorker.ready;
+
+    // If an existing push subscription has a different VAPID key, it blocks
+    // new token creation with "push service error". Force-clear it first.
+    const existingSub = await swRegistration.pushManager.getSubscription();
+    if (existingSub) {
+      await existingSub.unsubscribe();
+    }
+
     const token = await getToken(messaging, {
       vapidKey,
-      serviceWorkerRegistration: await navigator.serviceWorker.register('/firebase-messaging-sw.js'),
+      serviceWorkerRegistration: swRegistration,
     });
 
     return token;
