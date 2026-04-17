@@ -83,10 +83,13 @@ export class ApprovalService {
       VOUCHER_ORDER: 'Bon Propriétaire',
     };
 
+    // For ARTICLE_CREATION, only notify OWNER (DAF is the requester)
+    const notifyRoles: string[] = data.type === 'ARTICLE_CREATION' ? ['OWNER'] : ['DAF', 'OWNER'];
+
     notificationService.notifyRole({
       tenantId,
       establishmentId: data.establishmentId,
-      roles: ['DAF', 'OWNER'],
+      roles: notifyRoles,
       type: 'APPROVAL_NEEDED',
       title: 'Approbation requise',
       message: `${typeLabels[data.type] || data.type} — demande de ${approval.requestedBy.firstName} ${approval.requestedBy.lastName}.`,

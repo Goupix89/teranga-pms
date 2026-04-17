@@ -600,7 +600,7 @@ export class ArticleService {
     categoryId?: string; name: string; sku?: string;
     description?: string; imageUrl?: string; unitPrice: number; costPrice?: number;
     currentStock?: number; minimumStock?: number; unit?: string;
-    isApproved?: boolean; createdById?: string; establishmentId?: string;
+    isApproved?: boolean; isActive?: boolean; createdById?: string; establishmentId?: string;
   }) {
     const article = await prisma.article.create({
       data: { tenantId, ...data },

@@ -1,6 +1,10 @@
 /* eslint-disable no-restricted-globals */
 // Web Push Service Worker — handles background push notifications
 
+// Take control immediately, don't wait for old SW to be released
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+
 self.addEventListener('push', (event) => {
   if (!event.data) return;
 

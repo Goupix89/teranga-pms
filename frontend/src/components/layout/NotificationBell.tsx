@@ -89,8 +89,16 @@ export function NotificationBell({ collapsed }: { collapsed: boolean }) {
 
   const registerPushToken = useCallback(async () => {
     try {
-      const success = await requestNotificationPermission();
-      if (success) setPushEnabled(true);
+      const sub = await requestNotificationPermission();
+      if (sub) {
+        await apiPost('/notifications/device-token', {
+          platform: 'WEB',
+          endpoint: sub.endpoint,
+          auth: sub.auth,
+          p256dh: sub.p256dh,
+        });
+        setPushEnabled(true);
+      }
     } catch (err) {
       console.error('Push registration failed:', err);
     }

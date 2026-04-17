@@ -980,7 +980,7 @@ articleRouter.get('/:id', authenticate, requireAnyEstablishmentRole,
   })
 );
 
-// DAF and MANAGER can create articles — auto-approved so they show up immediately for all roles
+// DAF and MANAGER can create articles; DAF-created articles require OWNER approval
 articleRouter.post('/', authenticate, requireDAFOrManager, validate(v.createArticleSchema),
   asyncHandler(async (req, res) => {
     const { establishmentId: estId, ...articleData } = req.body;
@@ -991,12 +991,28 @@ articleRouter.post('/', authenticate, requireDAFOrManager, validate(v.createArti
       return res.status(409).json({ success: false, error: `Un article avec le nom "${articleData.name}" existe déjà` });
     }
 
+    const userRole = getEstablishmentRole(req, resolvedEstId);
+    const needsApproval = userRole === 'DAF';
+
     const data = await articleService.create(req.user!.tenantId, {
       ...articleData,
       establishmentId: resolvedEstId || undefined,
-      isApproved: true,
+      isApproved: !needsApproval,
+      isActive: !needsApproval,
       createdById: req.user!.id,
     });
+
+    if (needsApproval) {
+      await approvalService.create(req.user!.tenantId, {
+        establishmentId: resolvedEstId,
+        type: 'ARTICLE_CREATION',
+        requestedById: req.user!.id,
+        targetId: data.id,
+        payload: { name: data.name, unitPrice: data.unitPrice, categoryId: data.categoryId },
+      });
+      return res.status(201).json({ success: true, data, requiresApproval: true });
+    }
+
     res.status(201).json({ success: true, data });
   })
 );

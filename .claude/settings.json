@@ -48,7 +48,9 @@
       "Bash(npx --yes web-push generate-vapid-keys)",
       "Bash(node -e ' *)",
       "Bash(docker run --rm node:20-alpine node -e ' *)",
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(node_modules/.bin/tsc --noEmit)"
     ],
     "additionalDirectories": [
       "/home/user/hotel-pms/frontend/src/app/dashboard/clients",

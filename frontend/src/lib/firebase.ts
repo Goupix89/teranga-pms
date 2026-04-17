@@ -9,60 +9,44 @@ function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
   return output.buffer as ArrayBuffer;
 }
 
-/**
- * Request notification permission and register a Web Push subscription.
- * Sends the subscription to the backend for storage.
- * Returns true on success, false on failure.
- */
-export async function requestNotificationPermission(): Promise<boolean> {
+export async function requestNotificationPermission(): Promise<{ endpoint: string; auth: string; p256dh: string } | null> {
   try {
-    if (typeof window === 'undefined') return false;
-    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return false;
+    if (typeof window === 'undefined') return null;
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return null;
 
     const permission = await Notification.requestPermission();
-    if (permission !== 'granted') return false;
+    if (permission !== 'granted') return null;
 
     if (!VAPID_PUBLIC_KEY) {
       console.warn('NEXT_PUBLIC_VAPID_PUBLIC_KEY not set');
-      return false;
+      return null;
     }
 
     await navigator.serviceWorker.register('/firebase-messaging-sw.js');
     const swRegistration = await navigator.serviceWorker.ready;
 
-    // Clear stale subscription before creating a new one
-    const existing = await swRegistration.pushManager.getSubscription();
-    if (existing) await existing.unsubscribe();
+    // Reuse existing subscription if available (avoids push service rate-limit errors)
+    let subscription = await swRegistration.pushManager.getSubscription();
 
-    const subscription = await swRegistration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-    });
+    if (!subscription) {
+      subscription = await swRegistration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+    }
 
     const { endpoint, keys } = subscription.toJSON() as {
       endpoint: string;
       keys: { auth: string; p256dh: string };
     };
 
-    const apiUrl = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
-    const res = await fetch(`${apiUrl}/api/notifications/device-token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ platform: 'WEB', endpoint, auth: keys.auth, p256dh: keys.p256dh }),
-    });
-
-    return res.ok;
+    return { endpoint, auth: keys.auth, p256dh: keys.p256dh };
   } catch (err) {
     console.error('Failed to register Web Push subscription:', err);
-    return false;
+    return null;
   }
 }
 
-/**
- * Listen for foreground push messages (shown by the service worker).
- * No-op in the Web Push approach — all notifications are handled by the SW.
- */
 export function onForegroundMessage(_callback: (payload: any) => void) {
-  // Web Push notifications are always handled by the service worker
+  // Web Push notifications are handled by the service worker
 }
