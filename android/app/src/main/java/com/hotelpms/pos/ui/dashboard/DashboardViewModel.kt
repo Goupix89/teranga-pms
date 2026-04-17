@@ -240,12 +240,24 @@ class DashboardViewModel @Inject constructor(
         val stockDeferred = viewModelScope.async {
             if (role in listOf("DAF", "OWNER")) try { api.getStockMovements(establishmentId) } catch (_: Exception) { null } else null
         }
+        val dailyReportDeferred = viewModelScope.async {
+            if (role in listOf("DAF", "OWNER", "MANAGER", "MAITRE_HOTEL", "SERVER")) {
+                try { api.getDailyReport(establishmentId = establishmentId).body() } catch (_: Exception) { null }
+            } else null
+        }
+        val revenueSummaryDeferred = viewModelScope.async {
+            if (role in listOf("DAF", "OWNER")) {
+                try { api.getRevenueSummary(establishmentId = establishmentId).body() } catch (_: Exception) { null }
+            } else null
+        }
 
         val rooms = roomsDeferred.await()
         val orders = ordersDeferred.await()
         val approvals = approvalsDeferred.await()
         val sessions = sessionsDeferred.await()
         val stock = stockDeferred.await()
+        val dailyReport = dailyReportDeferred.await()
+        val revenueSummary = revenueSummaryDeferred.await()
 
         val roomList = rooms?.data ?: emptyList()
         val orderList = orders?.data ?: emptyList()
@@ -272,6 +284,10 @@ class DashboardViewModel @Inject constructor(
             )
         }.sortedByDescending { it.orderCount }
 
+        // Real encaissements from /reports/daily (payments collected today, vouchers excluded)
+        val todayEncaisse = dailyReport?.data?.totalEncaisse ?: orderList.sumOf { it.totalAmount }
+        val monthlyRevenue = revenueSummary?.data?.month?.total ?: todayEncaisse
+
         uiState = uiState.copy(
             stats = DashboardStats(
                 totalRooms = roomList.size,
@@ -280,7 +296,7 @@ class DashboardViewModel @Inject constructor(
                 cleaningRooms = roomList.count { it.status == "CLEANING" },
                 todayOrders = orderList.size,
                 pendingOrders = orderList.count { it.status == "PENDING" },
-                todayRevenue = orderList.sumOf { it.totalAmount },
+                todayRevenue = todayEncaisse,
                 pendingApprovals = approvalList.count { it.status == "PENDING" },
                 activeSessions = mySessions.count { it.clockOutAt == null }
             ),
@@ -294,7 +310,7 @@ class DashboardViewModel @Inject constructor(
             readyCount = orderList.count { it.status == "READY" },
             todaySessionsCount = mySessions.size,
             averageDuration = avgDuration,
-            monthlyRevenue = orderList.sumOf { it.totalAmount },
+            monthlyRevenue = monthlyRevenue,
             stockMovementsCount = stock?.data?.size ?: 0,
             invoicesCount = orderList.size,
             isLoading = false

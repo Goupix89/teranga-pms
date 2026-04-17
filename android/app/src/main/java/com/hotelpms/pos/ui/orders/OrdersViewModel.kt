@@ -36,7 +36,8 @@ data class OrdersUiState(
     val successMessage: String? = null,
     val statusFilter: String? = null,
     val myOrdersOnly: Boolean = false,
-    val menuTab: String = "Restaurant", // "Restaurant" or "Boissons"
+    val menuTab: String = "Tous", // "Tous" + dynamic category names
+    val categories: List<ArticleCategory> = emptyList(),
     val viewMode: String = "menu", // "menu" or "orders"
     val tableNumber: String = "",
     val paymentMethod: String = "CASH",
@@ -69,22 +70,15 @@ data class OrdersUiState(
             orders.filter { it.status == statusFilter }
         }
 
+    val menuTabs: List<String>
+        get() = listOf("Tous") + categories.map { it.name }
+
     val menuArticles: List<Article>
         get() {
-            val foodCategories = listOf("Restaurant", "Nourriture")
-            val drinkCategories = listOf("Boissons", "Bar")
-            val leisureCategories = listOf("Loisirs", "Loisir")
-            val locationCategories = listOf("Location")
             val query = menuSearchQuery.trim().lowercase()
             return articles.filter { article ->
                 val catName = article.category?.name
-                val matchesTab = when (menuTab) {
-                    "Restaurant" -> catName in foodCategories || (catName != null && catName !in drinkCategories && catName !in leisureCategories && catName !in locationCategories && catName !in foodCategories) || catName == null
-                    "Boissons" -> catName in drinkCategories
-                    "Loisirs" -> catName in leisureCategories
-                    "Location" -> catName in locationCategories
-                    else -> true
-                }
+                val matchesTab = menuTab == "Tous" || catName == menuTab
                 val matchesSearch = query.isEmpty() || article.name.lowercase().contains(query)
                 matchesTab && article.isApproved && matchesSearch
             }
@@ -112,8 +106,20 @@ class OrdersViewModel @Inject constructor(
     init {
         fetchOrders()
         fetchArticles()
+        fetchCategories()
         fetchRestaurantTables()
         startRealtimeSync()
+    }
+
+    fun fetchCategories() {
+        viewModelScope.launch {
+            try {
+                val response = apiService.getCategories()
+                if (response.isSuccessful) {
+                    uiState = uiState.copy(categories = response.body()?.data ?: emptyList())
+                }
+            } catch (_: Exception) { }
+        }
     }
 
     private fun startRealtimeSync() {
@@ -319,17 +325,17 @@ class OrdersViewModel @Inject constructor(
             uiState = uiState.copy(isCreating = true, error = null)
             try {
                 val estId = tokenManager.establishmentId ?: return@launch
-                val isLeisure = uiState.menuTab == "Loisirs"
-                val isLocation = uiState.menuTab == "Location"
+                val tab = uiState.menuTab
+                val orderType = when {
+                    tab.equals("Loisirs", ignoreCase = true) || tab.equals("Loisir", ignoreCase = true) -> "LEISURE"
+                    tab.equals("Location", ignoreCase = true) -> "LOCATION"
+                    else -> "RESTAURANT"
+                }
                 val request = CreateOrderRequest(
                     establishmentId = estId,
                     idempotencyKey = java.util.UUID.randomUUID().toString(),
                     tableNumber = uiState.tableNumber.ifBlank { null },
-                    orderType = when {
-                        isLeisure -> "LEISURE"
-                        isLocation -> "LOCATION"
-                        else -> "RESTAURANT"
-                    },
+                    orderType = orderType,
                     isVoucher = uiState.isVoucher,
                     voucherOwnerId = if (uiState.isVoucher) uiState.voucherOwnerId.ifBlank { null } else null,
                     voucherOwnerName = if (uiState.isVoucher) uiState.voucherOwnerName.ifBlank { null } else null,

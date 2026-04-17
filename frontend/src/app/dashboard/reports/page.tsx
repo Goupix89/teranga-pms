@@ -434,9 +434,9 @@ export default function ReportsPage() {
           color="sage"
         />
         <StatCard
-          title="Encaissements"
+          title="Encaissements du jour"
           value={formatCurrency(daily?.totalEncaisse || 0)}
-          subtitle={`${daily?.totalOrders || 0} commande(s)${daily?.voucherCount > 0 ? ` · ${daily?.voucherCount} bon(s) : ${formatCurrency(daily?.voucherTotal || 0)}` : ''}`}
+          subtitle={`Resto: ${formatCurrency(daily?.orderRevenue || 0)} · Réservations: ${formatCurrency(daily?.reservationRevenue || 0)}${daily?.voucherCount > 0 ? ` · ${daily?.voucherCount} bon(s)` : ''}`}
           icon={TrendingUp}
           color="accent"
         />

@@ -160,41 +160,43 @@ model Tenant {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  users            User[]
-  establishments   Establishment[]
-  rooms            Room[]
-  reservations     Reservation[]
-  invoices         Invoice[]
-  payments         Payment[]
-  articles         Article[]
-  categories       ArticleCategory[]
-  suppliers        Supplier[]
-  stockMovements   StockMovement[]
-  refreshTokens    RefreshToken[]
-  apiKeys          ApiKey[]
-  subscription     Subscription?
-  orders           Order[]
-  approvalRequests ApprovalRequest[]
-  stockAlerts      StockAlert[]
-  cleaningSessions CleaningSession[]
+  users              User[]
+  establishments     Establishment[]
+  rooms              Room[]
+  reservations       Reservation[]
+  invoices           Invoice[]
+  payments           Payment[]
+  articles           Article[]
+  categories         ArticleCategory[]
+  suppliers          Supplier[]
+  stockMovements     StockMovement[]
+  refreshTokens      RefreshToken[]
+  apiKeys            ApiKey[]
+  subscription       Subscription?
+  orders             Order[]
+  approvalRequests   ApprovalRequest[]
+  stockAlerts        StockAlert[]
+  cleaningSessions   CleaningSession[]
   notifications      Notification[]
   channelConnections ChannelConnection[]
   restaurantTables   RestaurantTable[]
+  clients            Client[]
+  discountRules      DiscountRule[]
 
   @@map("tenants")
 }
 
 model ApiKey {
-  id        String   @id @default(uuid())
-  tenantId  String   @map("tenant_id")
-  name      String
-  keyHash   String   @unique @map("key_hash")
-  prefix    String
-  isActive  Boolean  @default(true) @map("is_active")
-  expiresAt DateTime @map("expires_at")
+  id         String    @id @default(uuid())
+  tenantId   String    @map("tenant_id")
+  name       String
+  keyHash    String    @unique @map("key_hash")
+  prefix     String
+  isActive   Boolean   @default(true) @map("is_active")
+  expiresAt  DateTime  @map("expires_at")
   lastUsedAt DateTime? @map("last_used_at")
-  allowedIps Json    @default("[]") @map("allowed_ips")
-  createdAt DateTime @default(now()) @map("created_at")
+  allowedIps Json      @default("[]") @map("allowed_ips")
+  createdAt  DateTime  @default(now()) @map("created_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
 
@@ -219,21 +221,21 @@ model User {
   createdAt           DateTime   @default(now()) @map("created_at")
   updatedAt           DateTime   @updatedAt @map("updated_at")
 
-  tenant              Tenant                @relation(fields: [tenantId], references: [id])
-  memberships         EstablishmentMember[]
-  refreshTokens       RefreshToken[]
-  stockMovements      StockMovement[]
-  invoicesCreated     Invoice[]             @relation("InvoiceCreator")
-  approvedMovements   StockMovement[]       @relation("MovementApprover")
-  ordersCreated       Order[]
-  approvalRequests    ApprovalRequest[]     @relation("ApprovalRequester")
-  approvalReviews     ApprovalRequest[]     @relation("ApprovalReviewer")
-  stockAlerts         StockAlert[]
-  cleaningSessions    CleaningSession[]
-  articlesCreated     Article[]             @relation("ArticleCreator")
-  notifications       Notification[]
-  deviceTokens        DeviceToken[]
-  dashboardConfigs    DashboardConfig[]
+  tenant            Tenant                @relation(fields: [tenantId], references: [id])
+  memberships       EstablishmentMember[]
+  refreshTokens     RefreshToken[]
+  stockMovements    StockMovement[]
+  invoicesCreated   Invoice[]             @relation("InvoiceCreator")
+  approvedMovements StockMovement[]       @relation("MovementApprover")
+  ordersCreated     Order[]
+  approvalRequests  ApprovalRequest[]     @relation("ApprovalRequester")
+  approvalReviews   ApprovalRequest[]     @relation("ApprovalReviewer")
+  stockAlerts       StockAlert[]
+  cleaningSessions  CleaningSession[]
+  articlesCreated   Article[]             @relation("ArticleCreator")
+  notifications     Notification[]
+  deviceTokens      DeviceToken[]
+  dashboardConfigs  DashboardConfig[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -348,6 +350,7 @@ model Reservation {
   id             String            @id @default(uuid())
   tenantId       String            @map("tenant_id")
   roomId         String            @map("room_id")
+  clientId       String?           @map("client_id")
   guestName      String            @map("guest_name")
   guestEmail     String?           @map("guest_email")
   guestPhone     String?           @map("guest_phone")
@@ -358,20 +361,80 @@ model Reservation {
   source         BookingSource     @default(DIRECT)
   externalRef    String?           @map("external_ref")
   totalPrice     Decimal           @map("total_price") @db.Decimal(10, 2)
+  discountRuleId String?           @map("discount_rule_id")
+  discountAmount Decimal           @default(0) @map("discount_amount") @db.Decimal(10, 2)
+  autoDiscountRuleId String?       @map("auto_discount_rule_id")
+  autoDiscountAmount Decimal       @default(0) @map("auto_discount_amount") @db.Decimal(10, 2)
   notes          String?
   cancelledAt    DateTime?         @map("cancelled_at")
   createdAt      DateTime          @default(now()) @map("created_at")
   updatedAt      DateTime          @updatedAt @map("updated_at")
 
-  tenant   Tenant    @relation(fields: [tenantId], references: [id])
-  room     Room      @relation(fields: [roomId], references: [id])
-  invoices Invoice[]
+  tenant           Tenant        @relation(fields: [tenantId], references: [id])
+  room             Room          @relation(fields: [roomId], references: [id])
+  client           Client?       @relation(fields: [clientId], references: [id])
+  discountRule     DiscountRule? @relation("ReservationManualDiscount", fields: [discountRuleId], references: [id])
+  autoDiscountRule DiscountRule? @relation("ReservationAutoDiscount", fields: [autoDiscountRuleId], references: [id])
+  invoices         Invoice[]
 
   @@index([tenantId])
+  @@index([tenantId, clientId])
   @@index([tenantId, roomId, checkIn, checkOut])
   @@index([tenantId, status])
   @@index([externalRef])
   @@map("reservations")
+}
+
+// Client / Guest: shared across reservations & orders for fidelity
+model Client {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  firstName String   @map("first_name")
+  lastName  String   @map("last_name")
+  email     String?
+  phone     String?
+  source    String   @default("DIRECT") // DIRECT, BOOKING, EXPEDIA, FEDAPAY, WALK_IN
+  notes     String?
+  tags      Json     @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  reservations Reservation[]
+  invoices     Invoice[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([tenantId, phone])
+  @@map("clients")
+}
+
+// Discount rules: OWNER creates, MANAGER applies
+model DiscountRule {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  name        String
+  description String?
+  type        String // PERCENTAGE | FIXED
+  value       Decimal  @db.Decimal(10, 2)
+  appliesTo   String   @map("applies_to") // RESERVATION | ORDER | BOTH
+  minNights   Int?     @map("min_nights")
+  maxNights   Int?     @map("max_nights")
+  minAmount   Decimal? @map("min_amount") @db.Decimal(10, 2)
+  autoApply   Boolean  @default(false) @map("auto_apply")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant           Tenant        @relation(fields: [tenantId], references: [id])
+  reservations     Reservation[] @relation("ReservationManualDiscount")
+  autoReservations Reservation[] @relation("ReservationAutoDiscount")
+  orders           Order[]
+  invoices         Invoice[]     @relation("InvoiceManualDiscount")
+  autoInvoices     Invoice[]     @relation("InvoiceAutoDiscount")
+
+  @@index([tenantId])
+  @@map("discount_rules")
 }
 
 // =============================================================================
@@ -379,33 +442,36 @@ model Reservation {
 // =============================================================================
 
 model Order {
-  id              String      @id @default(uuid())
-  tenantId        String      @map("tenant_id")
-  establishmentId String      @map("establishment_id")
-  createdById     String      @map("created_by_id")
-  orderNumber     String      @map("order_number")
-  tableNumber     String?     @map("table_number")
-  orderType       String      @default("RESTAURANT") @map("order_type") // RESTAURANT | LEISURE
-  status          OrderStatus    @default(PENDING)
-  paymentMethod   PaymentMethod? @map("payment_method")
-  notes           String?
-  totalAmount     Decimal        @default(0) @map("total_amount") @db.Decimal(10, 2)
-  invoiceId       String?        @map("invoice_id")
-  idempotencyKey   String?     @unique @map("idempotency_key")
-  isVoucher        Boolean     @default(false) @map("is_voucher")
-  voucherOwnerId   String?     @map("voucher_owner_id")
-  voucherOwnerName String?     @map("voucher_owner_name")
-  startTime        DateTime?   @map("start_time")
-  endTime         DateTime?   @map("end_time")
-  readyAt         DateTime?   @map("ready_at")
-  servedAt        DateTime?   @map("served_at")
-  createdAt       DateTime    @default(now()) @map("created_at")
-  updatedAt       DateTime    @updatedAt @map("updated_at")
+  id               String         @id @default(uuid())
+  tenantId         String         @map("tenant_id")
+  establishmentId  String         @map("establishment_id")
+  createdById      String         @map("created_by_id")
+  orderNumber      String         @map("order_number")
+  tableNumber      String?        @map("table_number")
+  orderType        String         @default("RESTAURANT") @map("order_type") // RESTAURANT | LEISURE
+  status           OrderStatus    @default(PENDING)
+  paymentMethod    PaymentMethod? @map("payment_method")
+  notes            String?
+  totalAmount      Decimal        @default(0) @map("total_amount") @db.Decimal(10, 2)
+  invoiceId        String?        @map("invoice_id")
+  idempotencyKey   String?        @unique @map("idempotency_key")
+  isVoucher        Boolean        @default(false) @map("is_voucher")
+  voucherOwnerId   String?        @map("voucher_owner_id")
+  voucherOwnerName String?        @map("voucher_owner_name")
+  discountRuleId   String?        @map("discount_rule_id")
+  discountAmount   Decimal        @default(0) @map("discount_amount") @db.Decimal(10, 2)
+  startTime        DateTime?      @map("start_time")
+  endTime          DateTime?      @map("end_time")
+  readyAt          DateTime?      @map("ready_at")
+  servedAt         DateTime?      @map("served_at")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
 
   tenant        Tenant        @relation(fields: [tenantId], references: [id])
   establishment Establishment @relation(fields: [establishmentId], references: [id])
   createdBy     User          @relation(fields: [createdById], references: [id])
   invoice       Invoice?      @relation(fields: [invoiceId], references: [id])
+  discountRule  DiscountRule? @relation(fields: [discountRuleId], references: [id])
   items         OrderItem[]
 
   @@unique([tenantId, orderNumber])
@@ -456,35 +522,44 @@ model RestaurantTable {
 // =============================================================================
 
 model Invoice {
-  id            String        @id @default(uuid())
-  tenantId      String        @map("tenant_id")
-  reservationId String?       @map("reservation_id")
-  createdById   String        @map("created_by_id")
-  invoiceNumber String        @map("invoice_number")
-  status        InvoiceStatus @default(DRAFT)
-  subtotal      Decimal       @db.Decimal(10, 2)
-  taxRate       Decimal       @default(0) @map("tax_rate") @db.Decimal(5, 2)
-  taxAmount     Decimal       @default(0) @map("tax_amount") @db.Decimal(10, 2)
-  totalAmount   Decimal       @map("total_amount") @db.Decimal(10, 2)
-  currency      String        @default("XOF")
-  paymentMethod PaymentMethod? @map("payment_method")
-  dueDate       DateTime?     @map("due_date") @db.Date
-  paidAt        DateTime?     @map("paid_at")
+  id               String         @id @default(uuid())
+  tenantId         String         @map("tenant_id")
+  reservationId    String?        @map("reservation_id")
+  clientId         String?        @map("client_id")
+  createdById      String         @map("created_by_id")
+  invoiceNumber    String         @map("invoice_number")
+  status           InvoiceStatus  @default(DRAFT)
+  subtotal         Decimal        @db.Decimal(10, 2)
+  taxRate          Decimal        @default(0) @map("tax_rate") @db.Decimal(5, 2)
+  taxAmount        Decimal        @default(0) @map("tax_amount") @db.Decimal(10, 2)
+  discountRuleId   String?        @map("discount_rule_id")
+  discountAmount   Decimal        @default(0) @map("discount_amount") @db.Decimal(10, 2)
+  autoDiscountRuleId String?      @map("auto_discount_rule_id")
+  autoDiscountAmount Decimal      @default(0) @map("auto_discount_amount") @db.Decimal(10, 2)
+  totalAmount      Decimal        @map("total_amount") @db.Decimal(10, 2)
+  currency         String         @default("XOF")
+  paymentMethod    PaymentMethod? @map("payment_method")
+  dueDate          DateTime?      @map("due_date") @db.Date
+  paidAt           DateTime?      @map("paid_at")
   notes            String?
-  isVoucher        Boolean       @default(false) @map("is_voucher")
-  voucherOwnerName String?       @map("voucher_owner_name")
-  createdAt        DateTime      @default(now()) @map("created_at")
-  updatedAt        DateTime      @updatedAt @map("updated_at")
+  isVoucher        Boolean        @default(false) @map("is_voucher")
+  voucherOwnerName String?        @map("voucher_owner_name")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
 
-  tenant      Tenant       @relation(fields: [tenantId], references: [id])
-  reservation Reservation? @relation(fields: [reservationId], references: [id])
-  createdBy   User         @relation("InvoiceCreator", fields: [createdById], references: [id])
-  items       InvoiceItem[]
-  payments    Payment[]
-  orders      Order[]
+  tenant           Tenant        @relation(fields: [tenantId], references: [id])
+  reservation      Reservation?  @relation(fields: [reservationId], references: [id])
+  client           Client?       @relation(fields: [clientId], references: [id])
+  createdBy        User          @relation("InvoiceCreator", fields: [createdById], references: [id])
+  discountRule     DiscountRule? @relation("InvoiceManualDiscount", fields: [discountRuleId], references: [id])
+  autoDiscountRule DiscountRule? @relation("InvoiceAutoDiscount", fields: [autoDiscountRuleId], references: [id])
+  items            InvoiceItem[]
+  payments         Payment[]
+  orders           Order[]
 
   @@unique([tenantId, invoiceNumber])
   @@index([tenantId])
+  @@index([tenantId, clientId])
   @@index([tenantId, status])
   @@map("invoices")
 }
@@ -547,29 +622,29 @@ model ArticleCategory {
 }
 
 model Article {
-  id              String  @id @default(uuid())
-  tenantId        String  @map("tenant_id")
-  establishmentId String? @map("establishment_id")
-  categoryId      String? @map("category_id")
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  establishmentId String?  @map("establishment_id")
+  categoryId      String?  @map("category_id")
   name            String
-  sku          String?
-  description  String?
-  imageUrl     String?  @map("image_url")
-  unitPrice    Decimal @map("unit_price") @db.Decimal(10, 2)
-  costPrice    Decimal @default(0) @map("cost_price") @db.Decimal(10, 2)
-  currentStock Int     @default(0) @map("current_stock")
-  minimumStock Int     @default(0) @map("minimum_stock")
-  unit         String  @default("pièce")
-  isActive     Boolean @default(true) @map("is_active")
-  isApproved   Boolean @default(true) @map("is_approved")
-  createdById  String? @map("created_by_id")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  sku             String?
+  description     String?
+  imageUrl        String?  @map("image_url")
+  unitPrice       Decimal  @map("unit_price") @db.Decimal(10, 2)
+  costPrice       Decimal  @default(0) @map("cost_price") @db.Decimal(10, 2)
+  currentStock    Int      @default(0) @map("current_stock")
+  minimumStock    Int      @default(0) @map("minimum_stock")
+  unit            String   @default("pièce")
+  isActive        Boolean  @default(true) @map("is_active")
+  isApproved      Boolean  @default(true) @map("is_approved")
+  createdById     String?  @map("created_by_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
-  tenant         Tenant            @relation(fields: [tenantId], references: [id])
-  establishment  Establishment?    @relation(fields: [establishmentId], references: [id])
-  category       ArticleCategory?  @relation(fields: [categoryId], references: [id])
-  createdBy      User?             @relation("ArticleCreator", fields: [createdById], references: [id])
+  tenant         Tenant           @relation(fields: [tenantId], references: [id])
+  establishment  Establishment?   @relation(fields: [establishmentId], references: [id])
+  category       ArticleCategory? @relation(fields: [categoryId], references: [id])
+  createdBy      User?            @relation("ArticleCreator", fields: [createdById], references: [id])
   stockMovements StockMovement[]
   invoiceItems   InvoiceItem[]
   orderItems     OrderItem[]
@@ -633,15 +708,15 @@ model StockMovement {
 }
 
 model StockAlert {
-  id              String   @id @default(uuid())
-  tenantId        String   @map("tenant_id")
-  establishmentId String   @map("establishment_id")
-  articleId       String   @map("article_id")
-  createdById     String   @map("created_by_id")
+  id              String    @id @default(uuid())
+  tenantId        String    @map("tenant_id")
+  establishmentId String    @map("establishment_id")
+  articleId       String    @map("article_id")
+  createdById     String    @map("created_by_id")
   message         String
-  isResolved      Boolean  @default(false) @map("is_resolved")
+  isResolved      Boolean   @default(false) @map("is_resolved")
   resolvedAt      DateTime? @map("resolved_at")
-  createdAt       DateTime @default(now()) @map("created_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
 
   tenant    Tenant  @relation(fields: [tenantId], references: [id])
   article   Article @relation(fields: [articleId], references: [id])
@@ -713,7 +788,7 @@ model Notification {
   tenantId        String   @map("tenant_id")
   userId          String   @map("user_id")
   establishmentId String?  @map("establishment_id")
-  type            String   // ROOM_CHECKOUT, CLEANING_DONE, ORDER_NEW, ORDER_READY, APPROVAL_NEEDED, APPROVAL_RESULT, STOCK_ALERT
+  type            String // ROOM_CHECKOUT, CLEANING_DONE, ORDER_NEW, ORDER_READY, APPROVAL_NEEDED, APPROVAL_RESULT, STOCK_ALERT
   title           String
   message         String
   data            Json?
@@ -798,24 +873,24 @@ model SubscriptionPlan {
 }
 
 model Subscription {
-  id                     String             @id @default(uuid())
-  tenantId               String             @unique @map("tenant_id")
-  planId                 String             @map("plan_id")
-  status                 SubscriptionStatus @default(PENDING)
-  billingInterval        BillingInterval    @map("billing_interval")
-  currentPeriodStart     DateTime?          @map("current_period_start")
-  currentPeriodEnd       DateTime?          @map("current_period_end")
-  trialEndsAt            DateTime?          @map("trial_ends_at")
-  gracePeriodEndsAt      DateTime?          @map("grace_period_ends_at")
-  lastPaymentAt          DateTime?          @map("last_payment_at")
-  lastPaymentRef         String?            @map("last_payment_ref")
-  lastRenewalLinkSentAt  DateTime?          @map("last_renewal_link_sent_at")
-  cancelAtPeriodEnd      Boolean            @default(false) @map("cancel_at_period_end")
-  createdAt              DateTime           @default(now()) @map("created_at")
-  updatedAt              DateTime           @updatedAt @map("updated_at")
+  id                    String             @id @default(uuid())
+  tenantId              String             @unique @map("tenant_id")
+  planId                String             @map("plan_id")
+  status                SubscriptionStatus @default(PENDING)
+  billingInterval       BillingInterval    @map("billing_interval")
+  currentPeriodStart    DateTime?          @map("current_period_start")
+  currentPeriodEnd      DateTime?          @map("current_period_end")
+  trialEndsAt           DateTime?          @map("trial_ends_at")
+  gracePeriodEndsAt     DateTime?          @map("grace_period_ends_at")
+  lastPaymentAt         DateTime?          @map("last_payment_at")
+  lastPaymentRef        String?            @map("last_payment_ref")
+  lastRenewalLinkSentAt DateTime?          @map("last_renewal_link_sent_at")
+  cancelAtPeriodEnd     Boolean            @default(false) @map("cancel_at_period_end")
+  createdAt             DateTime           @default(now()) @map("created_at")
+  updatedAt             DateTime           @updatedAt @map("updated_at")
 
-  tenant   Tenant             @relation(fields: [tenantId], references: [id])
-  plan     SubscriptionPlan   @relation(fields: [planId], references: [id])
+  tenant   Tenant                @relation(fields: [tenantId], references: [id])
+  plan     SubscriptionPlan      @relation(fields: [planId], references: [id])
   payments SubscriptionPayment[]
 
   @@index([status])
@@ -824,16 +899,16 @@ model Subscription {
 }
 
 model SubscriptionPayment {
-  id               String   @id @default(uuid())
-  subscriptionId   String   @map("subscription_id")
-  amount           Decimal  @db.Decimal(10, 2)
-  currency         String   @default("XOF")
-  fedapayTxnId     String?  @unique @map("fedapay_txn_id")
-  status           String   @default("PENDING")
-  periodStart      DateTime @map("period_start")
-  periodEnd        DateTime @map("period_end")
-  paidAt           DateTime? @map("paid_at")
-  createdAt        DateTime @default(now()) @map("created_at")
+  id             String    @id @default(uuid())
+  subscriptionId String    @map("subscription_id")
+  amount         Decimal   @db.Decimal(10, 2)
+  currency       String    @default("XOF")
+  fedapayTxnId   String?   @unique @map("fedapay_txn_id")
+  status         String    @default("PENDING")
+  periodStart    DateTime  @map("period_start")
+  periodEnd      DateTime  @map("period_end")
+  paidAt         DateTime? @map("paid_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
 
   subscription Subscription @relation(fields: [subscriptionId], references: [id])
 
@@ -849,11 +924,11 @@ model DashboardConfig {
   id              String   @id @default(uuid())
   userId          String   @map("user_id")
   establishmentId String?  @map("establishment_id")
-  widgets         Json     // Array of { id, enabled, order, size }
+  widgets         Json // Array of { id, enabled, order, size }
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
-  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   establishment Establishment? @relation(fields: [establishmentId], references: [id], onDelete: Cascade)
 
   @@unique([userId, establishmentId])
@@ -869,7 +944,7 @@ model DeviceToken {
   id        String   @id @default(uuid())
   userId    String   @map("user_id")
   token     String   @unique
-  platform  String   // WEB, ANDROID, IOS
+  platform  String // WEB, ANDROID, IOS
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

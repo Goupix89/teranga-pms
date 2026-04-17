@@ -31,8 +31,6 @@ interface CartItem {
 
 const PAYMENT_METHODS: Array<{ value: PaymentMethod; label: string }> = [
   { value: 'CASH', label: 'Especes' },
-  { value: 'MOOV_MONEY', label: 'Moov Money / Flooz' },
-  { value: 'MIXX_BY_YAS', label: 'MTN / Mixx by Yas' },
   { value: 'FEDAPAY', label: 'FedaPay' },
   { value: 'CARD', label: 'Carte bancaire' },
   { value: 'MOBILE_MONEY', label: 'Mobile Money' },
@@ -49,6 +47,7 @@ export default function PosPage() {
   const [tableNumber, setTableNumber] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH');
   const [notes, setNotes] = useState('');
+  const [discountRuleId, setDiscountRuleId] = useState<string>('');
   const [isVoucher, setIsVoucher] = useState(false);
   const [voucherOwnerId, setVoucherOwnerId] = useState('');
   const [voucherOwnerName, setVoucherOwnerName] = useState('');
@@ -70,7 +69,7 @@ export default function PosPage() {
   // Fetch categories
   const { data: categoriesData } = useQuery({
     queryKey: ['pos-categories', currentEstId],
-    queryFn: () => apiGet<any>(`/article-categories?${currentEstId ? `establishmentId=${currentEstId}` : ''}`),
+    queryFn: () => apiGet<any>(`/categories${currentEstId ? `?establishmentId=${currentEstId}` : ''}`),
   });
 
   const { data: ownersData } = useQuery({
@@ -78,6 +77,13 @@ export default function PosPage() {
     queryFn: () => apiGet<any>('/users/owners'),
     enabled: isVoucher,
   });
+
+  // Fetch applicable discount rules for orders
+  const { data: discountRulesData } = useQuery({
+    queryKey: ['discount-rules-order'],
+    queryFn: () => apiGet<any>('/discount-rules?appliesTo=ORDER&isActive=true'),
+  });
+  const discountRules: any[] = discountRulesData?.data || [];
 
   const articles: Article[] = articlesData?.data || [];
   const categories = categoriesData?.data || [];
@@ -141,7 +147,7 @@ export default function PosPage() {
       // If payment method requires QR code, show it
       if (order?.invoiceId && paymentMethod !== 'CASH') {
         try {
-          const qr = await apiGet<any>(`/invoices/${order.invoiceId}/qrcode?method=${paymentMethod}`);
+          const qr = await apiGet<any>(`/invoices/${order.invoiceId}/qrcode?paymentMethod=${paymentMethod}`);
           setQrModal({
             open: true,
             invoiceId: order.invoiceId,
@@ -169,6 +175,7 @@ export default function PosPage() {
       tableNumber: tableNumber || undefined,
       paymentMethod,
       notes: notes || undefined,
+      discountRuleId: !isVoucher && discountRuleId ? discountRuleId : undefined,
       isVoucher: isVoucher || undefined,
       voucherOwnerId: isVoucher && voucherOwnerId ? voucherOwnerId : undefined,
       voucherOwnerName: isVoucher && voucherOwnerName ? voucherOwnerName : undefined,
@@ -409,6 +416,25 @@ export default function PosPage() {
               className="input mt-1 text-sm"
             />
           </div>
+
+          {/* Remise manuelle */}
+          {!isVoucher && discountRules.length > 0 && (
+            <div>
+              <label className="text-xs font-medium text-gray-500">Remise (optionnel)</label>
+              <select
+                value={discountRuleId}
+                onChange={(e) => setDiscountRuleId(e.target.value)}
+                className="input mt-1 text-sm"
+              >
+                <option value="">Aucune remise</option>
+                {discountRules.map((r: any) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name} — {r.type === 'PERCENTAGE' ? `${Number(r.value)}%` : `${Math.round(Number(r.value)).toLocaleString('fr-FR')} FCFA`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Bon Propriétaire */}
           <div className={`rounded-lg border p-2.5 ${isVoucher ? 'bg-amber-50 border-amber-300' : 'bg-wood-800/50 border-wood-700'}`}>

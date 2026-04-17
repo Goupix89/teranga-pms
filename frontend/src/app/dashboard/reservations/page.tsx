@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch } from '@/lib/api';
 import { formatCurrency, formatDate } from '@/lib/utils';
@@ -10,6 +10,19 @@ import { toast } from 'sonner';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { api } from '@/lib/api';
 import type { Reservation, PaginatedResponse, PaymentMethod } from '@/types';
+
+interface DiscountRule {
+  id: string;
+  name: string;
+  description?: string | null;
+  type: 'PERCENTAGE' | 'FIXED';
+  value: number;
+  appliesTo: 'RESERVATION' | 'ORDER' | 'BOTH';
+  minNights?: number | null;
+  minAmount?: number | null;
+  autoApply: boolean;
+  isActive: boolean;
+}
 
 export default function ReservationsPage() {
   const queryClient = useQueryClient();
@@ -29,6 +42,7 @@ export default function ReservationsPage() {
     roomId: '', guestName: '', guestEmail: '', guestPhone: '',
     checkIn: '', checkOut: '', numberOfGuests: '1', source: 'DIRECT',
     paymentMethod: 'CASH' as PaymentMethod, notes: '',
+    discountRuleId: '',
   });
 
   const [qrModal, setQrModal] = useState<{
@@ -46,6 +60,14 @@ export default function ReservationsPage() {
     queryKey: ['rooms-select'],
     queryFn: () => apiGet<any>('/rooms?limit=100&status=AVAILABLE'),
   });
+
+  // Owner-created discount rules applicable to reservations (including BOTH)
+  const { data: discountRulesData } = useQuery({
+    queryKey: ['discount-rules', 'reservation'],
+    queryFn: () => apiGet<any>('/discount-rules?appliesTo=RESERVATION&isActive=true'),
+    enabled: showModal,
+  });
+  const discountRules: DiscountRule[] = discountRulesData?.data || [];
 
   const createMutation = useMutation({
     mutationFn: (body: any) => apiPost<any>('/reservations', body),
@@ -88,6 +110,27 @@ export default function ReservationsPage() {
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
   });
 
+  // Poll invoice payment status when QR modal is open (FedaPay webhook confirmation)
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (qrModal.open && qrModal.invoiceId && !qrModal.paid) {
+      pollingRef.current = setInterval(async () => {
+        try {
+          const res = await apiGet<any>(`/invoices/${qrModal.invoiceId}/payment-status`);
+          if (res?.data?.paid) {
+            setQrModal((prev) => ({ ...prev, paid: true }));
+            toast.success('Paiement reçu !');
+            queryClient.invalidateQueries({ queryKey: ['reservations'] });
+            if (pollingRef.current) clearInterval(pollingRef.current);
+          }
+        } catch {}
+      }, 3000);
+    }
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
+  }, [qrModal.open, qrModal.invoiceId, qrModal.paid, queryClient]);
+
   const actionMutation = useMutation({
     mutationFn: ({ id, action }: { id: string; action: string }) => apiPost(`/reservations/${id}/${action}`),
     onSuccess: (_, { action }) => {
@@ -111,6 +154,7 @@ export default function ReservationsPage() {
       source: form.source,
       paymentMethod: form.paymentMethod,
       notes: form.notes || undefined,
+      discountRuleId: form.discountRuleId || undefined,
     });
   };
 
@@ -438,17 +482,37 @@ export default function ReservationsPage() {
                 <option value="AIRBNB">Airbnb</option>
               </select>
             </div>
-            <div className="col-span-2">
+            <div>
               <label className="label">Moyen de paiement</label>
               <select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value as PaymentMethod })} className="input">
                 <option value="CASH">Espèces</option>
-                <option value="MOOV_MONEY">Flooz (Moov Money)</option>
-                <option value="MIXX_BY_YAS">Yas (MTN)</option>
                 <option value="CARD">Carte bancaire</option>
                 <option value="MOBILE_MONEY">Mobile Money</option>
                 <option value="FEDAPAY">FedaPay</option>
                 <option value="BANK_TRANSFER">Virement</option>
               </select>
+            </div>
+            <div>
+              <label className="label">Remise applicable</label>
+              <select
+                value={form.discountRuleId}
+                onChange={(e) => setForm({ ...form, discountRuleId: e.target.value })}
+                className="input"
+              >
+                <option value="">Aucune (ou remise auto long séjour)</option>
+                {discountRules.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name} — {r.type === 'PERCENTAGE' ? `${r.value}%` : `${Number(r.value).toLocaleString('fr-FR')} FCFA`}
+                    {r.minNights ? ` (min ${r.minNights} nuits)` : ''}
+                    {r.minAmount ? ` (min ${Number(r.minAmount).toLocaleString('fr-FR')} FCFA)` : ''}
+                  </option>
+                ))}
+              </select>
+              {discountRules.length === 0 && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Aucune remise n'a été créée par le propriétaire. Seul l'OWNER peut créer des règles de remise depuis le menu Remises.
+                </p>
+              )}
             </div>
           </div>
           <div>

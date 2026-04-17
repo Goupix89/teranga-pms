@@ -21,7 +21,7 @@ interface PmsApiService {
     @GET("api/articles")
     suspend fun getArticles(
         @Query("page") page: Int = 1,
-        @Query("limit") limit: Int = 200,
+        @Query("limit") limit: Int = 1000,
         @Query("menuOnly") menuOnly: Boolean = true,
         @Query("establishmentId") establishmentId: String? = null
     ): Response<ArticlesResponse>
@@ -200,4 +200,16 @@ interface PmsApiService {
 
     @PUT("api/dashboard-config")
     suspend fun saveDashboardConfig(@Body body: DashboardConfigSaveRequest): Response<DashboardConfigResponse>
+
+    // Reports
+    @GET("api/reports/daily")
+    suspend fun getDailyReport(
+        @Query("date") date: String? = null,
+        @Query("establishmentId") establishmentId: String? = null
+    ): Response<DailyReportResponse>
+
+    @GET("api/reports/revenue-summary")
+    suspend fun getRevenueSummary(
+        @Query("establishmentId") establishmentId: String? = null
+    ): Response<RevenueSummaryResponse>
 }

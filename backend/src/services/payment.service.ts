@@ -83,6 +83,14 @@ export class PaymentService {
             ...(newStatus === 'PAID' && { paidAt: new Date() }),
           },
         });
+
+        // When fully paid, promote linked reservation PENDING → CONFIRMED
+        if (newStatus === 'PAID' && invoice.reservationId) {
+          await tx.reservation.updateMany({
+            where: { id: invoice.reservationId, status: 'PENDING' },
+            data: { status: 'CONFIRMED' },
+          });
+        }
       }
 
       logger.info('Payment recorded', {

@@ -88,6 +88,8 @@ export class ReservationService {
     paymentMethod?: PaymentMethod;
     notes?: string;
     externalRef?: string;
+    paidAmount?: number;      // amount already paid upstream (channel manager / online)
+    discountRuleId?: string;  // staff-selected owner-created discount rule (applied directly)
   }, userId?: string) {
     const checkInDate = new Date(data.checkIn);
     const checkOutDate = new Date(data.checkOut);
@@ -125,13 +127,61 @@ export class ReservationService {
 
       // 4. Calculate total price
       const nights = calculateNights(checkInDate, checkOutDate);
-      const totalPrice = room.pricePerNight.mul(nights);
+      const subtotal = Number(room.pricePerNight.mul(nights));
+
+      // 4b. Resolve discount — Owner-defined auto rules always apply (best-match),
+      // and a manually-selected Owner rule stacks ON TOP against the remaining base.
+      let discountRuleId: string | null = null;       // manual rule id (if any)
+      let autoDiscountRuleId: string | null = null;   // owner auto rule id (if any)
+      let discountAmount = 0;                         // total = auto + manual
+      let autoDiscountAmount = 0;                     // owner auto portion
+      {
+        const { discountService } = await import('./discount.service');
+
+        // Owner auto rule (autoApply=true) — always applied when matching
+        const auto = await discountService.findAutoReservationDiscount(tenantId, { nights, subtotal });
+        if (auto) {
+          autoDiscountRuleId = auto.rule.id;
+          autoDiscountAmount = auto.amount;
+        }
+
+        // Manual rule stacks on top, computed against the remaining base (no double-dip)
+        const baseAfterAuto = Math.max(0, subtotal - autoDiscountAmount);
+        let manualAmount = 0;
+
+        if (data.discountRuleId) {
+          const applied = await discountService.apply(tenantId, data.discountRuleId, {
+            nights, subtotal: baseAfterAuto, appliesTo: 'RESERVATION',
+          });
+          discountRuleId = applied.rule.id;
+          manualAmount = applied.amount;
+        }
+
+        discountAmount = Math.min(autoDiscountAmount + manualAmount, subtotal);
+      }
+      const totalPrice = Math.max(0, subtotal - discountAmount);
+
+      // 4c. Create/find Client from guest info (source = channel or direct)
+      let clientId: string | null = null;
+      if (data.guestEmail || data.guestPhone) {
+        const { clientService } = await import('./client.service');
+        const [firstName, ...rest] = data.guestName.trim().split(/\s+/);
+        const client = await clientService.findOrCreate(tenantId, {
+          firstName: firstName || data.guestName,
+          lastName: rest.join(' '),
+          email: data.guestEmail,
+          phone: data.guestPhone,
+          source: data.source,
+        });
+        clientId = client.id;
+      }
 
       // 5. Create reservation
       const reservation = await tx.reservation.create({
         data: {
           tenantId,
           roomId: data.roomId,
+          clientId,
           guestName: data.guestName,
           guestEmail: data.guestEmail,
           guestPhone: data.guestPhone,
@@ -142,6 +192,10 @@ export class ReservationService {
           source: data.source,
           externalRef: data.externalRef,
           totalPrice,
+          discountRuleId,
+          discountAmount,
+          autoDiscountRuleId,
+          autoDiscountAmount,
           notes: data.notes,
         },
         include: {
@@ -151,7 +205,8 @@ export class ReservationService {
 
       // 6. Auto-generate invoice for the reservation
       let invoiceId: string | undefined;
-      if (userId) {
+      const needsInvoice = !!userId || (data.source !== 'DIRECT') || (data.paidAmount ?? 0) > 0;
+      if (needsInvoice) {
         const now = new Date();
         const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
         const todayStart = new Date(now.toISOString().slice(0, 10));
@@ -165,18 +220,30 @@ export class ReservationService {
           : 0;
         const invoiceNumber = `FAC-${dateStr}-${String(lastNum + 1).padStart(4, '0')}`;
 
+        const systemUserId = userId || (await tx.user.findFirst({
+          where: { tenantId, status: 'ACTIVE' },
+          orderBy: { createdAt: 'asc' },
+          select: { id: true },
+        }))?.id;
+        if (!systemUserId) throw new ValidationError('Aucun utilisateur système trouvé pour émettre la facture');
+
         const invoice = await tx.invoice.create({
           data: {
             tenantId,
             reservationId: reservation.id,
-            createdById: userId,
+            clientId,
+            createdById: systemUserId,
             invoiceNumber,
-            subtotal: totalPrice,
+            subtotal,
             taxAmount: 0,
             taxRate: 0,
+            discountRuleId,
+            discountAmount,
+            autoDiscountRuleId,
+            autoDiscountAmount,
             totalAmount: totalPrice,
             paymentMethod: data.paymentMethod || null,
-            notes: `Hébergement ${data.guestName} — Chambre ${reservation.room.number} (${nights} nuit${nights > 1 ? 's' : ''})`,
+            notes: `Hébergement ${data.guestName} — Chambre ${reservation.room.number} (${nights} nuit${nights > 1 ? 's' : ''})${data.source !== 'DIRECT' ? ` [${data.source}]` : ''}`,
             status: 'ISSUED',
             items: {
               create: [
@@ -184,13 +251,35 @@ export class ReservationService {
                   description: `Chambre ${reservation.room.number} (${reservation.room.type}) — ${nights} nuit${nights > 1 ? 's' : ''}`,
                   quantity: nights,
                   unitPrice: Number(room.pricePerNight),
-                  totalPrice: Number(totalPrice),
+                  totalPrice: subtotal,
                 },
               ],
             },
           },
         });
         invoiceId = invoice.id;
+
+        // 7. If paid upstream (channel manager / platform), record a Payment automatically
+        const paidAmount = Number(data.paidAmount || 0);
+        if (paidAmount > 0) {
+          const capped = Math.min(paidAmount, totalPrice);
+          const method = data.paymentMethod || (data.source === 'DIRECT' ? 'CASH' : 'OTHER');
+          await tx.payment.create({
+            data: {
+              tenantId,
+              invoiceId: invoice.id,
+              amount: capped,
+              method,
+              reference: data.externalRef || `channel:${data.source}`,
+            },
+          });
+          if (capped >= totalPrice) {
+            await tx.invoice.update({
+              where: { id: invoice.id },
+              data: { status: 'PAID', paidAt: new Date() },
+            });
+          }
+        }
       }
 
       logger.info('Reservation created', {
@@ -201,6 +290,10 @@ export class ReservationService {
         checkOut: data.checkOut,
         source: data.source,
         invoiceId,
+        discountRuleId,
+        autoDiscountRuleId,
+        discountAmount,
+        autoDiscountAmount,
       });
 
       return { ...reservation, invoiceId, paymentMethod: data.paymentMethod };

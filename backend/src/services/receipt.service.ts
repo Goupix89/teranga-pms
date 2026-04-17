@@ -10,8 +10,18 @@ const PAYMENT_LABELS: Record<string, string> = {
   MOBILE_MONEY: 'Mobile Money',
   MOOV_MONEY: 'Flooz (Moov Money)',
   MIXX_BY_YAS: 'Yas (MTN)',
+  FEDAPAY: 'FedaPay',
   OTHER: 'Autre',
 };
+
+function formatDiscountRuleLabel(rule: { name?: string | null; type?: string | null; value?: any } | null | undefined): string {
+  if (!rule) return 'Remise';
+  const name = rule.name || 'Remise';
+  if (rule.type === 'PERCENTAGE' && rule.value != null) {
+    return `${name} (-${Number(rule.value)}%)`;
+  }
+  return name;
+}
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('fr-FR').format(Math.round(amount)) + ' FCFA';
@@ -55,6 +65,7 @@ export class ReceiptService {
           },
         },
         createdBy: { select: { firstName: true, lastName: true } },
+        discountRule: { select: { name: true, type: true, value: true } },
       },
     });
 
@@ -170,7 +181,19 @@ export class ReceiptService {
       doc.moveDown(0.3);
       this.drawSeparator(doc, margin, contentWidth);
 
-      // ── Total ──
+      // ── Sous-total + Remise + Total ──
+      const discountAmount = Number((order as any).discountAmount || 0);
+      const subtotalAmount = discountAmount > 0
+        ? items.reduce((s, it: any) => s + Number(it.quantity) * Number(it.unitPrice), 0)
+        : totalAmount;
+
+      if (discountAmount > 0) {
+        doc.font('Helvetica').fontSize(8);
+        doc.text(`Sous-total: ${formatCurrency(subtotalAmount)}`, { align: 'right' });
+        const ruleLabel = formatDiscountRuleLabel((order as any).discountRule);
+        doc.text(`${ruleLabel}: -${formatCurrency(discountAmount)}`, { align: 'right' });
+      }
+
       doc.font('Helvetica-Bold').fontSize(10);
       doc.text(`TOTAL: ${formatCurrency(totalAmount)}`, { align: 'right' });
 
@@ -219,6 +242,8 @@ export class ReceiptService {
         },
         reservation: { select: { guestName: true, checkIn: true, checkOut: true, room: { select: { number: true, type: true } } } },
         createdBy: { select: { firstName: true, lastName: true } },
+        discountRule: { select: { name: true, type: true, value: true } },
+        autoDiscountRule: { select: { name: true, type: true, value: true } },
       },
     });
 
@@ -386,9 +411,24 @@ export class ReceiptService {
 
       // ── Totals ──
       const totalsX = margin + contentWidth * 0.60;
+      const invoiceDiscountAmount = Number((invoice as any).discountAmount || 0);
+      const invoiceAutoDiscount = Number((invoice as any).autoDiscountAmount || 0);
+      const invoiceManualDiscount = Math.max(0, invoiceDiscountAmount - invoiceAutoDiscount);
       doc.font('Helvetica').fontSize(9);
       doc.text(`Sous-total:`, totalsX, doc.y, { continued: true });
       doc.text(formatCurrency(subtotal), { align: 'right' });
+      if (invoiceAutoDiscount > 0) {
+        const autoLabel = formatDiscountRuleLabel((invoice as any).autoDiscountRule);
+        doc.text(`${autoLabel}:`, totalsX, doc.y, { continued: true });
+        doc.text(`-${formatCurrency(invoiceAutoDiscount)}`, { align: 'right' });
+      }
+      if (invoiceManualDiscount > 0) {
+        const manualLabel = (invoice as any).discountRule
+          ? formatDiscountRuleLabel((invoice as any).discountRule)
+          : 'Remise';
+        doc.text(`${manualLabel}:`, totalsX, doc.y, { continued: true });
+        doc.text(`-${formatCurrency(invoiceManualDiscount)}`, { align: 'right' });
+      }
       if (taxRate > 0) {
         doc.text(`Taxe (${taxRate}%):`, totalsX, doc.y, { continued: true });
         doc.text(formatCurrency(taxAmount), { align: 'right' });
@@ -430,6 +470,8 @@ export class ReceiptService {
           },
         },
         invoices: { select: { id: true, invoiceNumber: true, status: true, totalAmount: true }, take: 1 },
+        discountRule: { select: { name: true, type: true, value: true } },
+        autoDiscountRule: { select: { name: true, type: true, value: true } },
       },
     });
 
@@ -501,16 +543,36 @@ export class ReceiptService {
       doc.moveDown(0.3);
       this.drawSeparator(doc, margin, contentWidth);
 
-      // Item line
+      // Item line — show the raw subtotal (nights × price) before discount
+      const reservationDiscountAmount = Number((reservation as any).discountAmount || 0);
+      const subtotalAmount = nights * pricePerNight;
       doc.font('Helvetica').fontSize(7);
       const itemLeft = `${nights} nuit${nights > 1 ? 's' : ''} × ${formatCurrency(pricePerNight)}`;
-      const itemRight = formatCurrency(totalAmount);
+      const itemRight = formatCurrency(subtotalAmount);
       const rightWidth = doc.widthOfString(itemRight);
       doc.text(itemLeft, margin, doc.y, { continued: true, width: contentWidth - rightWidth - 4 });
       doc.text(itemRight, { align: 'right', width: contentWidth });
 
       doc.moveDown(0.3);
       this.drawSeparator(doc, margin, contentWidth);
+
+      // Remise (si applicable) — Owner auto rule + manual rule (chacune sur sa ligne)
+      const autoPortion = Number((reservation as any).autoDiscountAmount || 0);
+      const manualPortion = Math.max(0, reservationDiscountAmount - autoPortion);
+      if (reservationDiscountAmount > 0) {
+        doc.font('Helvetica').fontSize(7);
+        doc.text(`Sous-total: ${formatCurrency(subtotalAmount)}`, { align: 'right' });
+        if (autoPortion > 0) {
+          const autoLabel = formatDiscountRuleLabel((reservation as any).autoDiscountRule);
+          doc.text(`${autoLabel}: -${formatCurrency(autoPortion)}`, { align: 'right' });
+        }
+        if (manualPortion > 0) {
+          const manualLabel = (reservation as any).discountRule
+            ? formatDiscountRuleLabel((reservation as any).discountRule)
+            : 'Remise';
+          doc.text(`${manualLabel}: -${formatCurrency(manualPortion)}`, { align: 'right' });
+        }
+      }
 
       // Total
       doc.font('Helvetica-Bold').fontSize(10);

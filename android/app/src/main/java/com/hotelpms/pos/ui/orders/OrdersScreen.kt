@@ -255,7 +255,7 @@ private fun MenuView(viewModel: OrdersViewModel, uiState: OrdersUiState) {
             }
 
             // Payment method chips
-            val methods = listOf("CASH" to "Espèces", "MOOV_MONEY" to "Flooz", "MIXX_BY_YAS" to "Yas", "FEDAPAY" to "FedaPay")
+            val methods = listOf("CASH" to "Espèces", "FEDAPAY" to "FedaPay", "CARD" to "Carte", "MOBILE_MONEY" to "Mobile")
             methods.forEach { (value, label) ->
                 FilterChip(
                     selected = uiState.paymentMethod == value,
@@ -293,65 +293,38 @@ private fun MenuView(viewModel: OrdersViewModel, uiState: OrdersUiState) {
             shape = RoundedCornerShape(8.dp)
         )
 
-        // Category tabs: Restaurant / Boissons / Loisirs / Location
+        // Dynamic category tabs based on fetched categories
+        val tabs = uiState.menuTabs
+        val selectedIndex = tabs.indexOf(uiState.menuTab).let { if (it < 0) 0 else it }
         ScrollableTabRow(
-            selectedTabIndex = when (uiState.menuTab) { "Restaurant" -> 0; "Boissons" -> 1; "Loisirs" -> 2; "Location" -> 3; else -> 0 },
+            selectedTabIndex = selectedIndex,
             containerColor = TerreFon,
             contentColor = OrBeninois,
             edgePadding = 4.dp
         ) {
-            Tab(
-                selected = uiState.menuTab == "Restaurant",
-                onClick = { viewModel.setMenuTab("Restaurant") },
-                text = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Restaurant, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Restaurant", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
-                },
-                selectedContentColor = OrBeninois,
-                unselectedContentColor = SableOuidah.copy(alpha = 0.7f)
-            )
-            Tab(
-                selected = uiState.menuTab == "Boissons",
-                onClick = { viewModel.setMenuTab("Boissons") },
-                text = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.LocalBar, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Boissons", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
-                },
-                selectedContentColor = OrBeninois,
-                unselectedContentColor = SableOuidah.copy(alpha = 0.7f)
-            )
-            Tab(
-                selected = uiState.menuTab == "Loisirs",
-                onClick = { viewModel.setMenuTab("Loisirs") },
-                text = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.SportsEsports, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Loisirs", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
-                },
-                selectedContentColor = OrBeninois,
-                unselectedContentColor = SableOuidah.copy(alpha = 0.7f)
-            )
-            Tab(
-                selected = uiState.menuTab == "Location",
-                onClick = { viewModel.setMenuTab("Location") },
-                text = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Location", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
-                },
-                selectedContentColor = OrBeninois,
-                unselectedContentColor = SableOuidah.copy(alpha = 0.7f)
-            )
+            tabs.forEach { tabName ->
+                val icon = when (tabName) {
+                    "Tous" -> Icons.Default.List
+                    "Restaurant", "Nourriture" -> Icons.Default.Restaurant
+                    "Boissons", "Bar" -> Icons.Default.LocalBar
+                    "Loisirs", "Loisir" -> Icons.Default.SportsEsports
+                    "Location" -> Icons.Default.Key
+                    else -> Icons.Default.Category
+                }
+                Tab(
+                    selected = uiState.menuTab == tabName,
+                    onClick = { viewModel.setMenuTab(tabName) },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(tabName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    },
+                    selectedContentColor = OrBeninois,
+                    unselectedContentColor = SableOuidah.copy(alpha = 0.7f)
+                )
+            }
         }
 
         // Search bar
@@ -393,7 +366,13 @@ private fun MenuView(viewModel: OrdersViewModel, uiState: OrdersUiState) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
-                        when (uiState.menuTab) { "Restaurant" -> Icons.Default.Restaurant; "Loisirs" -> Icons.Default.SportsEsports; "Location" -> Icons.Default.Key; else -> Icons.Default.LocalBar },
+                        when (uiState.menuTab) {
+                            "Restaurant", "Nourriture" -> Icons.Default.Restaurant
+                            "Boissons", "Bar" -> Icons.Default.LocalBar
+                            "Loisirs", "Loisir" -> Icons.Default.SportsEsports
+                            "Location" -> Icons.Default.Key
+                            else -> Icons.Default.Category
+                        },
                         contentDescription = null,
                         modifier = Modifier.size(48.dp),
                         tint = BronzeAbomey
