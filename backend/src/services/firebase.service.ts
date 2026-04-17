@@ -1,7 +1,18 @@
 import * as admin from 'firebase-admin';
+import webpush from 'web-push';
 import { config } from '../config';
 import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
+
+// Initialize VAPID for Web Push
+if (config.vapid.publicKey && config.vapid.privateKey) {
+  webpush.setVapidDetails(
+    config.vapid.subject,
+    config.vapid.publicKey,
+    config.vapid.privateKey,
+  );
+  logger.info('Web Push VAPID initialized');
+}
 
 let firebaseApp: admin.app.App | null = null;
 
@@ -41,14 +52,34 @@ function getFirebaseApp(): admin.app.App | null {
 
 export class FirebaseService {
   /**
-   * Register a device token for push notifications.
+   * Register a device token (FCM for mobile, Web Push subscription for web).
    */
-  async registerToken(userId: string, token: string, platform: 'WEB' | 'ANDROID' | 'IOS') {
-    // Upsert: if token exists for another user, reassign it
+  async registerToken(
+    userId: string,
+    token: string,
+    platform: 'WEB' | 'ANDROID' | 'IOS',
+    webPushKeys?: { auth: string; p256dh: string },
+  ) {
     await prisma.deviceToken.upsert({
       where: { token },
-      update: { userId, platform, updatedAt: new Date() },
-      create: { userId, token, platform },
+      update: {
+        userId,
+        platform,
+        updatedAt: new Date(),
+        ...(webPushKeys && {
+          subscriptionAuth: webPushKeys.auth,
+          subscriptionP256dh: webPushKeys.p256dh,
+        }),
+      },
+      create: {
+        userId,
+        token,
+        platform,
+        ...(webPushKeys && {
+          subscriptionAuth: webPushKeys.auth,
+          subscriptionP256dh: webPushKeys.p256dh,
+        }),
+      },
     });
   }
 
@@ -68,79 +99,86 @@ export class FirebaseService {
 
   /**
    * Send a push notification to a specific user on all their devices.
+   * - WEB: uses Web Push Protocol (VAPID)
+   * - ANDROID/IOS: uses Firebase Cloud Messaging
    */
   async sendToUser(userId: string, notification: {
     title: string;
     body: string;
     data?: Record<string, string>;
   }) {
-    const app = getFirebaseApp();
-    if (!app) return;
-
     const tokens = await prisma.deviceToken.findMany({
       where: { userId },
-      select: { id: true, token: true },
+      select: { id: true, token: true, platform: true, subscriptionAuth: true, subscriptionP256dh: true },
     });
 
     if (tokens.length === 0) return;
 
-    const message: admin.messaging.MulticastMessage = {
-      tokens: tokens.map((t) => t.token),
-      notification: {
-        title: notification.title,
-        body: notification.body,
-      },
-      data: notification.data || {},
-      webpush: {
-        fcmOptions: {
-          link: '/dashboard',
-        },
-        notification: {
-          icon: '/icons/icon-192x192.png',
-          badge: '/icons/badge-72x72.png',
-        },
-      },
-      android: {
-        priority: 'high',
-        notification: {
-          channelId: 'teranga_pms',
-          icon: 'ic_notification',
-          defaultSound: true,
-        },
-      },
-    };
+    const webTokens = tokens.filter((t) => t.platform === 'WEB');
+    const mobileTokens = tokens.filter((t) => t.platform !== 'WEB');
 
-    try {
-      const response = await admin.messaging().sendEachForMulticast(message);
-
-      // Clean up invalid tokens
-      if (response.failureCount > 0) {
-        const invalidTokenIds: string[] = [];
-        response.responses.forEach((resp, idx) => {
-          if (!resp.success) {
-            const errorCode = resp.error?.code;
-            if (
-              errorCode === 'messaging/invalid-registration-token' ||
-              errorCode === 'messaging/registration-token-not-registered'
-            ) {
-              invalidTokenIds.push(tokens[idx].id);
-            }
+    // Web Push notifications
+    const invalidWebIds: string[] = [];
+    await Promise.all(
+      webTokens.map(async (t) => {
+        if (!t.subscriptionAuth || !t.subscriptionP256dh) return;
+        const subscription: webpush.PushSubscription = {
+          endpoint: t.token,
+          keys: { auth: t.subscriptionAuth, p256dh: t.subscriptionP256dh },
+        };
+        try {
+          await webpush.sendNotification(
+            subscription,
+            JSON.stringify({ title: notification.title, body: notification.body, data: notification.data || {} }),
+          );
+        } catch (err: any) {
+          logger.warn('Web Push send failed', { error: String(err) });
+          if (err.statusCode === 410 || err.statusCode === 404) {
+            invalidWebIds.push(t.id);
           }
-        });
-
-        if (invalidTokenIds.length > 0) {
-          await prisma.deviceToken.deleteMany({
-            where: { id: { in: invalidTokenIds } },
-          });
-          logger.info(`Removed ${invalidTokenIds.length} invalid FCM tokens`);
         }
-      }
+      }),
+    );
 
-      if (response.successCount > 0) {
-        logger.debug('FCM push sent', { userId, successCount: response.successCount });
+    if (invalidWebIds.length > 0) {
+      await prisma.deviceToken.deleteMany({ where: { id: { in: invalidWebIds } } });
+    }
+
+    // FCM notifications for mobile
+    if (mobileTokens.length > 0) {
+      const app = getFirebaseApp();
+      if (!app) return;
+
+      const message: admin.messaging.MulticastMessage = {
+        tokens: mobileTokens.map((t) => t.token),
+        notification: { title: notification.title, body: notification.body },
+        data: notification.data || {},
+        android: {
+          priority: 'high',
+          notification: { channelId: 'teranga_pms', icon: 'ic_notification', defaultSound: true },
+        },
+      };
+
+      try {
+        const response = await admin.messaging().sendEachForMulticast(message);
+        if (response.failureCount > 0) {
+          const invalidIds: string[] = [];
+          response.responses.forEach((resp, idx) => {
+            const code = resp.error?.code;
+            if (code === 'messaging/invalid-registration-token' || code === 'messaging/registration-token-not-registered') {
+              invalidIds.push(mobileTokens[idx].id);
+            }
+          });
+          if (invalidIds.length > 0) {
+            await prisma.deviceToken.deleteMany({ where: { id: { in: invalidIds } } });
+          }
+        }
+        if (response.successCount > 0) {
+          logger.debug('FCM push sent', { userId, successCount: response.successCount });
+        }
+      } catch (err) {
+        logger.error('FCM send error', { userId, error: String(err) });
       }
-    } catch (err) {
-      logger.error('FCM send error', { userId, error: String(err) });
     }
   }
 }

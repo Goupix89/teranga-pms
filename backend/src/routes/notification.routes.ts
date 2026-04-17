@@ -44,17 +44,37 @@ router.post('/read-all', authenticate, asyncHandler(async (req, res) => {
 }));
 
 /**
- * POST /api/notifications/device-token — register FCM device token
+ * GET /api/notifications/vapid-public-key — return VAPID public key for Web Push
+ */
+router.get('/vapid-public-key', (req, res) => {
+  const { config: cfg } = require('../config');
+  res.json({ success: true, publicKey: cfg.vapid.publicKey });
+});
+
+/**
+ * POST /api/notifications/device-token — register push token
+ * For WEB: body = { platform: 'WEB', endpoint, auth, p256dh }
+ * For mobile: body = { platform: 'ANDROID'|'IOS', token }
  */
 router.post('/device-token', authenticate, asyncHandler(async (req, res) => {
-  const { token, platform } = req.body;
-  if (!token || !platform) {
-    return res.status(400).json({ success: false, error: 'Token et platform requis' });
-  }
+  const { token, platform, endpoint, auth, p256dh } = req.body;
+
   if (!['WEB', 'ANDROID', 'IOS'].includes(platform)) {
     return res.status(400).json({ success: false, error: 'Platform invalide (WEB, ANDROID, IOS)' });
   }
-  await firebaseService.registerToken(req.user!.id, token, platform);
+
+  if (platform === 'WEB') {
+    if (!endpoint || !auth || !p256dh) {
+      return res.status(400).json({ success: false, error: 'endpoint, auth et p256dh requis pour WEB' });
+    }
+    await firebaseService.registerToken(req.user!.id, endpoint, 'WEB', { auth, p256dh });
+  } else {
+    if (!token) {
+      return res.status(400).json({ success: false, error: 'Token requis' });
+    }
+    await firebaseService.registerToken(req.user!.id, token, platform);
+  }
+
   res.json({ success: true, message: 'Token enregistré' });
 }));
 

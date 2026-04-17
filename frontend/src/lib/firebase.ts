@@ -1,92 +1,68 @@
-import { initializeApp, getApps } from 'firebase/app';
-import { getMessaging, getToken, onMessage, isSupported, Messaging } from 'firebase/messaging';
+const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '';
 
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-};
-
-// Initialize Firebase (only once)
-function getFirebaseApp() {
-  if (getApps().length === 0) {
-    return initializeApp(firebaseConfig);
-  }
-  return getApps()[0];
-}
-
-let messagingInstance: Messaging | null = null;
-
-async function getMessagingInstance(): Promise<Messaging | null> {
-  if (typeof window === 'undefined') return null;
-  if (messagingInstance) return messagingInstance;
-
-  const supported = await isSupported();
-  if (!supported) return null;
-
-  if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
-    console.warn('Firebase not configured — push notifications disabled');
-    return null;
-  }
-
-  const app = getFirebaseApp();
-  messagingInstance = getMessaging(app);
-  return messagingInstance;
+function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  const output = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; i++) output[i] = rawData.charCodeAt(i);
+  return output.buffer as ArrayBuffer;
 }
 
 /**
- * Request notification permission and get the FCM token.
- * Returns the token string or null if not supported/denied.
+ * Request notification permission and register a Web Push subscription.
+ * Sends the subscription to the backend for storage.
+ * Returns true on success, false on failure.
  */
-export async function requestNotificationPermission(): Promise<string | null> {
+export async function requestNotificationPermission(): Promise<boolean> {
   try {
-    if (typeof window === 'undefined') return null;
-    if (!('Notification' in window)) return null;
+    if (typeof window === 'undefined') return false;
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return false;
 
     const permission = await Notification.requestPermission();
-    if (permission !== 'granted') return null;
+    if (permission !== 'granted') return false;
 
-    const messaging = await getMessagingInstance();
-    if (!messaging) return null;
-
-    const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
-    if (!vapidKey) {
-      console.warn('NEXT_PUBLIC_FIREBASE_VAPID_KEY not set');
-      return null;
+    if (!VAPID_PUBLIC_KEY) {
+      console.warn('NEXT_PUBLIC_VAPID_PUBLIC_KEY not set');
+      return false;
     }
 
-    const swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-    await navigator.serviceWorker.ready;
+    await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+    const swRegistration = await navigator.serviceWorker.ready;
 
-    // If an existing push subscription has a different VAPID key, it blocks
-    // new token creation with "push service error". Force-clear it first.
-    const existingSub = await swRegistration.pushManager.getSubscription();
-    if (existingSub) {
-      await existingSub.unsubscribe();
-    }
+    // Clear stale subscription before creating a new one
+    const existing = await swRegistration.pushManager.getSubscription();
+    if (existing) await existing.unsubscribe();
 
-    const token = await getToken(messaging, {
-      vapidKey,
-      serviceWorkerRegistration: swRegistration,
+    const subscription = await swRegistration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
     });
 
-    return token;
+    const { endpoint, keys } = subscription.toJSON() as {
+      endpoint: string;
+      keys: { auth: string; p256dh: string };
+    };
+
+    const apiUrl = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
+    const res = await fetch(`${apiUrl}/api/notifications/device-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ platform: 'WEB', endpoint, auth: keys.auth, p256dh: keys.p256dh }),
+    });
+
+    return res.ok;
   } catch (err) {
-    console.error('Failed to get FCM token:', err);
-    return null;
+    console.error('Failed to register Web Push subscription:', err);
+    return false;
   }
 }
 
 /**
- * Listen for foreground messages.
- * Call this once when the app mounts.
+ * Listen for foreground push messages (shown by the service worker).
+ * No-op in the Web Push approach — all notifications are handled by the SW.
  */
-export function onForegroundMessage(callback: (payload: any) => void) {
-  getMessagingInstance().then((messaging) => {
-    if (!messaging) return;
-    onMessage(messaging, callback);
-  });
+export function onForegroundMessage(_callback: (payload: any) => void) {
+  // Web Push notifications are always handled by the service worker
 }

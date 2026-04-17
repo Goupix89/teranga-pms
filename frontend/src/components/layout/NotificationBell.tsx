@@ -86,16 +86,11 @@ export function NotificationBell({ collapsed }: { collapsed: boolean }) {
 
   // Request push notification permission and register FCM token
   const [pushEnabled, setPushEnabled] = useState(false);
-  const fcmTokenRef = useRef<string | null>(null);
 
   const registerPushToken = useCallback(async () => {
     try {
-      const token = await requestNotificationPermission();
-      if (token) {
-        fcmTokenRef.current = token;
-        await apiPost('/notifications/device-token', { token, platform: 'WEB' });
-        setPushEnabled(true);
-      }
+      const success = await requestNotificationPermission();
+      if (success) setPushEnabled(true);
     } catch (err) {
       console.error('Push registration failed:', err);
     }

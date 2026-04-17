@@ -41,7 +41,14 @@
       "Bash(echo \"BACK_EXIT=$?\")",
       "Bash(echo \"FRONT_EXIT=$?\")",
       "Bash(echo \"BACK=$?\")",
-      "Bash(echo \"FRONT=$?\")"
+      "Bash(echo \"FRONT=$?\")",
+      "Bash(node -e \"console.log\\(require\\('/home/teranga.jdidit.cloud/public_html/frontend/node_modules/firebase/package.json'\\).version\\)\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(d.get\\('packages',{}\\).get\\('node_modules/firebase',{}\\).get\\('version','not found'\\)\\)\")",
+      "Bash(npx web-push *)",
+      "Bash(npx --yes web-push generate-vapid-keys)",
+      "Bash(node -e ' *)",
+      "Bash(docker run --rm node:20-alpine node -e ' *)",
+      "Bash(npm install *)"
     ],
     "additionalDirectories": [
       "/home/user/hotel-pms/frontend/src/app/dashboard/clients",

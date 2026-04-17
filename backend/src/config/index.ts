@@ -58,6 +58,12 @@ export const config = {
     serviceAccountPath: process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '',
     projectId: process.env.FIREBASE_PROJECT_ID || '',
   },
+
+  vapid: {
+    publicKey: process.env.VAPID_PUBLIC_KEY || '',
+    privateKey: process.env.VAPID_PRIVATE_KEY || '',
+    subject: process.env.VAPID_SUBJECT || 'mailto:admin@teranga.jdidit.cloud',
+  },
 } as const;
 
 // Validate critical config at startup

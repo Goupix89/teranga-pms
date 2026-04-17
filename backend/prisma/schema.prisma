@@ -941,12 +941,15 @@ model DashboardConfig {
 // =============================================================================
 
 model DeviceToken {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  token     String   @unique
-  platform  String // WEB, ANDROID, IOS
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  token            String   @unique
+  platform         String // WEB, ANDROID, IOS
+  // Web Push fields (non-null for WEB platform, null for ANDROID/IOS)
+  subscriptionAuth  String?  @map("subscription_auth")
+  subscriptionP256dh String? @map("subscription_p256dh")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

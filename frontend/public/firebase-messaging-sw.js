@@ -1,50 +1,40 @@
 /* eslint-disable no-restricted-globals */
-// Firebase Messaging Service Worker
-// This file MUST be at the root of the public directory
+// Web Push Service Worker — handles background push notifications
 
-importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js');
+self.addEventListener('push', (event) => {
+  if (!event.data) return;
 
-// Firebase config — these are PUBLIC keys, safe to include in client code
-firebase.initializeApp({
-  apiKey: 'AIzaSyA4yieC3vHVif9E77dzWcewljP-f3giTVM',
-  authDomain: 'teranga-pms.firebaseapp.com',
-  projectId: 'teranga-pms',
-  storageBucket: 'teranga-pms.firebasestorage.app',
-  messagingSenderId: '858864118265',
-  appId: '1:858864118265:web:d350bf97b37607a219f528',
-});
+  let payload;
+  try {
+    payload = event.data.json();
+  } catch {
+    payload = { title: 'Teranga PMS', body: event.data.text() };
+  }
 
-const messaging = firebase.messaging();
-
-// Handle background messages
-messaging.onBackgroundMessage((payload) => {
-  const notificationTitle = payload.notification?.title || 'Teranga PMS';
-  const notificationOptions = {
-    body: payload.notification?.body || '',
+  const title = payload.title || 'Teranga PMS';
+  const options = {
+    body: payload.body || '',
     icon: '/icons/icon-192x192.png',
     badge: '/icons/badge-72x72.png',
     data: payload.data || {},
-    tag: payload.data?.notificationId || 'default',
+    tag: (payload.data && payload.data.notificationId) || 'default',
+    renotify: true,
   };
 
-  self.registration.showNotification(notificationTitle, notificationOptions);
+  event.waitUntil(self.registration.showNotification(title, options));
 });
 
-// Handle notification click
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const url = event.notification.data?.link || '/dashboard';
+  const url = (event.notification.data && event.notification.data.link) || '/dashboard';
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // Focus existing window if possible
       for (const client of clientList) {
         if (client.url.includes('/dashboard') && 'focus' in client) {
           return client.focus();
         }
       }
-      // Otherwise open new window
       return self.clients.openWindow(url);
     })
   );
