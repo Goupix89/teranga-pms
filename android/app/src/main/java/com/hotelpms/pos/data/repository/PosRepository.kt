@@ -60,7 +60,7 @@ class PosRepository(
         return try {
             val response = api.getArticles(
                 page = 1,
-                limit = 200,
+                limit = 1000,
                 menuOnly = true,
                 establishmentId = tokenManager.establishmentId
             )

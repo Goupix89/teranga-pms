@@ -363,16 +363,19 @@ model Reservation {
   totalPrice     Decimal           @map("total_price") @db.Decimal(10, 2)
   discountRuleId String?           @map("discount_rule_id")
   discountAmount Decimal           @default(0) @map("discount_amount") @db.Decimal(10, 2)
+  autoDiscountRuleId String?       @map("auto_discount_rule_id")
+  autoDiscountAmount Decimal       @default(0) @map("auto_discount_amount") @db.Decimal(10, 2)
   notes          String?
   cancelledAt    DateTime?         @map("cancelled_at")
   createdAt      DateTime          @default(now()) @map("created_at")
   updatedAt      DateTime          @updatedAt @map("updated_at")
 
-  tenant       Tenant        @relation(fields: [tenantId], references: [id])
-  room         Room          @relation(fields: [roomId], references: [id])
-  client       Client?       @relation(fields: [clientId], references: [id])
-  discountRule DiscountRule? @relation(fields: [discountRuleId], references: [id])
-  invoices     Invoice[]
+  tenant           Tenant        @relation(fields: [tenantId], references: [id])
+  room             Room          @relation(fields: [roomId], references: [id])
+  client           Client?       @relation(fields: [clientId], references: [id])
+  discountRule     DiscountRule? @relation("ReservationManualDiscount", fields: [discountRuleId], references: [id])
+  autoDiscountRule DiscountRule? @relation("ReservationAutoDiscount", fields: [autoDiscountRuleId], references: [id])
+  invoices         Invoice[]
 
   @@index([tenantId])
   @@index([tenantId, clientId])
@@ -416,16 +419,19 @@ model DiscountRule {
   value       Decimal  @db.Decimal(10, 2)
   appliesTo   String   @map("applies_to") // RESERVATION | ORDER | BOTH
   minNights   Int?     @map("min_nights")
+  maxNights   Int?     @map("max_nights")
   minAmount   Decimal? @map("min_amount") @db.Decimal(10, 2)
   autoApply   Boolean  @default(false) @map("auto_apply")
   isActive    Boolean  @default(true) @map("is_active")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  tenant       Tenant        @relation(fields: [tenantId], references: [id])
-  reservations Reservation[]
-  orders       Order[]
-  invoices     Invoice[]
+  tenant           Tenant        @relation(fields: [tenantId], references: [id])
+  reservations     Reservation[] @relation("ReservationManualDiscount")
+  autoReservations Reservation[] @relation("ReservationAutoDiscount")
+  orders           Order[]
+  invoices         Invoice[]     @relation("InvoiceManualDiscount")
+  autoInvoices     Invoice[]     @relation("InvoiceAutoDiscount")
 
   @@index([tenantId])
   @@map("discount_rules")
@@ -528,6 +534,8 @@ model Invoice {
   taxAmount        Decimal        @default(0) @map("tax_amount") @db.Decimal(10, 2)
   discountRuleId   String?        @map("discount_rule_id")
   discountAmount   Decimal        @default(0) @map("discount_amount") @db.Decimal(10, 2)
+  autoDiscountRuleId String?      @map("auto_discount_rule_id")
+  autoDiscountAmount Decimal      @default(0) @map("auto_discount_amount") @db.Decimal(10, 2)
   totalAmount      Decimal        @map("total_amount") @db.Decimal(10, 2)
   currency         String         @default("XOF")
   paymentMethod    PaymentMethod? @map("payment_method")
@@ -539,14 +547,15 @@ model Invoice {
   createdAt        DateTime       @default(now()) @map("created_at")
   updatedAt        DateTime       @updatedAt @map("updated_at")
 
-  tenant       Tenant        @relation(fields: [tenantId], references: [id])
-  reservation  Reservation?  @relation(fields: [reservationId], references: [id])
-  client       Client?       @relation(fields: [clientId], references: [id])
-  createdBy    User          @relation("InvoiceCreator", fields: [createdById], references: [id])
-  discountRule DiscountRule? @relation(fields: [discountRuleId], references: [id])
-  items        InvoiceItem[]
-  payments     Payment[]
-  orders       Order[]
+  tenant           Tenant        @relation(fields: [tenantId], references: [id])
+  reservation      Reservation?  @relation(fields: [reservationId], references: [id])
+  client           Client?       @relation(fields: [clientId], references: [id])
+  createdBy        User          @relation("InvoiceCreator", fields: [createdById], references: [id])
+  discountRule     DiscountRule? @relation("InvoiceManualDiscount", fields: [discountRuleId], references: [id])
+  autoDiscountRule DiscountRule? @relation("InvoiceAutoDiscount", fields: [autoDiscountRuleId], references: [id])
+  items            InvoiceItem[]
+  payments         Payment[]
+  orders           Order[]
 
   @@unique([tenantId, invoiceNumber])
   @@index([tenantId])

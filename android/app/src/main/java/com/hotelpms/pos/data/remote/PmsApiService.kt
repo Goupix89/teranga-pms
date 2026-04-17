@@ -21,7 +21,7 @@ interface PmsApiService {
     @GET("api/articles")
     suspend fun getArticles(
         @Query("page") page: Int = 1,
-        @Query("limit") limit: Int = 200,
+        @Query("limit") limit: Int = 1000,
         @Query("menuOnly") menuOnly: Boolean = true,
         @Query("establishmentId") establishmentId: String? = null
     ): Response<ArticlesResponse>

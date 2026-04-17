@@ -243,6 +243,7 @@ export class ReceiptService {
         reservation: { select: { guestName: true, checkIn: true, checkOut: true, room: { select: { number: true, type: true } } } },
         createdBy: { select: { firstName: true, lastName: true } },
         discountRule: { select: { name: true, type: true, value: true } },
+        autoDiscountRule: { select: { name: true, type: true, value: true } },
       },
     });
 
@@ -411,13 +412,22 @@ export class ReceiptService {
       // ── Totals ──
       const totalsX = margin + contentWidth * 0.60;
       const invoiceDiscountAmount = Number((invoice as any).discountAmount || 0);
+      const invoiceAutoDiscount = Number((invoice as any).autoDiscountAmount || 0);
+      const invoiceManualDiscount = Math.max(0, invoiceDiscountAmount - invoiceAutoDiscount);
       doc.font('Helvetica').fontSize(9);
       doc.text(`Sous-total:`, totalsX, doc.y, { continued: true });
       doc.text(formatCurrency(subtotal), { align: 'right' });
-      if (invoiceDiscountAmount > 0) {
-        const ruleLabel = formatDiscountRuleLabel((invoice as any).discountRule);
-        doc.text(`${ruleLabel}:`, totalsX, doc.y, { continued: true });
-        doc.text(`-${formatCurrency(invoiceDiscountAmount)}`, { align: 'right' });
+      if (invoiceAutoDiscount > 0) {
+        const autoLabel = formatDiscountRuleLabel((invoice as any).autoDiscountRule);
+        doc.text(`${autoLabel}:`, totalsX, doc.y, { continued: true });
+        doc.text(`-${formatCurrency(invoiceAutoDiscount)}`, { align: 'right' });
+      }
+      if (invoiceManualDiscount > 0) {
+        const manualLabel = (invoice as any).discountRule
+          ? formatDiscountRuleLabel((invoice as any).discountRule)
+          : 'Remise';
+        doc.text(`${manualLabel}:`, totalsX, doc.y, { continued: true });
+        doc.text(`-${formatCurrency(invoiceManualDiscount)}`, { align: 'right' });
       }
       if (taxRate > 0) {
         doc.text(`Taxe (${taxRate}%):`, totalsX, doc.y, { continued: true });
@@ -461,6 +471,7 @@ export class ReceiptService {
         },
         invoices: { select: { id: true, invoiceNumber: true, status: true, totalAmount: true }, take: 1 },
         discountRule: { select: { name: true, type: true, value: true } },
+        autoDiscountRule: { select: { name: true, type: true, value: true } },
       },
     });
 
@@ -545,12 +556,22 @@ export class ReceiptService {
       doc.moveDown(0.3);
       this.drawSeparator(doc, margin, contentWidth);
 
-      // Remise (si applicable)
+      // Remise (si applicable) — Owner auto rule + manual rule (chacune sur sa ligne)
+      const autoPortion = Number((reservation as any).autoDiscountAmount || 0);
+      const manualPortion = Math.max(0, reservationDiscountAmount - autoPortion);
       if (reservationDiscountAmount > 0) {
         doc.font('Helvetica').fontSize(7);
         doc.text(`Sous-total: ${formatCurrency(subtotalAmount)}`, { align: 'right' });
-        const ruleLabel = formatDiscountRuleLabel((reservation as any).discountRule);
-        doc.text(`${ruleLabel}: -${formatCurrency(reservationDiscountAmount)}`, { align: 'right' });
+        if (autoPortion > 0) {
+          const autoLabel = formatDiscountRuleLabel((reservation as any).autoDiscountRule);
+          doc.text(`${autoLabel}: -${formatCurrency(autoPortion)}`, { align: 'right' });
+        }
+        if (manualPortion > 0) {
+          const manualLabel = (reservation as any).discountRule
+            ? formatDiscountRuleLabel((reservation as any).discountRule)
+            : 'Remise';
+          doc.text(`${manualLabel}: -${formatCurrency(manualPortion)}`, { align: 'right' });
+        }
       }
 
       // Total

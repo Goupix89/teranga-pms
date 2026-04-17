@@ -129,25 +129,35 @@ export class ReservationService {
       const nights = calculateNights(checkInDate, checkOutDate);
       const subtotal = Number(room.pricePerNight.mul(nights));
 
-      // 4b. Resolve discount — explicit ruleId wins, otherwise auto-apply best match (long-stay)
-      let discountRuleId: string | null = null;
-      let discountAmount = 0;
+      // 4b. Resolve discount — Owner-defined auto rules always apply (best-match),
+      // and a manually-selected Owner rule stacks ON TOP against the remaining base.
+      let discountRuleId: string | null = null;       // manual rule id (if any)
+      let autoDiscountRuleId: string | null = null;   // owner auto rule id (if any)
+      let discountAmount = 0;                         // total = auto + manual
+      let autoDiscountAmount = 0;                     // owner auto portion
       {
         const { discountService } = await import('./discount.service');
+
+        // Owner auto rule (autoApply=true) — always applied when matching
+        const auto = await discountService.findAutoReservationDiscount(tenantId, { nights, subtotal });
+        if (auto) {
+          autoDiscountRuleId = auto.rule.id;
+          autoDiscountAmount = auto.amount;
+        }
+
+        // Manual rule stacks on top, computed against the remaining base (no double-dip)
+        const baseAfterAuto = Math.max(0, subtotal - autoDiscountAmount);
+        let manualAmount = 0;
+
         if (data.discountRuleId) {
           const applied = await discountService.apply(tenantId, data.discountRuleId, {
-            nights, subtotal, appliesTo: 'RESERVATION',
+            nights, subtotal: baseAfterAuto, appliesTo: 'RESERVATION',
           });
           discountRuleId = applied.rule.id;
-          discountAmount = applied.amount;
-        } else {
-          const auto = await discountService.findAutoReservationDiscount(tenantId, { nights, subtotal });
-          if (auto) {
-            // Built-in long-stay rules have no persisted id — only link to DB rules
-            discountRuleId = auto.rule.id || null;
-            discountAmount = auto.amount;
-          }
+          manualAmount = applied.amount;
         }
+
+        discountAmount = Math.min(autoDiscountAmount + manualAmount, subtotal);
       }
       const totalPrice = Math.max(0, subtotal - discountAmount);
 
@@ -184,6 +194,8 @@ export class ReservationService {
           totalPrice,
           discountRuleId,
           discountAmount,
+          autoDiscountRuleId,
+          autoDiscountAmount,
           notes: data.notes,
         },
         include: {
@@ -227,6 +239,8 @@ export class ReservationService {
             taxRate: 0,
             discountRuleId,
             discountAmount,
+            autoDiscountRuleId,
+            autoDiscountAmount,
             totalAmount: totalPrice,
             paymentMethod: data.paymentMethod || null,
             notes: `Hébergement ${data.guestName} — Chambre ${reservation.room.number} (${nights} nuit${nights > 1 ? 's' : ''})${data.source !== 'DIRECT' ? ` [${data.source}]` : ''}`,
@@ -277,7 +291,9 @@ export class ReservationService {
         source: data.source,
         invoiceId,
         discountRuleId,
+        autoDiscountRuleId,
         discountAmount,
+        autoDiscountAmount,
       });
 
       return { ...reservation, invoiceId, paymentMethod: data.paymentMethod };

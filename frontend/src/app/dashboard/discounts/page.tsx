@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/lib/api';
 import { PageHeader, Modal, EmptyState, LoadingPage, ConfirmDialog } from '@/components/ui';
-import { Percent, Plus, Trash2, Loader2, Pencil, Info } from 'lucide-react';
+import { Percent, Plus, Trash2, Loader2, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/hooks/useAuthStore';
 
@@ -15,10 +15,13 @@ type Rule = {
   value: number;
   appliesTo: 'RESERVATION' | 'ORDER' | 'BOTH';
   minNights?: number | null;
+  maxNights?: number | null;
   minAmount?: number | null;
   autoApply: boolean;
   isActive: boolean;
 };
+
+type NightsScope = 'none' | 'exact' | 'range' | 'min' | 'max';
 
 const emptyForm = {
   name: '',
@@ -26,10 +29,23 @@ const emptyForm = {
   type: 'PERCENTAGE' as 'PERCENTAGE' | 'FIXED',
   value: 10,
   appliesTo: 'ORDER' as 'RESERVATION' | 'ORDER' | 'BOTH',
+  nightsScope: 'none' as NightsScope,
+  exactNights: '',
   minNights: '',
+  maxNights: '',
   minAmount: '',
   autoApply: false,
 };
+
+function deriveScopeFromRule(rule: { minNights?: number | null; maxNights?: number | null }): NightsScope {
+  const hasMin = rule.minNights != null;
+  const hasMax = rule.maxNights != null;
+  if (hasMin && hasMax && rule.minNights === rule.maxNights) return 'exact';
+  if (hasMin && hasMax) return 'range';
+  if (hasMin) return 'min';
+  if (hasMax) return 'max';
+  return 'none';
+}
 
 export default function DiscountsPage() {
   const queryClient = useQueryClient();
@@ -82,13 +98,17 @@ export default function DiscountsPage() {
 
   const openEdit = (rule: Rule) => {
     setEditing(rule);
+    const scope = deriveScopeFromRule(rule);
     setForm({
       name: rule.name,
       description: rule.description || '',
       type: rule.type,
       value: Number(rule.value),
       appliesTo: rule.appliesTo,
-      minNights: rule.minNights?.toString() || '',
+      nightsScope: scope,
+      exactNights: scope === 'exact' ? (rule.minNights?.toString() || '') : '',
+      minNights: scope === 'range' || scope === 'min' ? (rule.minNights?.toString() || '') : '',
+      maxNights: scope === 'range' || scope === 'max' ? (rule.maxNights?.toString() || '') : '',
       minAmount: rule.minAmount?.toString() || '',
       autoApply: rule.autoApply,
     });
@@ -97,13 +117,38 @@ export default function DiscountsPage() {
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
+    let minNights: number | undefined;
+    let maxNights: number | undefined;
+    switch (form.nightsScope) {
+      case 'exact': {
+        const n = form.exactNights ? Number(form.exactNights) : NaN;
+        if (!Number.isFinite(n) || n <= 0) { toast.error('Indiquez un nombre de nuits valide'); return; }
+        minNights = n; maxNights = n;
+        break;
+      }
+      case 'range': {
+        const mn = form.minNights ? Number(form.minNights) : NaN;
+        const mx = form.maxNights ? Number(form.maxNights) : NaN;
+        if (!Number.isFinite(mn) || !Number.isFinite(mx)) { toast.error('Indiquez un intervalle valide'); return; }
+        if (mx < mn) { toast.error('Le max doit être ≥ au min'); return; }
+        minNights = mn; maxNights = mx;
+        break;
+      }
+      case 'min':
+        minNights = form.minNights ? Number(form.minNights) : undefined;
+        break;
+      case 'max':
+        maxNights = form.maxNights ? Number(form.maxNights) : undefined;
+        break;
+    }
     const body: any = {
       name: form.name,
       description: form.description || undefined,
       type: form.type,
       value: Number(form.value),
       appliesTo: form.appliesTo,
-      minNights: form.minNights ? Number(form.minNights) : undefined,
+      minNights,
+      maxNights,
       minAmount: form.minAmount ? Number(form.minAmount) : undefined,
       autoApply: form.autoApply,
     };
@@ -130,23 +175,6 @@ export default function DiscountsPage() {
           </button>
         ) : undefined}
       />
-
-      <div className="card border-l-4 border-l-amber-400 p-4 bg-amber-50/60">
-        <div className="flex gap-3">
-          <Info className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
-          <div className="text-sm text-amber-900">
-            <div className="font-medium">Remises automatiques long séjour (intégrées)</div>
-            <ul className="mt-1 space-y-0.5 text-amber-800">
-              <li>• 3 à 5 nuits → <strong>10%</strong></li>
-              <li>• 6 nuits → <strong>20%</strong></li>
-              <li>• Plus de 6 nuits → <strong>25%</strong></li>
-            </ul>
-            <div className="mt-1 text-xs text-amber-700">
-              Ces remises s'appliquent automatiquement. Vos règles personnalisées peuvent s'ajouter ou remplacer si plus avantageuses.
-            </div>
-          </div>
-        </div>
-      </div>
 
       {rules.length === 0 ? (
         <EmptyState
@@ -189,10 +217,18 @@ export default function DiscountsPage() {
                       </span>
                     </td>
                     <td className="text-xs text-gray-500">
-                      {r.minNights ? `≥ ${r.minNights} nuits` : ''}
-                      {r.minNights && r.minAmount ? ' · ' : ''}
-                      {r.minAmount ? `≥ ${Math.round(Number(r.minAmount)).toLocaleString('fr-FR')} FCFA` : ''}
-                      {!r.minNights && !r.minAmount ? '-' : ''}
+                      {(() => {
+                        const parts: string[] = [];
+                        if (r.minNights && r.maxNights) {
+                          parts.push(r.minNights === r.maxNights ? `${r.minNights} nuit${r.minNights > 1 ? 's' : ''}` : `${r.minNights} à ${r.maxNights} nuits`);
+                        } else if (r.minNights) {
+                          parts.push(`≥ ${r.minNights} nuits`);
+                        } else if (r.maxNights) {
+                          parts.push(`≤ ${r.maxNights} nuits`);
+                        }
+                        if (r.minAmount) parts.push(`≥ ${Math.round(Number(r.minAmount)).toLocaleString('fr-FR')} FCFA`);
+                        return parts.length ? parts.join(' · ') : '-';
+                      })()}
                     </td>
                     <td>
                       {r.autoApply
@@ -255,15 +291,60 @@ export default function DiscountsPage() {
               <option value="BOTH">Les deux</option>
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="label">Portée (nuits)</label>
+            <select
+              value={form.nightsScope}
+              onChange={(e) => setForm({ ...form, nightsScope: e.target.value as NightsScope, exactNights: '', minNights: '', maxNights: '' })}
+              className="input"
+            >
+              <option value="none">Aucune limite de nuits</option>
+              <option value="exact">Exactement N nuits</option>
+              <option value="range">Intervalle (de N à M nuits)</option>
+              <option value="min">Au moins N nuits</option>
+              <option value="max">Au plus N nuits</option>
+            </select>
+          </div>
+          {form.nightsScope === 'exact' && (
             <div>
-              <label className="label">Min. nuits (réservation)</label>
-              <input type="number" min="0" value={form.minNights} onChange={(e) => setForm({ ...form, minNights: e.target.value })} className="input" placeholder="—" />
+              <label className="label">Nombre de nuits</label>
+              <input
+                type="number" min="1" required
+                value={form.exactNights}
+                onChange={(e) => setForm({ ...form, exactNights: e.target.value })}
+                className="input"
+                placeholder="Ex: 6"
+              />
+              <p className="text-xs text-gray-500 mt-1">Ne s'applique que si la réservation fait exactement ce nombre de nuits.</p>
             </div>
+          )}
+          {form.nightsScope === 'range' && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="label">De (nuits)</label>
+                <input type="number" min="1" required value={form.minNights} onChange={(e) => setForm({ ...form, minNights: e.target.value })} className="input" placeholder="Ex: 3" />
+              </div>
+              <div>
+                <label className="label">À (nuits)</label>
+                <input type="number" min="1" required value={form.maxNights} onChange={(e) => setForm({ ...form, maxNights: e.target.value })} className="input" placeholder="Ex: 5" />
+              </div>
+            </div>
+          )}
+          {form.nightsScope === 'min' && (
             <div>
-              <label className="label">Min. montant (FCFA)</label>
-              <input type="number" min="0" value={form.minAmount} onChange={(e) => setForm({ ...form, minAmount: e.target.value })} className="input" placeholder="—" />
+              <label className="label">Au moins (nuits)</label>
+              <input type="number" min="1" required value={form.minNights} onChange={(e) => setForm({ ...form, minNights: e.target.value })} className="input" placeholder="Ex: 7" />
             </div>
+          )}
+          {form.nightsScope === 'max' && (
+            <div>
+              <label className="label">Au plus (nuits)</label>
+              <input type="number" min="1" required value={form.maxNights} onChange={(e) => setForm({ ...form, maxNights: e.target.value })} className="input" placeholder="Ex: 2" />
+            </div>
+          )}
+          <div>
+            <label className="label">Min. montant (FCFA, optionnel)</label>
+            <input type="number" min="0" value={form.minAmount} onChange={(e) => setForm({ ...form, minAmount: e.target.value })} className="input" placeholder="—" />
           </div>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={form.autoApply} onChange={(e) => setForm({ ...form, autoApply: e.target.checked })} />
