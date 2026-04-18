@@ -2302,6 +2302,7 @@ reportRouter.get('/revenue-summary', authenticate, requireDAFOrManagerOrServer,
           OR: [
             { orders: { some: { establishmentId } } },
             { reservation: { room: { establishmentId } } },
+            { establishmentId },
           ],
         }
       : {};

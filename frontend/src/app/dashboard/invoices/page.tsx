@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost } from '@/lib/api';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { PageHeader, StatusBadge, Pagination, Modal, SearchInput, EmptyState, LoadingPage } from '@/components/ui';
-import { Receipt, Plus, Send, XCircle, Loader2, FileDown, Merge, Search } from 'lucide-react';
+import { Receipt, Plus, Send, XCircle, Loader2, FileDown, Merge, Search, CreditCard } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { api } from '@/lib/api';
@@ -15,6 +15,7 @@ export default function InvoicesPage() {
   const queryClient = useQueryClient();
   const currentUser = useAuthStore((s) => s.user);
   const currentEstRole = useAuthStore((s) => s.currentEstablishmentRole);
+  const currentEstId = useAuthStore((s) => s.currentEstablishmentId);
   const isSuperAdmin = currentUser?.role === 'SUPERADMIN';
   const canDownloadPdf = isSuperAdmin || ['OWNER', 'DAF', 'MANAGER', 'MAITRE_HOTEL', 'SERVER', 'POS'].includes(currentEstRole || '');
 
@@ -23,6 +24,8 @@ export default function InvoicesPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [showMerge, setShowMerge] = useState(false);
+  const [payModal, setPayModal] = useState<{ open: boolean; invoice?: any }>({ open: false });
+  const [payMethod, setPayMethod] = useState<string>('CASH');
   const [mergeTable, setMergeTable] = useState('');
   const [mergeInvoices, setMergeInvoices] = useState<any[]>([]);
   const [mergeSelected, setMergeSelected] = useState<string[]>([]);
@@ -61,6 +64,17 @@ export default function InvoicesPage() {
       toast.success('Facture annulée');
     },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
+  });
+
+  const payMutation = useMutation({
+    mutationFn: ({ id, method }: { id: string; method: string }) =>
+      apiPost(`/invoices/${id}/simulate-payment`, { method }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      setPayModal({ open: false });
+      toast.success('Paiement enregistré — facture marquée comme payée');
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur lors du paiement'),
   });
 
   const mergeMutation = useMutation({
@@ -127,6 +141,7 @@ export default function InvoicesPage() {
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
     createMutation.mutate({
+      establishmentId: currentEstId || undefined,
       items: items.map((it) => ({
         description: it.description,
         quantity: Number(it.quantity),
@@ -217,6 +232,15 @@ export default function InvoicesPage() {
                           </button>
                         )}
                         {['DRAFT', 'ISSUED'].includes(inv.status) && (
+                          <button
+                            onClick={() => { setPayMethod('CASH'); setPayModal({ open: true, invoice: inv }); }}
+                            className="btn-ghost p-1.5 text-green-600"
+                            title="Encaisser"
+                          >
+                            <CreditCard className="h-4 w-4" />
+                          </button>
+                        )}
+                        {['DRAFT', 'ISSUED'].includes(inv.status) && (
                           <button onClick={() => cancelMutation.mutate(inv.id)} className="btn-ghost p-1.5 text-red-500" title="Annuler">
                             <XCircle className="h-4 w-4" />
                           </button>
@@ -260,6 +284,43 @@ export default function InvoicesPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Payment modal */}
+      <Modal open={payModal.open} onClose={() => setPayModal({ open: false })} title="Encaisser la facture" size="sm">
+        {payModal.invoice && (
+          <div className="space-y-4">
+            <div className="rounded-lg bg-gray-50 px-4 py-3">
+              <p className="text-sm text-gray-500">Facture</p>
+              <p className="font-semibold text-gray-900">{payModal.invoice.invoiceNumber}</p>
+              <p className="text-xl font-bold text-primary-700 mt-1">{formatCurrency(payModal.invoice.totalAmount)}</p>
+            </div>
+            <div>
+              <label className="label">Mode de paiement</label>
+              <select value={payMethod} onChange={(e) => setPayMethod(e.target.value)} className="input">
+                <option value="CASH">Espèces</option>
+                <option value="CARD">Carte bancaire</option>
+                <option value="MOBILE_MONEY">Mobile Money</option>
+                <option value="MOOV_MONEY">Flooz (Moov)</option>
+                <option value="MIXX_BY_YAS">Yas (Mixx)</option>
+                <option value="BANK_TRANSFER">Virement bancaire</option>
+              </select>
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button type="button" onClick={() => setPayModal({ open: false })} className="btn-secondary">Annuler</button>
+              <button
+                type="button"
+                onClick={() => payMutation.mutate({ id: payModal.invoice.id, method: payMethod })}
+                className="btn-primary"
+                disabled={payMutation.isPending}
+              >
+                {payMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                <CreditCard className="mr-2 h-4 w-4" />
+                Encaisser
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Merge invoices modal */}

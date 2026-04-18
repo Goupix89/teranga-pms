@@ -21,7 +21,7 @@ export class InvoiceService {
         OR: [
           { reservation: { room: { establishmentId: { in: filters.establishmentIds } } } },
           { orders: { some: { establishmentId: { in: filters.establishmentIds } } } },
-          { reservationId: null, orders: { none: {} } },
+          { establishmentId: { in: filters.establishmentIds } },
         ],
       });
     }
@@ -85,6 +85,7 @@ export class InvoiceService {
   }
 
   async create(tenantId: string, createdById: string, data: {
+    establishmentId?: string;
     reservationId?: string;
     items: Array<{
       articleId?: string;
@@ -126,6 +127,7 @@ export class InvoiceService {
           tenantId,
           createdById,
           invoiceNumber,
+          establishmentId: data.establishmentId || null,
           reservationId: data.reservationId,
           subtotal,
           taxRate,

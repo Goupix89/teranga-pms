@@ -292,6 +292,7 @@ model Establishment {
   categories       ArticleCategory[]
   restaurantTables RestaurantTable[]
   dashboardConfigs DashboardConfig[]
+  invoices         Invoice[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -524,6 +525,7 @@ model RestaurantTable {
 model Invoice {
   id               String         @id @default(uuid())
   tenantId         String         @map("tenant_id")
+  establishmentId  String?        @map("establishment_id")
   reservationId    String?        @map("reservation_id")
   clientId         String?        @map("client_id")
   createdById      String         @map("created_by_id")
@@ -547,9 +549,10 @@ model Invoice {
   createdAt        DateTime       @default(now()) @map("created_at")
   updatedAt        DateTime       @updatedAt @map("updated_at")
 
-  tenant           Tenant        @relation(fields: [tenantId], references: [id])
-  reservation      Reservation?  @relation(fields: [reservationId], references: [id])
-  client           Client?       @relation(fields: [clientId], references: [id])
+  tenant           Tenant         @relation(fields: [tenantId], references: [id])
+  establishment    Establishment? @relation(fields: [establishmentId], references: [id])
+  reservation      Reservation?   @relation(fields: [reservationId], references: [id])
+  client           Client?        @relation(fields: [clientId], references: [id])
   createdBy        User          @relation("InvoiceCreator", fields: [createdById], references: [id])
   discountRule     DiscountRule? @relation("InvoiceManualDiscount", fields: [discountRuleId], references: [id])
   autoDiscountRule DiscountRule? @relation("InvoiceAutoDiscount", fields: [autoDiscountRuleId], references: [id])
