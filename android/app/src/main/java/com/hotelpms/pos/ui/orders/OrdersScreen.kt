@@ -80,6 +80,16 @@ fun OrdersScreen(
         )
     }
 
+    // Cash-in dialog (payment method after order creation)
+    if (uiState.cashInOrder != null) {
+        CashInDialog(
+            order = uiState.cashInOrder!!,
+            isCashingIn = uiState.isCashingIn,
+            onDismiss = { viewModel.dismissCashInDialog() },
+            onConfirm = { method -> viewModel.cashIn(uiState.cashInOrder!!.id, method) }
+        )
+    }
+
     // QR Code payment dialog
     if (uiState.showQrCode && uiState.qrCodeData != null) {
         QrCodePaymentDialog(
@@ -192,7 +202,7 @@ fun OrdersScreen(
 @Composable
 private fun MenuView(viewModel: OrdersViewModel, uiState: OrdersUiState) {
     Column(modifier = Modifier.fillMaxSize()) {
-        // Table number + payment method row
+        // Table number row — payment method is chosen at cash-in time
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -202,14 +212,14 @@ private fun MenuView(viewModel: OrdersViewModel, uiState: OrdersUiState) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Table dropdown
-            Box(modifier = Modifier.width(120.dp)) {
+            Box(modifier = Modifier.weight(1f)) {
                 var tableExpanded by remember { mutableStateOf(false) }
                 ExposedDropdownMenuBox(
                     expanded = tableExpanded,
                     onExpandedChange = { tableExpanded = it }
                 ) {
                     OutlinedTextField(
-                        value = if (uiState.tableNumber.isBlank()) "— Table —" else uiState.tableNumber,
+                        value = if (uiState.tableNumber.isBlank()) "— Table —" else "Table ${uiState.tableNumber}",
                         onValueChange = {},
                         readOnly = true,
                         modifier = Modifier
@@ -252,20 +262,6 @@ private fun MenuView(viewModel: OrdersViewModel, uiState: OrdersUiState) {
                         }
                     }
                 }
-            }
-
-            // Payment method chips
-            val methods = listOf("CASH" to "Espèces", "FEDAPAY" to "FedaPay", "CARD" to "Carte", "MOBILE_MONEY" to "Mobile")
-            methods.forEach { (value, label) ->
-                FilterChip(
-                    selected = uiState.paymentMethod == value,
-                    onClick = { viewModel.setPaymentMethod(value) },
-                    label = { Text(label, fontSize = 11.sp) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = OrBeninois.copy(alpha = 0.2f),
-                        selectedLabelColor = TerreFon
-                    )
-                )
             }
         }
 
@@ -1079,6 +1075,7 @@ private fun OrdersListView(
                         onMarkServed = { viewModel.updateOrderStatus(it, "SERVED") },
                         onCancel = { viewModel.updateOrderStatus(it, "CANCELLED") },
                         onShowQr = { invoiceId, pm -> viewModel.fetchQrCode(invoiceId, pm) },
+                        onCashIn = { viewModel.showCashInDialog(order) },
                         onReceipt = { onReceipt(order) }
                     )
                 }
@@ -1098,6 +1095,7 @@ private fun OrderCard(
     onMarkServed: (String) -> Unit,
     onCancel: (String) -> Unit,
     onShowQr: (String, String?) -> Unit = { _, _ -> },
+    onCashIn: () -> Unit = {},
     onReceipt: () -> Unit = {}
 ) {
     val statusColor = getStatusColor(order.status)
@@ -1203,20 +1201,34 @@ private fun OrderCard(
                                 Icon(Icons.Default.QrCode, contentDescription = "QR code", tint = RougeDahomey, modifier = Modifier.size(20.dp))
                             }
                         }
-                        if (order.status == "READY" && userRole in listOf("SERVER", "SUPERADMIN")) {
+                        val canCashIn = order.status !in listOf("CANCELLED", "SERVED") &&
+                            order.invoiceId != null &&
+                            userRole in listOf("SERVER", "MAITRE_HOTEL", "MANAGER", "DAF", "OWNER", "POS", "SUPERADMIN")
+                        if (canCashIn) {
                             Button(
-                                onClick = { onMarkServed(order.id) },
-                                colors = ButtonDefaults.buttonColors(containerColor = VertBeninois),
-                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                                onClick = onCashIn,
+                                colors = ButtonDefaults.buttonColors(containerColor = RougeDahomey),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                             ) {
-                                Text("Servie", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.White)
+                                Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
+                                Spacer(Modifier.width(4.dp))
+                                Text("Encaisser", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.White)
+                            }
+                        }
+                        if (order.status == "READY" && userRole in listOf("SERVER", "SUPERADMIN")) {
+                            OutlinedButton(
+                                onClick = { onMarkServed(order.id) },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = VertBeninois),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text("Servie", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             }
                         }
                         if (order.status !in listOf("CANCELLED", "SERVED") && userRole in listOf("MANAGER", "DAF", "OWNER", "SUPERADMIN")) {
                             OutlinedButton(
                                 onClick = { onCancel(order.id) },
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = RougeDahomey),
-                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                             ) {
                                 Text("Annuler", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             }
@@ -1532,6 +1544,135 @@ private fun MergeInvoicesDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Fermer", color = Color.White)
+                }
+            }
+        }
+    }
+}
+
+// =============================================================================
+// CASH-IN DIALOG — chose payment method after the order
+// =============================================================================
+
+@Composable
+private fun CashInDialog(
+    order: Order,
+    isCashingIn: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var selected by remember { mutableStateOf("CASH") }
+    val methods = listOf(
+        "CASH" to "Espèces",
+        "MOBILE_MONEY" to "Mobile Money",
+        "MOOV_MONEY" to "Flooz",
+        "MIXX_BY_YAS" to "Yas",
+        "CARD" to "Carte",
+        "FEDAPAY" to "FedaPay",
+        "BANK_TRANSFER" to "Virement",
+        "OTHER" to "Autre"
+    )
+
+    Dialog(onDismissRequest = { if (!isCashingIn) onDismiss() }) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            colors = CardDefaults.cardColors(containerColor = CremeGanvie),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(
+                    "Encaisser la commande",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = TerreFon
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    order.orderNumber ?: "---",
+                    fontSize = 13.sp,
+                    color = BronzeAbomey
+                )
+                if (order.tableNumber != null) {
+                    Text("Table ${order.tableNumber}", fontSize = 12.sp, color = BronzeAbomey)
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    formatFcfa(order.totalAmount),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 24.sp,
+                    color = RougeDahomey
+                )
+
+                Spacer(Modifier.height(16.dp))
+                Text("Méthode de paiement", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TerreFon)
+                Spacer(Modifier.height(8.dp))
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    methods.forEach { (value, label) ->
+                        val isSelected = selected == value
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = !isCashingIn) { selected = value },
+                            color = if (isSelected) OrBeninois.copy(alpha = 0.15f) else Color.Transparent,
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                if (isSelected) OrBeninois else BronzeAbomey.copy(alpha = 0.3f)
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = null,
+                                    colors = RadioButtonDefaults.colors(selectedColor = RougeDahomey)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    label,
+                                    fontSize = 14.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = TerreFon
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        enabled = !isCashingIn,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = BronzeAbomey)
+                    ) {
+                        Text("Annuler", fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = { onConfirm(selected) },
+                        enabled = !isCashingIn,
+                        colors = ButtonDefaults.buttonColors(containerColor = RougeDahomey)
+                    ) {
+                        if (isCashingIn) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text("Confirmer", fontWeight = FontWeight.Bold, color = Color.White)
+                    }
                 }
             }
         }

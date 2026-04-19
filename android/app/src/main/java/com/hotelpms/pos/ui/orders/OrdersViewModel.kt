@@ -61,7 +61,10 @@ data class OrdersUiState(
     val mergeTableQuery: String = "",
     val mergeableInvoices: List<Map<String, Any>> = emptyList(),
     val isMerging: Boolean = false,
-    val isFetchingMergeable: Boolean = false
+    val isFetchingMergeable: Boolean = false,
+    // Cash-in (encaisser after order)
+    val cashInOrder: Order? = null,
+    val isCashingIn: Boolean = false
 ) {
     val filteredOrders: List<Order>
         get() = if (statusFilter == null) {
@@ -339,7 +342,7 @@ class OrdersViewModel @Inject constructor(
                     isVoucher = uiState.isVoucher,
                     voucherOwnerId = if (uiState.isVoucher) uiState.voucherOwnerId.ifBlank { null } else null,
                     voucherOwnerName = if (uiState.isVoucher) uiState.voucherOwnerName.ifBlank { null } else null,
-                    paymentMethod = uiState.paymentMethod,
+                    paymentMethod = null,
                     notes = uiState.orderNotes.ifBlank { null },
                     items = uiState.cart.map { entry ->
                         CreateOrderItem(
@@ -351,11 +354,9 @@ class OrdersViewModel @Inject constructor(
                 )
                 val response = apiService.createOrder(request)
                 if (response.isSuccessful) {
-                    val body = response.body()
-                    val invoiceId = (body?.data as? Map<*, *>)?.get("invoiceId") as? String
                     uiState = uiState.copy(
                         isCreating = false,
-                        successMessage = "Commande créée — facture générée",
+                        successMessage = "Commande créée — encaissez après le service",
                         cart = emptyList(),
                         tableNumber = "",
                         orderNotes = "",
@@ -365,9 +366,6 @@ class OrdersViewModel @Inject constructor(
                         viewMode = "orders"
                     )
                     fetchOrders()
-                    if (invoiceId != null) {
-                        fetchQrCode(invoiceId, uiState.paymentMethod)
-                    }
                 } else {
                     uiState = uiState.copy(isCreating = false, error = "Erreur lors de la création")
                 }
@@ -526,5 +524,41 @@ class OrdersViewModel @Inject constructor(
 
     fun clearSuccess() {
         uiState = uiState.copy(successMessage = null)
+    }
+
+    // =============================================
+    // Cash-in (encaisser après la commande)
+    // =============================================
+
+    fun showCashInDialog(order: Order) {
+        uiState = uiState.copy(cashInOrder = order)
+    }
+
+    fun dismissCashInDialog() {
+        uiState = uiState.copy(cashInOrder = null, isCashingIn = false)
+    }
+
+    fun cashIn(orderId: String, method: String) {
+        viewModelScope.launch {
+            uiState = uiState.copy(isCashingIn = true)
+            try {
+                val response = apiService.cashInOrder(orderId, CashInRequest(method = method))
+                if (response.isSuccessful) {
+                    uiState = uiState.copy(
+                        isCashingIn = false,
+                        cashInOrder = null,
+                        successMessage = "Paiement encaissé"
+                    )
+                    fetchOrders()
+                } else {
+                    val errMsg = try {
+                        response.errorBody()?.string() ?: "Erreur lors de l'encaissement"
+                    } catch (_: Exception) { "Erreur lors de l'encaissement" }
+                    uiState = uiState.copy(isCashingIn = false, error = errMsg)
+                }
+            } catch (e: Exception) {
+                uiState = uiState.copy(isCashingIn = false, error = e.message ?: "Erreur réseau")
+            }
+        }
     }
 }

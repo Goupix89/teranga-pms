@@ -4,12 +4,23 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch } from '@/lib/api';
 import { PageHeader, StatusBadge, Pagination, Modal, SearchInput, EmptyState, LoadingPage } from '@/components/ui';
-import { UtensilsCrossed, Plus, Loader2, BarChart3, QrCode, X, CheckCircle2, FileDown, AlertTriangle, Copy } from 'lucide-react';
+import { UtensilsCrossed, Plus, Loader2, BarChart3, QrCode, X, CheckCircle2, FileDown, AlertTriangle, Copy, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDateTime, formatCurrency, statusLabels } from '@/lib/utils';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { api } from '@/lib/api';
 import { Order, OrderStatus, PaymentMethod } from '@/types';
+
+const CASHIN_METHODS: Array<{ value: PaymentMethod; label: string }> = [
+  { value: 'CASH', label: 'Espèces' },
+  { value: 'MOBILE_MONEY', label: 'Mobile Money' },
+  { value: 'MOOV_MONEY' as PaymentMethod, label: 'Flooz' },
+  { value: 'MIXX_BY_YAS' as PaymentMethod, label: 'Yas' },
+  { value: 'CARD', label: 'Carte bancaire' },
+  { value: 'FEDAPAY' as PaymentMethod, label: 'FedaPay' },
+  { value: 'BANK_TRANSFER', label: 'Virement' },
+  { value: 'OTHER' as PaymentMethod, label: 'Autre' },
+];
 
 export default function OrdersPage() {
   const queryClient = useQueryClient();
@@ -31,8 +42,9 @@ export default function OrdersPage() {
   const canManageDuplicates = isSuperAdmin || ['OWNER', 'DAF', 'MANAGER'].includes(currentEstRole || '');
   const isDAFOrManager = isSuperAdmin || ['DAF', 'MANAGER'].includes(currentEstRole || '');
 
-  const [form, setForm] = useState({ establishmentId: '', tableNumber: '', orderType: 'RESTAURANT' as 'RESTAURANT' | 'LEISURE' | 'LOCATION', paymentMethod: 'CASH' as PaymentMethod, items: [{ articleId: '', quantity: 1 }] as Array<{ articleId: string; quantity: number }>, notes: '', startTime: '', endTime: '', isVoucher: false, voucherOwnerId: '', voucherOwnerName: '', discountRuleId: '' });
+  const [form, setForm] = useState({ establishmentId: '', tableNumber: '', orderType: 'RESTAURANT' as 'RESTAURANT' | 'LEISURE' | 'LOCATION', items: [{ articleId: '', quantity: 1 }] as Array<{ articleId: string; quantity: number }>, notes: '', startTime: '', endTime: '', isVoucher: false, voucherOwnerId: '', voucherOwnerName: '', discountRuleId: '' });
   const [qrModal, setQrModal] = useState<{ open: boolean; invoiceId?: string; qrCode?: string; invoiceNumber?: string; totalAmount?: number; paymentLabel?: string; currency?: string; paid?: boolean; fedapayCheckoutUrl?: string }>({ open: false });
+  const [cashInModal, setCashInModal] = useState<{ open: boolean; order?: Order; method: PaymentMethod }>({ open: false, method: 'CASH' });
 
   // Fetch users (servers) for filter — only for DAF/Manager
   const { data: usersData } = useQuery({
@@ -78,34 +90,26 @@ export default function OrdersPage() {
 
   const createMutation = useMutation({
     mutationFn: (body: any) => apiPost<any>('/orders', body),
-    onSuccess: async (response: any) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       queryClient.invalidateQueries({ queryKey: ['order-stats'] });
       setShowModal(false);
-      const invoiceId = response?.data?.invoiceId;
-      if (invoiceId) {
-        try {
-          const qrRes = await apiGet<any>(`/invoices/${invoiceId}/qrcode`);
-          if (qrRes?.data) {
-            setQrModal({
-              open: true,
-              invoiceId,
-              qrCode: qrRes.data.qrCode,
-              invoiceNumber: qrRes.data.invoice?.invoiceNumber,
-              totalAmount: qrRes.data.invoice?.totalAmount,
-              paymentLabel: qrRes.data.paymentLabel,
-              currency: qrRes.data.invoice?.currency || 'XOF',
-              fedapayCheckoutUrl: qrRes.data.fedapayCheckoutUrl,
-            });
-          }
-        } catch {
-          toast.success('Commande créée (QR code indisponible)');
-        }
-      }
       resetForm();
-      toast.success('Commande créée — facture générée');
+      toast.success('Commande créée — encaissement à faire au moment du paiement');
     },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
+  });
+
+  const cashInMutation = useMutation({
+    mutationFn: ({ id, method }: { id: string; method: PaymentMethod }) => apiPost<any>(`/orders/${id}/cashin`, { method }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['order-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      setCashInModal({ open: false, method: 'CASH' });
+      toast.success('Encaissement enregistré — commande servie');
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur encaissement'),
   });
 
   // Poll invoice payment status when QR modal is open (FedaPay confirmation)
@@ -154,7 +158,7 @@ export default function OrdersPage() {
     }
   };
 
-  const resetForm = () => setForm({ establishmentId: currentEstId || '', tableNumber: '', orderType: 'RESTAURANT', paymentMethod: 'CASH', items: [{ articleId: '', quantity: 1 }], notes: '', startTime: '', endTime: '', isVoucher: false, voucherOwnerId: '', voucherOwnerName: '', discountRuleId: '' });
+  const resetForm = () => setForm({ establishmentId: currentEstId || '', tableNumber: '', orderType: 'RESTAURANT', items: [{ articleId: '', quantity: 1 }], notes: '', startTime: '', endTime: '', isVoucher: false, voucherOwnerId: '', voucherOwnerName: '', discountRuleId: '' });
 
   const addItem = () => setForm((prev) => ({ ...prev, items: [...prev.items, { articleId: '', quantity: 1 }] }));
   const removeItem = (idx: number) => setForm((prev) => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
@@ -372,7 +376,16 @@ export default function OrdersPage() {
                       <td className="text-gray-500 text-sm">{order.createdBy ? `${order.createdBy.firstName} ${order.createdBy.lastName}` : '-'}</td>
                       <td className="text-gray-400 text-xs">{formatDateTime(order.createdAt)}</td>
                       <td>
-                        <div className="flex gap-1">
+                        <div className="flex gap-1 flex-wrap">
+                          {order.invoiceId && order.status !== 'SERVED' && order.status !== 'CANCELLED' && (
+                            <button
+                              onClick={() => setCashInModal({ open: true, order, method: 'CASH' })}
+                              className="btn-ghost text-xs px-2 py-1 text-red-600 font-medium"
+                              title="Enregistrer le paiement et marquer Servie"
+                            >
+                              <Wallet className="h-3.5 w-3.5 mr-1 inline" /> Encaisser
+                            </button>
+                          )}
                           {getNextStatuses(order.status).filter((action) => {
                             if (isSuperAdmin) return true;
                             const role = currentEstRole;
@@ -447,6 +460,14 @@ export default function OrdersPage() {
 
                 {/* Actions row */}
                 <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-gray-100">
+                  {order.invoiceId && order.status !== 'SERVED' && order.status !== 'CANCELLED' && (
+                    <button
+                      onClick={() => setCashInModal({ open: true, order, method: 'CASH' })}
+                      className="btn-ghost text-xs px-2 py-1 text-red-600 font-medium"
+                    >
+                      <Wallet className="h-3.5 w-3.5 mr-1 inline" /> Encaisser
+                    </button>
+                  )}
                   {order.invoiceId && (
                     <button
                       onClick={async () => {
@@ -596,7 +617,6 @@ export default function OrdersPage() {
             idempotencyKey: crypto.randomUUID(),
             tableNumber: form.tableNumber || undefined,
             orderType: form.orderType,
-            paymentMethod: form.paymentMethod,
             items: form.items.filter((i) => i.articleId),
             notes: form.notes || undefined,
             startTime: (form.orderType === 'LEISURE' || form.orderType === 'LOCATION') && form.startTime ? new Date(form.startTime).toISOString() : undefined,
@@ -608,7 +628,7 @@ export default function OrdersPage() {
           };
           createMutation.mutate(body);
         }} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
               <label className="label">Type</label>
               <select value={form.orderType} onChange={(e) => setForm({ ...form, orderType: e.target.value as any })} className="input">
@@ -627,20 +647,11 @@ export default function OrdersPage() {
               </select>
             </div>
             <div>
-              <label className="label">Moyen de paiement</label>
-              <select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value as PaymentMethod })} className="input">
-                <option value="CASH">Espèces</option>
-                <option value="CARD">Carte bancaire</option>
-                <option value="MOBILE_MONEY">Mobile Money</option>
-                <option value="FEDAPAY">FedaPay</option>
-                <option value="BANK_TRANSFER">Virement</option>
-              </select>
-            </div>
-            <div>
               <label className="label">Notes (optionnel)</label>
               <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="input" placeholder="Instructions spéciales..." />
             </div>
           </div>
+          <p className="text-xs text-gray-500">Le moyen de paiement sera choisi au moment de l&apos;encaissement.</p>
 
           {/* Remise manuelle */}
           {!form.isVoucher && discountRules.length > 0 && (
@@ -852,6 +863,60 @@ export default function OrdersPage() {
               </div>
             </>
           )}
+        </div>
+      </Modal>
+
+      {/* Cash-in modal — choose payment method and confirm */}
+      <Modal open={cashInModal.open} onClose={() => setCashInModal({ open: false, method: 'CASH' })} title="Encaisser la commande" size="md">
+        <div className="space-y-4">
+          {cashInModal.order && (
+            <div className="bg-gray-50 rounded-lg p-3 text-sm">
+              <p className="font-semibold text-gray-900">
+                {cashInModal.order.orderNumber}
+                {cashInModal.order.tableNumber && <span className="text-gray-500"> — Table {cashInModal.order.tableNumber}</span>}
+              </p>
+              <p className="text-lg font-bold text-primary-700 mt-1">{formatCurrency(cashInModal.order.totalAmount)}</p>
+            </div>
+          )}
+          <div>
+            <p className="label mb-2">Moyen de paiement</p>
+            <div className="grid grid-cols-2 gap-2">
+              {CASHIN_METHODS.map((m) => (
+                <label
+                  key={m.value}
+                  className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${
+                    cashInModal.method === m.value ? 'border-primary-500 bg-primary-50' : 'border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="cashInMethod"
+                    value={m.value}
+                    checked={cashInModal.method === m.value}
+                    onChange={() => setCashInModal((prev) => ({ ...prev, method: m.value }))}
+                    className="h-4 w-4 text-primary-600"
+                  />
+                  <span className="text-sm">{m.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="flex justify-end gap-3">
+            <button type="button" onClick={() => setCashInModal({ open: false, method: 'CASH' })} className="btn-secondary">Annuler</button>
+            <button
+              type="button"
+              onClick={() => {
+                if (cashInModal.order) {
+                  cashInMutation.mutate({ id: cashInModal.order.id, method: cashInModal.method });
+                }
+              }}
+              disabled={cashInMutation.isPending || !cashInModal.order}
+              className="btn-primary bg-red-600 hover:bg-red-700"
+            >
+              {cashInMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Confirmer l&apos;encaissement
+            </button>
+          </div>
         </div>
       </Modal>
     </div>

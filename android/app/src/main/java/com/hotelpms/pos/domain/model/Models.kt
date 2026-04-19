@@ -275,6 +275,10 @@ data class OrderStatusRequest(
     val status: String
 )
 
+data class CashInRequest(
+    val method: String
+)
+
 data class CreateOrderRequest(
     val establishmentId: String,
     val idempotencyKey: String? = null,

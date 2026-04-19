@@ -102,6 +102,10 @@ interface PmsApiService {
     @PATCH("api/orders/{id}/status")
     suspend fun updateOrderStatus(@Path("id") id: String, @Body body: OrderStatusRequest): GenericResponse
 
+    // Encaisser (record payment + mark SERVED)
+    @POST("api/orders/{id}/cashin")
+    suspend fun cashInOrder(@Path("id") id: String, @Body body: CashInRequest): Response<GenericResponse>
+
     // Cleaning
     @GET("api/cleaning")
     suspend fun getCleaningSessions(@Query("establishmentId") establishmentId: String): CleaningResponse

@@ -527,6 +527,81 @@ orderRouter.patch('/:id/status', authenticate, requireEstablishmentRole('DAF', '
   })
 );
 
+// Encaisser une commande : enregistre le paiement sur sa facture + marque SERVED + met à jour paymentMethod
+orderRouter.post('/:id/cashin', authenticate, requirePaymentRole,
+  asyncHandler(async (req, res) => {
+    const tenantId = req.user!.tenantId;
+    const methodRaw = (req.body.method as string | undefined) || 'CASH';
+    const validMethods = ['CASH', 'CARD', 'BANK_TRANSFER', 'MOBILE_MONEY', 'MOOV_MONEY', 'MIXX_BY_YAS', 'FEDAPAY', 'OTHER'];
+    if (!validMethods.includes(methodRaw)) {
+      return res.status(400).json({ success: false, error: 'Méthode de paiement invalide' });
+    }
+    const method = methodRaw as any;
+
+    const order = await prisma.order.findFirst({
+      where: { id: req.params.id, tenantId },
+      select: { id: true, invoiceId: true, status: true },
+    });
+    if (!order) return res.status(404).json({ success: false, error: 'Commande introuvable' });
+    if (order.status === 'CANCELLED') {
+      return res.status(400).json({ success: false, error: 'Commande annulée' });
+    }
+    if (!order.invoiceId) {
+      return res.status(400).json({ success: false, error: 'Aucune facture liée à cette commande' });
+    }
+
+    const invoice = await invoiceService.getById(tenantId, order.invoiceId);
+    if (!invoice) return res.status(404).json({ success: false, error: 'Facture introuvable' });
+    if (invoice.status === 'CANCELLED') {
+      return res.status(400).json({ success: false, error: 'Facture annulée' });
+    }
+
+    // Solde restant
+    const existingPayments = await prisma.payment.aggregate({
+      where: { invoiceId: invoice.id },
+      _sum: { amount: true },
+    });
+    const totalPaid = existingPayments._sum.amount?.toNumber() ?? 0;
+    const remaining = invoice.totalAmount.toNumber() - totalPaid;
+
+    if (remaining <= 0.01) {
+      // Déjà payée — juste mettre à jour la méthode + marquer servie
+      await prisma.order.update({
+        where: { id: order.id },
+        data: {
+          paymentMethod: method,
+          ...(order.status !== 'SERVED' && { status: 'SERVED', servedAt: new Date() }),
+        },
+      });
+      return res.json({ success: true, data: { paid: true, amount: 0, alreadyPaid: true } });
+    }
+
+    const { payment } = await paymentService.create(tenantId, {
+      invoiceId: invoice.id,
+      amount: remaining,
+      method,
+    });
+
+    await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        paymentMethod: method,
+        ...(order.status !== 'SERVED' && { status: 'SERVED', servedAt: new Date() }),
+      },
+    });
+
+    res.json({
+      success: true,
+      data: {
+        paymentId: payment.id,
+        invoiceId: invoice.id,
+        amount: remaining,
+        method,
+      },
+    });
+  })
+);
+
 // =============================================================================
 // INVOICES
 // =============================================================================

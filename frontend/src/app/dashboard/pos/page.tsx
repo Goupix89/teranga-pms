@@ -7,7 +7,7 @@ import { api } from '@/lib/api';
 import { LoadingPage, EmptyState } from '@/components/ui';
 import {
   ShoppingCart, Search, Minus, Plus, Trash2, X, QrCode,
-  ExternalLink, CheckCircle2, Loader2, Receipt, FileDown,
+  ExternalLink, CheckCircle2, Loader2, Receipt, FileDown, Wallet,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatCurrency, statusLabels } from '@/lib/utils';
@@ -29,11 +29,15 @@ interface CartItem {
   quantity: number;
 }
 
-const PAYMENT_METHODS: Array<{ value: PaymentMethod; label: string }> = [
-  { value: 'CASH', label: 'Especes' },
-  { value: 'FEDAPAY', label: 'FedaPay' },
-  { value: 'CARD', label: 'Carte bancaire' },
+const CASHIN_METHODS: Array<{ value: PaymentMethod; label: string }> = [
+  { value: 'CASH', label: 'Espèces' },
   { value: 'MOBILE_MONEY', label: 'Mobile Money' },
+  { value: 'MOOV_MONEY' as PaymentMethod, label: 'Flooz' },
+  { value: 'MIXX_BY_YAS' as PaymentMethod, label: 'Yas' },
+  { value: 'CARD', label: 'Carte bancaire' },
+  { value: 'FEDAPAY' as PaymentMethod, label: 'FedaPay' },
+  { value: 'BANK_TRANSFER', label: 'Virement' },
+  { value: 'OTHER' as PaymentMethod, label: 'Autre' },
 ];
 
 export default function PosPage() {
@@ -45,7 +49,6 @@ export default function PosPage() {
   const [categoryFilter, setCategoryFilter] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [tableNumber, setTableNumber] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH');
   const [notes, setNotes] = useState('');
   const [discountRuleId, setDiscountRuleId] = useState<string>('');
   const [isVoucher, setIsVoucher] = useState(false);
@@ -59,6 +62,14 @@ export default function PosPage() {
     paid?: boolean;
     fedapayCheckoutUrl?: string;
   }>({ open: false });
+  const [cashInModal, setCashInModal] = useState<{
+    open: boolean;
+    orderId?: string;
+    orderNumber?: string;
+    invoiceId?: string;
+    totalAmount?: number;
+    method: PaymentMethod;
+  }>({ open: false, method: 'CASH' });
 
   // Fetch articles
   const { data: articlesData, isLoading } = useQuery({
@@ -136,33 +147,56 @@ export default function PosPage() {
   // Create order
   const createMutation = useMutation({
     mutationFn: (body: any) => apiPost<any>('/orders', body),
-    onSuccess: async (response: any) => {
+    onSuccess: (response: any) => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       const order = response?.data;
-      toast.success(`Commande #${order?.orderNumber || ''} creee`);
+      toast.success(`Commande #${order?.orderNumber || ''} créée`);
       clearCart();
       setTableNumber('');
       setNotes('');
 
-      // If payment method requires QR code, show it
-      if (order?.invoiceId && paymentMethod !== 'CASH') {
-        try {
-          const qr = await apiGet<any>(`/invoices/${order.invoiceId}/qrcode?paymentMethod=${paymentMethod}`);
-          setQrModal({
-            open: true,
-            invoiceId: order.invoiceId,
-            qrCode: qr?.data?.qrCode,
-            totalAmount: order.totalAmount,
-            paid: false,
-            fedapayCheckoutUrl: qr?.data?.fedapayCheckoutUrl,
-          });
-        } catch {
-          // QR code generation failed, but order was created
-        }
+      if (order?.id && order?.invoiceId) {
+        setCashInModal({
+          open: true,
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          invoiceId: order.invoiceId,
+          totalAmount: order.totalAmount,
+          method: 'CASH',
+        });
       }
     },
-    onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur lors de la creation'),
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur lors de la création'),
   });
+
+  const cashInMutation = useMutation({
+    mutationFn: ({ id, method }: { id: string; method: PaymentMethod }) => apiPost<any>(`/orders/${id}/cashin`, { method }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      setCashInModal({ open: false, method: 'CASH' });
+      toast.success('Encaissement enregistré — commande servie');
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur encaissement'),
+  });
+
+  const openQrFromCashIn = async () => {
+    if (!cashInModal.invoiceId) return;
+    try {
+      const qr = await apiGet<any>(`/invoices/${cashInModal.invoiceId}/qrcode?paymentMethod=${cashInModal.method}`);
+      setQrModal({
+        open: true,
+        invoiceId: cashInModal.invoiceId,
+        qrCode: qr?.data?.qrCode,
+        totalAmount: cashInModal.totalAmount,
+        paid: false,
+        fedapayCheckoutUrl: qr?.data?.fedapayCheckoutUrl,
+      });
+      setCashInModal({ open: false, method: 'CASH' });
+    } catch {
+      toast.error('QR code indisponible');
+    }
+  };
 
   const handleSubmitOrder = () => {
     if (cart.length === 0) {
@@ -173,7 +207,6 @@ export default function PosPage() {
       establishmentId: currentEstId,
       idempotencyKey: crypto.randomUUID(),
       tableNumber: tableNumber || undefined,
-      paymentMethod,
       notes: notes || undefined,
       discountRuleId: !isVoucher && discountRuleId ? discountRuleId : undefined,
       isVoucher: isVoucher || undefined,
@@ -380,29 +413,16 @@ export default function PosPage() {
         {/* Cart footer */}
         <div className="border-t p-4 space-y-3">
           {/* Table number */}
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <label className="text-xs font-medium text-gray-500">Table</label>
-              <input
-                type="text"
-                value={tableNumber}
-                onChange={(e) => setTableNumber(e.target.value)}
-                placeholder="N° table"
-                className="input mt-1 text-sm"
-              />
-            </div>
-            <div className="flex-1">
-              <label className="text-xs font-medium text-gray-500">Paiement</label>
-              <select
-                value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
-                className="input mt-1 text-sm"
-              >
-                {PAYMENT_METHODS.map((pm) => (
-                  <option key={pm.value} value={pm.value}>{pm.label}</option>
-                ))}
-              </select>
-            </div>
+          <div>
+            <label className="text-xs font-medium text-gray-500">Table</label>
+            <input
+              type="text"
+              value={tableNumber}
+              onChange={(e) => setTableNumber(e.target.value)}
+              placeholder="N° table"
+              className="input mt-1 text-sm"
+            />
+            <p className="text-[11px] text-gray-400 mt-1">Le paiement sera choisi après la création de la commande.</p>
           </div>
 
           {/* Notes */}
@@ -486,6 +506,75 @@ export default function PosPage() {
           </button>
         </div>
       </div>
+
+      {/* Cash-in modal — pick payment method post-creation */}
+      {cashInModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <Wallet className="h-5 w-5 text-red-600" /> Encaisser la commande
+              </h3>
+              <button onClick={() => setCashInModal({ open: false, method: 'CASH' })} className="p-1 text-gray-400 hover:text-gray-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3 text-sm mb-4">
+              <p className="font-semibold text-gray-900">Commande #{cashInModal.orderNumber || ''}</p>
+              <p className="text-xl font-bold text-primary-700 mt-1">{formatCurrency(cashInModal.totalAmount || 0)}</p>
+            </div>
+            <p className="text-xs font-medium text-gray-500 mb-2">Moyen de paiement</p>
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              {CASHIN_METHODS.map((m) => (
+                <label
+                  key={m.value}
+                  className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${
+                    cashInModal.method === m.value ? 'border-primary-500 bg-primary-50' : 'border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="posCashInMethod"
+                    value={m.value}
+                    checked={cashInModal.method === m.value}
+                    onChange={() => setCashInModal((prev) => ({ ...prev, method: m.value }))}
+                    className="h-4 w-4 text-primary-600"
+                  />
+                  <span className="text-sm">{m.label}</span>
+                </label>
+              ))}
+            </div>
+            {(cashInModal.method === 'FEDAPAY' || cashInModal.method === 'MOBILE_MONEY' || cashInModal.method === ('MOOV_MONEY' as PaymentMethod) || cashInModal.method === ('MIXX_BY_YAS' as PaymentMethod)) && (
+              <button
+                onClick={openQrFromCashIn}
+                className="btn-secondary w-full mb-2 flex items-center justify-center gap-2"
+              >
+                <QrCode className="h-4 w-4" /> Afficher le QR code de paiement
+              </button>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setCashInModal({ open: false, method: 'CASH' })}
+                className="btn-secondary flex-1"
+              >
+                Plus tard
+              </button>
+              <button
+                onClick={() => {
+                  if (cashInModal.orderId) {
+                    cashInMutation.mutate({ id: cashInModal.orderId, method: cashInModal.method });
+                  }
+                }}
+                disabled={cashInMutation.isPending || !cashInModal.orderId}
+                className="btn-primary flex-1 bg-red-600 hover:bg-red-700"
+              >
+                {cashInMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin inline" />}
+                Confirmer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* QR Code Payment Modal */}
       {qrModal.open && (

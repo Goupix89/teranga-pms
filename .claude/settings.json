@@ -50,7 +50,18 @@
       "Bash(docker run --rm node:20-alpine node -e ' *)",
       "Bash(npm install *)",
       "Bash(./node_modules/.bin/tsc --noEmit)",
-      "Bash(node_modules/.bin/tsc --noEmit)"
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(./gradlew :app:compileDebugKotlin)",
+      "Bash(./gradlew :app:compileDebugKotlin --info)",
+      "Read(//usr/lib/jvm/**)",
+      "Bash(JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64 /usr/lib/jvm/java-25-openjdk-amd64/bin/java -version)",
+      "Read(//opt/**)",
+      "Bash(curl -s -o /dev/null -w \"HTTP:%{http_code}\\\\n\" http://localhost:4000/api/health)",
+      "Bash(docker rm *)",
+      "Bash(docker run *)",
+      "Bash(docker commit *)",
+      "Bash(curl -s -o /dev/null -w \"\\\\nAPI HTTP: %{http_code}\\\\n\" http://localhost:4000/api/health)",
+      "Bash(curl -s -o /dev/null -w \"API HTTP: %{http_code}\\\\n\" http://localhost:4000/api/health)"
     ],
     "additionalDirectories": [
       "/home/user/hotel-pms/frontend/src/app/dashboard/clients",
