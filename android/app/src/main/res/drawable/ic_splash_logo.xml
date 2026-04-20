@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Top bar of T -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,30 L78,30 L78,44 L30,44 Z" />
+    <!-- Vertical stem of T -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M47,30 L61,30 L61,82 L47,82 Z" />
+</vector>

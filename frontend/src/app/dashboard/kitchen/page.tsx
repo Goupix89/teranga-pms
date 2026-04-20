@@ -34,8 +34,15 @@ export default function KitchenPage() {
   if (isLoading) return <LoadingPage />;
 
   const orders: Order[] = data?.data || [];
-  const pending = orders.filter((o) => o.status === 'PENDING');
-  const inProgress = orders.filter((o) => o.status === 'IN_PROGRESS');
+
+  // Split each order's items across status buckets so an order can appear in
+  // both columns (e.g. old items IN_PROGRESS + newly appended items PENDING).
+  const pending = orders
+    .map((o) => ({ order: o, items: (o.items || []).filter((it: any) => it.status === 'PENDING') }))
+    .filter((b) => b.items.length > 0);
+  const inProgress = orders
+    .map((o) => ({ order: o, items: (o.items || []).filter((it: any) => it.status === 'IN_PROGRESS') }))
+    .filter((b) => b.items.length > 0);
 
   if (!currentEstId) {
     return (
@@ -64,10 +71,11 @@ export default function KitchenPage() {
               En attente ({pending.length})
             </h2>
             <div className="space-y-3">
-              {pending.map((order) => (
+              {pending.map(({ order, items }) => (
                 <KitchenCard
-                  key={order.id}
+                  key={`pending-${order.id}`}
                   order={order}
+                  items={items}
                   onAction={() => updateStatusMutation.mutate({ id: order.id, status: 'IN_PROGRESS' })}
                   actionLabel="Commencer"
                   actionColor="bg-blue-600 hover:bg-blue-700"
@@ -87,10 +95,11 @@ export default function KitchenPage() {
               En préparation ({inProgress.length})
             </h2>
             <div className="space-y-3">
-              {inProgress.map((order) => (
+              {inProgress.map(({ order, items }) => (
                 <KitchenCard
-                  key={order.id}
+                  key={`inprogress-${order.id}`}
                   order={order}
+                  items={items}
                   onAction={() => updateStatusMutation.mutate({ id: order.id, status: 'READY' })}
                   actionLabel="Prête !"
                   actionColor="bg-green-600 hover:bg-green-700"
@@ -109,9 +118,10 @@ export default function KitchenPage() {
 }
 
 function KitchenCard({
-  order, onAction, actionLabel, actionColor, borderColor, loading, showAction,
+  order, items, onAction, actionLabel, actionColor, borderColor, loading, showAction,
 }: {
   order: Order;
+  items: any[];
   onAction: () => void;
   actionLabel: string;
   actionColor: string;
@@ -119,18 +129,24 @@ function KitchenCard({
   loading: boolean;
   showAction: boolean;
 }) {
+  const hasOtherItems = (order.items?.length || 0) > items.length;
   return (
     <div className={`card border-l-4 ${borderColor} p-4`}>
       <div className="flex items-start justify-between mb-3">
         <div>
           <p className="font-bold text-gray-900 text-lg">{order.orderNumber}</p>
           {order.tableNumber && <p className="text-sm text-gray-500">Table {order.tableNumber}</p>}
+          {hasOtherItems && (
+            <p className="text-xs text-amber-700 mt-0.5">
+              + {items.length} nouvel article{items.length > 1 ? 's' : ''} sur cette commande
+            </p>
+          )}
         </div>
         <span className="text-xs text-gray-400">{formatRelative(order.createdAt)}</span>
       </div>
 
       <div className="space-y-1.5 mb-4">
-        {order.items?.map((item) => (
+        {items.map((item) => (
           <div key={item.id} className="flex items-center justify-between text-sm">
             <span className="font-medium text-gray-800">
               <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-gray-100 text-xs font-bold mr-2">

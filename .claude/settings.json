@@ -61,7 +61,11 @@
       "Bash(docker run *)",
       "Bash(docker commit *)",
       "Bash(curl -s -o /dev/null -w \"\\\\nAPI HTTP: %{http_code}\\\\n\" http://localhost:4000/api/health)",
-      "Bash(curl -s -o /dev/null -w \"API HTTP: %{http_code}\\\\n\" http://localhost:4000/api/health)"
+      "Bash(curl -s -o /dev/null -w \"API HTTP: %{http_code}\\\\n\" http://localhost:4000/api/health)",
+      "Bash(./gradlew :app:compileDebugKotlin --no-daemon -q)",
+      "Bash(./gradlew :app:compileDebugKotlin --no-daemon --stacktrace)",
+      "Bash(java -version)",
+      "Bash(update-java-alternatives --list)"
     ],
     "additionalDirectories": [
       "/home/user/hotel-pms/frontend/src/app/dashboard/clients",

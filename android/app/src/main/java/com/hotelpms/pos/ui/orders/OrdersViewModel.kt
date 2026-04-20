@@ -64,7 +64,13 @@ data class OrdersUiState(
     val isFetchingMergeable: Boolean = false,
     // Cash-in (encaisser after order)
     val cashInOrder: Order? = null,
-    val isCashingIn: Boolean = false
+    val isCashingIn: Boolean = false,
+    // Add-items (append articles to an open order)
+    val addItemsOrder: Order? = null,
+    val addItemsCart: List<CartEntry> = emptyList(),
+    val addItemsSearchQuery: String = "",
+    val addItemsTab: String = "Tous",
+    val isAddingItems: Boolean = false
 ) {
     val filteredOrders: List<Order>
         get() = if (statusFilter == null) {
@@ -92,6 +98,23 @@ data class OrdersUiState(
 
     val cartItemCount: Int
         get() = cart.sumOf { it.quantity }
+
+    val addItemsTotal: Double
+        get() = addItemsCart.sumOf { it.total }
+
+    val addItemsCount: Int
+        get() = addItemsCart.sumOf { it.quantity }
+
+    val addItemsMenuArticles: List<Article>
+        get() {
+            val query = addItemsSearchQuery.trim().lowercase()
+            return articles.filter { article ->
+                val catName = article.category?.name
+                val matchesTab = addItemsTab == "Tous" || catName == addItemsTab
+                val matchesSearch = query.isEmpty() || article.name.lowercase().contains(query)
+                matchesTab && article.isApproved && matchesSearch
+            }
+        }
 }
 
 @HiltViewModel
@@ -538,7 +561,119 @@ class OrdersViewModel @Inject constructor(
         uiState = uiState.copy(cashInOrder = null, isCashingIn = false)
     }
 
+    // =============================================
+    // Add items to an open order
+    // =============================================
+
+    fun showAddItemsDialog(order: Order) {
+        uiState = uiState.copy(
+            addItemsOrder = order,
+            addItemsCart = emptyList(),
+            addItemsSearchQuery = "",
+            addItemsTab = "Tous"
+        )
+    }
+
+    fun dismissAddItemsDialog() {
+        uiState = uiState.copy(
+            addItemsOrder = null,
+            addItemsCart = emptyList(),
+            addItemsSearchQuery = "",
+            isAddingItems = false
+        )
+    }
+
+    fun setAddItemsSearchQuery(query: String) {
+        uiState = uiState.copy(addItemsSearchQuery = query)
+    }
+
+    fun setAddItemsTab(tab: String) {
+        uiState = uiState.copy(addItemsTab = tab)
+    }
+
+    fun addItemsIncrement(article: Article) {
+        val existing = uiState.addItemsCart.find { it.article.id == article.id }
+        val newCart = if (existing != null) {
+            uiState.addItemsCart.map {
+                if (it.article.id == article.id) it.copy(quantity = it.quantity + 1) else it
+            }
+        } else {
+            uiState.addItemsCart + CartEntry(article, 1)
+        }
+        uiState = uiState.copy(addItemsCart = newCart)
+    }
+
+    fun addItemsDecrement(articleId: String) {
+        val existing = uiState.addItemsCart.find { it.article.id == articleId } ?: return
+        val newCart = if (existing.quantity > 1) {
+            uiState.addItemsCart.map {
+                if (it.article.id == articleId) it.copy(quantity = it.quantity - 1) else it
+            }
+        } else {
+            uiState.addItemsCart.filter { it.article.id != articleId }
+        }
+        uiState = uiState.copy(addItemsCart = newCart)
+    }
+
+    fun submitAddItems() {
+        val order = uiState.addItemsOrder ?: return
+        if (uiState.addItemsCart.isEmpty()) {
+            uiState = uiState.copy(error = "Ajoutez au moins un article")
+            return
+        }
+        viewModelScope.launch {
+            uiState = uiState.copy(isAddingItems = true)
+            try {
+                val body = AddOrderItemsRequest(
+                    items = uiState.addItemsCart.map { entry ->
+                        CreateOrderItem(
+                            articleId = entry.article.id,
+                            quantity = entry.quantity,
+                            unitPrice = entry.article.unitPrice
+                        )
+                    },
+                    idempotencyKey = java.util.UUID.randomUUID().toString()
+                )
+                val response = apiService.addOrderItems(order.id, body)
+                if (response.isSuccessful) {
+                    uiState = uiState.copy(
+                        isAddingItems = false,
+                        addItemsOrder = null,
+                        addItemsCart = emptyList(),
+                        addItemsSearchQuery = "",
+                        successMessage = "Articles ajoutés — cuisine notifiée"
+                    )
+                    fetchOrders()
+                } else {
+                    val errMsg = try {
+                        response.errorBody()?.string() ?: "Erreur lors de l'ajout"
+                    } catch (_: Exception) { "Erreur lors de l'ajout" }
+                    uiState = uiState.copy(isAddingItems = false, error = errMsg)
+                }
+            } catch (e: Exception) {
+                uiState = uiState.copy(isAddingItems = false, error = e.message ?: "Erreur réseau")
+            }
+        }
+    }
+
     fun cashIn(orderId: String, method: String) {
+        // Async methods (FedaPay, mobile money) require client-side confirmation.
+        // The invoice is paid via FedaPay checkout + webhook, or a customer-scanned
+        // QR + manual reconciliation — never synchronously from /cashin.
+        val asyncMethods = setOf("FEDAPAY", "MOBILE_MONEY", "MOOV_MONEY", "MIXX_BY_YAS")
+        if (method in asyncMethods) {
+            val order = uiState.cashInOrder
+            val invoiceId = order?.invoiceId
+            if (invoiceId.isNullOrBlank()) {
+                uiState = uiState.copy(error = "Aucune facture liée à cette commande")
+                return
+            }
+            // Dismiss the cash-in modal and hand off to the QR code flow.
+            uiState = uiState.copy(cashInOrder = null, isCashingIn = false)
+            fetchQrCode(invoiceId, method)
+            return
+        }
+
         viewModelScope.launch {
             uiState = uiState.copy(isCashingIn = true)
             try {

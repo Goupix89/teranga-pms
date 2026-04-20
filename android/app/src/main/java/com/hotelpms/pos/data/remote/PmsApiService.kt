@@ -106,6 +106,10 @@ interface PmsApiService {
     @POST("api/orders/{id}/cashin")
     suspend fun cashInOrder(@Path("id") id: String, @Body body: CashInRequest): Response<GenericResponse>
 
+    // Append items to an open order (no more merge needed)
+    @POST("api/orders/{id}/items")
+    suspend fun addOrderItems(@Path("id") id: String, @Body body: AddOrderItemsRequest): Response<GenericResponse>
+
     // Cleaning
     @GET("api/cleaning")
     suspend fun getCleaningSessions(@Query("establishmentId") establishmentId: String): CleaningResponse

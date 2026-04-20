@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch } from '@/lib/api';
 import { PageHeader, StatusBadge, Pagination, Modal, SearchInput, EmptyState, LoadingPage } from '@/components/ui';
-import { UtensilsCrossed, Plus, Loader2, BarChart3, QrCode, X, CheckCircle2, FileDown, AlertTriangle, Copy, Wallet } from 'lucide-react';
+import { UtensilsCrossed, Plus, Loader2, BarChart3, QrCode, X, CheckCircle2, FileDown, AlertTriangle, Copy, Wallet, PlusCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDateTime, formatCurrency, statusLabels } from '@/lib/utils';
 import { useAuthStore } from '@/hooks/useAuthStore';
@@ -45,6 +45,7 @@ export default function OrdersPage() {
   const [form, setForm] = useState({ establishmentId: '', tableNumber: '', orderType: 'RESTAURANT' as 'RESTAURANT' | 'LEISURE' | 'LOCATION', items: [{ articleId: '', quantity: 1 }] as Array<{ articleId: string; quantity: number }>, notes: '', startTime: '', endTime: '', isVoucher: false, voucherOwnerId: '', voucherOwnerName: '', discountRuleId: '' });
   const [qrModal, setQrModal] = useState<{ open: boolean; invoiceId?: string; qrCode?: string; invoiceNumber?: string; totalAmount?: number; paymentLabel?: string; currency?: string; paid?: boolean; fedapayCheckoutUrl?: string }>({ open: false });
   const [cashInModal, setCashInModal] = useState<{ open: boolean; order?: Order; method: PaymentMethod }>({ open: false, method: 'CASH' });
+  const [addItemsModal, setAddItemsModal] = useState<{ open: boolean; order?: Order; items: Array<{ articleId: string; quantity: number }> }>({ open: false, items: [{ articleId: '', quantity: 1 }] });
 
   // Fetch users (servers) for filter — only for DAF/Manager
   const { data: usersData } = useQuery({
@@ -98,6 +99,18 @@ export default function OrdersPage() {
       toast.success('Commande créée — encaissement à faire au moment du paiement');
     },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
+  });
+
+  const addItemsMutation = useMutation({
+    mutationFn: ({ id, items }: { id: string; items: Array<{ articleId: string; quantity: number }> }) =>
+      apiPost<any>(`/orders/${id}/items`, { items, idempotencyKey: crypto.randomUUID() }),
+    onSuccess: (res: any) => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['order-stats'] });
+      setAddItemsModal({ open: false, items: [{ articleId: '', quantity: 1 }] });
+      toast.success(`${res?.data?.addedCount || 0} article(s) ajouté(s) — cuisine notifiée`);
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur lors de l\'ajout'),
   });
 
   const cashInMutation = useMutation({
@@ -377,6 +390,15 @@ export default function OrdersPage() {
                       <td className="text-gray-400 text-xs">{formatDateTime(order.createdAt)}</td>
                       <td>
                         <div className="flex gap-1 flex-wrap">
+                          {order.status !== 'SERVED' && order.status !== 'CANCELLED' && canCreate && (
+                            <button
+                              onClick={() => setAddItemsModal({ open: true, order, items: [{ articleId: '', quantity: 1 }] })}
+                              className="btn-ghost text-xs px-2 py-1 text-primary-600 font-medium"
+                              title="Ajouter des articles à cette commande"
+                            >
+                              <PlusCircle className="h-3.5 w-3.5 mr-1 inline" /> Ajouter
+                            </button>
+                          )}
                           {order.invoiceId && order.status !== 'SERVED' && order.status !== 'CANCELLED' && (
                             <button
                               onClick={() => setCashInModal({ open: true, order, method: 'CASH' })}
@@ -460,6 +482,14 @@ export default function OrdersPage() {
 
                 {/* Actions row */}
                 <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-gray-100">
+                  {order.status !== 'SERVED' && order.status !== 'CANCELLED' && canCreate && (
+                    <button
+                      onClick={() => setAddItemsModal({ open: true, order, items: [{ articleId: '', quantity: 1 }] })}
+                      className="btn-ghost text-xs px-2 py-1 text-primary-600 font-medium"
+                    >
+                      <PlusCircle className="h-3.5 w-3.5 mr-1 inline" /> Ajouter
+                    </button>
+                  )}
                   {order.invoiceId && order.status !== 'SERVED' && order.status !== 'CANCELLED' && (
                     <button
                       onClick={() => setCashInModal({ open: true, order, method: 'CASH' })}
@@ -915,6 +945,117 @@ export default function OrdersPage() {
             >
               {cashInMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Confirmer l&apos;encaissement
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Add items modal — append articles to an open order */}
+      <Modal open={addItemsModal.open} onClose={() => setAddItemsModal({ open: false, items: [{ articleId: '', quantity: 1 }] })} title="Ajouter des articles à la commande" size="lg">
+        <div className="space-y-4">
+          {addItemsModal.order && (
+            <div className="bg-gray-50 rounded-lg p-3 text-sm">
+              <p className="font-semibold text-gray-900">
+                {addItemsModal.order.orderNumber}
+                {addItemsModal.order.tableNumber && <span className="text-gray-500"> — Table {addItemsModal.order.tableNumber}</span>}
+              </p>
+              <p className="text-xs text-gray-500 mt-0.5">Total actuel : <span className="font-medium text-gray-700">{formatCurrency(addItemsModal.order.totalAmount)}</span></p>
+            </div>
+          )}
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="label">Nouveaux articles</label>
+              <button
+                type="button"
+                onClick={() => setAddItemsModal((prev) => ({ ...prev, items: [...prev.items, { articleId: '', quantity: 1 }] }))}
+                className="text-sm text-primary-600 hover:text-primary-700"
+              >
+                + Ligne
+              </button>
+            </div>
+            <div className="space-y-2">
+              {addItemsModal.items.map((item, idx) => (
+                <div key={idx} className="flex gap-2 items-center">
+                  <select
+                    value={item.articleId}
+                    onChange={(e) => setAddItemsModal((prev) => ({
+                      ...prev,
+                      items: prev.items.map((it, i) => i === idx ? { ...it, articleId: e.target.value } : it),
+                    }))}
+                    className="input flex-1"
+                    required
+                  >
+                    <option value="">Sélectionner un article</option>
+                    {Object.entries(
+                      articles.reduce((acc: Record<string, any[]>, a: any) => {
+                        const cat = a.category?.name || 'Sans catégorie';
+                        (acc[cat] ||= []).push(a);
+                        return acc;
+                      }, {})
+                    )
+                      .sort(([a], [b]) => a.localeCompare(b, 'fr'))
+                      .map(([catName, catItems]) => (
+                        <optgroup key={catName} label={catName}>
+                          {(catItems as any[]).map((a: any) => (
+                            <option key={a.id} value={a.id}>{a.name} — {formatCurrency(a.unitPrice)}</option>
+                          ))}
+                        </optgroup>
+                      ))}
+                  </select>
+                  <input
+                    type="number"
+                    min={1}
+                    max={999}
+                    value={item.quantity}
+                    onChange={(e) => setAddItemsModal((prev) => ({
+                      ...prev,
+                      items: prev.items.map((it, i) => i === idx ? { ...it, quantity: parseInt(e.target.value) || 1 } : it),
+                    }))}
+                    className="input w-20"
+                  />
+                  {addItemsModal.items.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setAddItemsModal((prev) => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }))}
+                      className="btn-ghost text-red-500 p-1.5"
+                    >
+                      x
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-3">
+              Les nouveaux articles seront envoyés en cuisine. Le total de la commande et la facture seront mis à jour.
+              Impossible d&apos;ajouter si la facture a déjà reçu un paiement.
+            </p>
+          </div>
+
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setAddItemsModal({ open: false, items: [{ articleId: '', quantity: 1 }] })}
+              className="btn-secondary"
+            >
+              Annuler
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!addItemsModal.order) return;
+                const items = addItemsModal.items.filter((i) => i.articleId);
+                if (items.length === 0) {
+                  toast.error('Sélectionnez au moins un article');
+                  return;
+                }
+                addItemsMutation.mutate({ id: addItemsModal.order.id, items });
+              }}
+              disabled={addItemsMutation.isPending || !addItemsModal.order}
+              className="btn-primary"
+            >
+              {addItemsMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Ajouter à la commande
             </button>
           </div>
         </div>

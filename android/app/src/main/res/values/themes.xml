@@ -8,4 +8,13 @@
         <item name="android:statusBarColor">@color/primary_dark</item>
         <item name="android:navigationBarColor">@color/bronze_dark</item>
     </style>
+
+    <!-- Splash screen: shown while the app launches. Uses the compat library so
+         a single declaration works on API 23+ (custom overlay) and API 31+
+         (native SplashScreen API). -->
+    <style name="Theme.TerangaPMS.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/primary</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_logo</item>
+        <item name="postSplashScreenTheme">@style/Theme.TerangaPMS</item>
+    </style>
 </resources>

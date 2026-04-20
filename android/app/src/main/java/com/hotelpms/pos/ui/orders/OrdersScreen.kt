@@ -29,6 +29,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.hotelpms.pos.BuildConfig
@@ -87,6 +91,14 @@ fun OrdersScreen(
             isCashingIn = uiState.isCashingIn,
             onDismiss = { viewModel.dismissCashInDialog() },
             onConfirm = { method -> viewModel.cashIn(uiState.cashInOrder!!.id, method) }
+        )
+    }
+
+    // Add-items dialog (append articles to an open order)
+    if (uiState.addItemsOrder != null) {
+        AddItemsDialog(
+            viewModel = viewModel,
+            uiState = uiState
         )
     }
 
@@ -1076,6 +1088,7 @@ private fun OrdersListView(
                         onCancel = { viewModel.updateOrderStatus(it, "CANCELLED") },
                         onShowQr = { invoiceId, pm -> viewModel.fetchQrCode(invoiceId, pm) },
                         onCashIn = { viewModel.showCashInDialog(order) },
+                        onAddItems = { viewModel.showAddItemsDialog(order) },
                         onReceipt = { onReceipt(order) }
                     )
                 }
@@ -1096,6 +1109,7 @@ private fun OrderCard(
     onCancel: (String) -> Unit,
     onShowQr: (String, String?) -> Unit = { _, _ -> },
     onCashIn: () -> Unit = {},
+    onAddItems: () -> Unit = {},
     onReceipt: () -> Unit = {}
 ) {
     val statusColor = getStatusColor(order.status)
@@ -1199,6 +1213,19 @@ private fun OrderCard(
                         if (order.invoiceId != null) {
                             IconButton(onClick = { onShowQr(order.invoiceId!!, order.paymentMethod) }, modifier = Modifier.size(32.dp)) {
                                 Icon(Icons.Default.QrCode, contentDescription = "QR code", tint = RougeDahomey, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                        val canAddItems = order.status !in listOf("CANCELLED", "SERVED") &&
+                            userRole in listOf("SERVER", "MAITRE_HOTEL", "MANAGER", "DAF", "OWNER", "POS", "SUPERADMIN")
+                        if (canAddItems) {
+                            OutlinedButton(
+                                onClick = onAddItems,
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = TerreFon),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Ajouter", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             }
                         }
                         val canCashIn = order.status !in listOf("CANCELLED", "SERVED") &&
@@ -1672,6 +1699,306 @@ private fun CashInDialog(
                             Spacer(Modifier.width(8.dp))
                         }
                         Text("Confirmer", fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// =============================================================================
+// ADD-ITEMS DIALOG — append articles to an existing open order
+// =============================================================================
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddItemsDialog(
+    viewModel: OrdersViewModel,
+    uiState: OrdersUiState
+) {
+    val order = uiState.addItemsOrder ?: return
+    val tabs = uiState.menuTabs
+    val selectedTabIndex = tabs.indexOf(uiState.addItemsTab).let { if (it < 0) 0 else it }
+
+    Dialog(
+        onDismissRequest = { if (!uiState.isAddingItems) viewModel.dismissAddItemsDialog() },
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.95f)
+                .padding(8.dp),
+            colors = CardDefaults.cardColors(containerColor = CremeGanvie),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Header
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(TerreFon)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Ajouter des articles",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = OrBeninois
+                        )
+                        Text(
+                            "${order.orderNumber ?: "---"}${order.tableNumber?.let { " • Table $it" } ?: ""}",
+                            fontSize = 12.sp,
+                            color = SableOuidah
+                        )
+                    }
+                    IconButton(
+                        onClick = { viewModel.dismissAddItemsDialog() },
+                        enabled = !uiState.isAddingItems
+                    ) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Fermer",
+                            tint = OrBeninois
+                        )
+                    }
+                }
+
+                // Category tabs
+                ScrollableTabRow(
+                    selectedTabIndex = selectedTabIndex,
+                    containerColor = TerreFon,
+                    contentColor = OrBeninois,
+                    edgePadding = 4.dp
+                ) {
+                    tabs.forEach { tabName ->
+                        val icon = when (tabName) {
+                            "Tous" -> Icons.Default.List
+                            "Restaurant", "Nourriture" -> Icons.Default.Restaurant
+                            "Boissons", "Bar" -> Icons.Default.LocalBar
+                            "Loisirs", "Loisir" -> Icons.Default.SportsEsports
+                            "Location" -> Icons.Default.Key
+                            else -> Icons.Default.Category
+                        }
+                        Tab(
+                            selected = uiState.addItemsTab == tabName,
+                            onClick = { viewModel.setAddItemsTab(tabName) },
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(tabName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                }
+                            },
+                            selectedContentColor = OrBeninois,
+                            unselectedContentColor = SableOuidah.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+
+                // Search bar
+                OutlinedTextField(
+                    value = uiState.addItemsSearchQuery,
+                    onValueChange = { viewModel.setAddItemsSearchQuery(it) },
+                    placeholder = { Text("Rechercher un article...", fontSize = 13.sp) },
+                    leadingIcon = {
+                        Icon(Icons.Default.Search, contentDescription = null, tint = BronzeAbomey, modifier = Modifier.size(20.dp))
+                    },
+                    trailingIcon = {
+                        if (uiState.addItemsSearchQuery.isNotEmpty()) {
+                            IconButton(onClick = { viewModel.setAddItemsSearchQuery("") }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Effacer", tint = BronzeAbomey, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    singleLine = true,
+                    textStyle = LocalTextStyle.current.copy(fontSize = 14.sp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TerreFon,
+                        unfocusedTextColor = TerreFon,
+                        cursorColor = RougeDahomey,
+                        focusedBorderColor = RougeDahomey,
+                        unfocusedBorderColor = BronzeAbomey
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                )
+
+                // Articles grid (fills remaining space above the cart footer)
+                val articles = uiState.addItemsMenuArticles
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) {
+                    if (articles.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    Icons.Default.Category,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(40.dp),
+                                    tint = BronzeAbomey
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Text("Aucun article", fontSize = 14.sp, color = BronzeAbomey)
+                            }
+                        }
+                    } else {
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(2),
+                            contentPadding = PaddingValues(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(articles, key = { it.id }) { article ->
+                                val cartQty = uiState.addItemsCart.find { it.article.id == article.id }?.quantity ?: 0
+                                MenuCard(
+                                    article = article,
+                                    cartQuantity = cartQty,
+                                    onAdd = { viewModel.addItemsIncrement(article) },
+                                    onRemove = { viewModel.addItemsDecrement(article.id) }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Cart summary + actions
+                Surface(
+                    color = TerreFon,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        if (uiState.addItemsCart.isNotEmpty()) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 140.dp)
+                                    .verticalScroll(rememberScrollState())
+                            ) {
+                                uiState.addItemsCart.forEach { entry ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                entry.article.name,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = OrBeninois,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                formatFcfa(entry.total),
+                                                fontSize = 11.sp,
+                                                color = SableOuidah
+                                            )
+                                        }
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                        ) {
+                                            IconButton(
+                                                onClick = { viewModel.addItemsDecrement(entry.article.id) },
+                                                modifier = Modifier.size(28.dp),
+                                                enabled = !uiState.isAddingItems
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Remove,
+                                                    contentDescription = "Retirer",
+                                                    modifier = Modifier.size(16.dp),
+                                                    tint = OrBeninois
+                                                )
+                                            }
+                                            Surface(
+                                                color = OrBeninois.copy(alpha = 0.2f),
+                                                shape = RoundedCornerShape(6.dp)
+                                            ) {
+                                                Text(
+                                                    "${entry.quantity}",
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp,
+                                                    color = OrBeninois,
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                            IconButton(
+                                                onClick = { viewModel.addItemsIncrement(entry.article) },
+                                                modifier = Modifier.size(28.dp),
+                                                enabled = !uiState.isAddingItems
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Add,
+                                                    contentDescription = "Ajouter",
+                                                    modifier = Modifier.size(16.dp),
+                                                    tint = VertBeninois
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Divider(color = SableOuidah.copy(alpha = 0.3f))
+                            Spacer(Modifier.height(8.dp))
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    "${uiState.addItemsCount} article(s)",
+                                    fontSize = 11.sp,
+                                    color = SableOuidah
+                                )
+                                Text(
+                                    formatFcfa(uiState.addItemsTotal),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp,
+                                    color = OrBeninois
+                                )
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(
+                                    onClick = { viewModel.dismissAddItemsDialog() },
+                                    enabled = !uiState.isAddingItems,
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = SableOuidah)
+                                ) {
+                                    Text("Annuler", fontWeight = FontWeight.Bold)
+                                }
+                                Button(
+                                    onClick = { viewModel.submitAddItems() },
+                                    enabled = !uiState.isAddingItems && uiState.addItemsCart.isNotEmpty(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = RougeDahomey)
+                                ) {
+                                    if (uiState.isAddingItems) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            color = Color.White,
+                                            strokeWidth = 2.dp
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                    }
+                                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Ajouter", fontWeight = FontWeight.Bold, color = Color.White)
+                                }
+                            }
+                        }
                     }
                 }
             }

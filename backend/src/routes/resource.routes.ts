@@ -518,6 +518,27 @@ orderRouter.post('/', authenticate, requireDAFOrManagerOrServer, validate(v.crea
   })
 );
 
+// Append items to an open order (no more merge needed — one order grows)
+orderRouter.post('/:id/items', authenticate, requireDAFOrManagerOrServer,
+  asyncHandler(async (req, res) => {
+    const tenantId = req.user!.tenantId;
+    const items = req.body?.items;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, error: 'items requis (tableau non vide)' });
+    }
+    for (const it of items) {
+      if (!it?.articleId || typeof it?.quantity !== 'number' || it.quantity < 1) {
+        return res.status(400).json({ success: false, error: 'Chaque item doit avoir articleId et quantity ≥ 1' });
+      }
+    }
+    const data = await orderService.addItems(tenantId, req.params.id, req.user!.id, {
+      items,
+      idempotencyKey: req.body?.idempotencyKey,
+    });
+    res.status(201).json({ success: true, data });
+  })
+);
+
 // Cooks mark IN_PROGRESS/READY, servers mark SERVED, DAF/MANAGER can cancel
 orderRouter.patch('/:id/status', authenticate, requireEstablishmentRole('DAF', 'MANAGER', 'SERVER', 'COOK'),
   validate(v.updateOrderStatusSchema),
@@ -535,6 +556,18 @@ orderRouter.post('/:id/cashin', authenticate, requirePaymentRole,
     const validMethods = ['CASH', 'CARD', 'BANK_TRANSFER', 'MOBILE_MONEY', 'MOOV_MONEY', 'MIXX_BY_YAS', 'FEDAPAY', 'OTHER'];
     if (!validMethods.includes(methodRaw)) {
       return res.status(400).json({ success: false, error: 'Méthode de paiement invalide' });
+    }
+    // Async methods require client-side confirmation (FedaPay webhook, mobile
+    // money QR scan). They must go through GET /invoices/:id/qrcode + payment
+    // polling; recording a synchronous payment here would mark the invoice as
+    // paid before any real transfer takes place.
+    const asyncMethods = ['FEDAPAY', 'MOBILE_MONEY', 'MOOV_MONEY', 'MIXX_BY_YAS'];
+    if (asyncMethods.includes(methodRaw)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cette méthode nécessite une confirmation client — utiliser le QR code de paiement',
+        code: 'ASYNC_PAYMENT_REQUIRED',
+      });
     }
     const method = methodRaw as any;
 
@@ -565,14 +598,20 @@ orderRouter.post('/:id/cashin', authenticate, requirePaymentRole,
     const remaining = invoice.totalAmount.toNumber() - totalPaid;
 
     if (remaining <= 0.01) {
-      // Déjà payée — juste mettre à jour la méthode + marquer servie
-      await prisma.order.update({
-        where: { id: order.id },
-        data: {
-          paymentMethod: method,
-          ...(order.status !== 'SERVED' && { status: 'SERVED', servedAt: new Date() }),
-        },
-      });
+      // Déjà payée — juste mettre à jour la méthode + marquer servie (items inclus)
+      await prisma.$transaction([
+        prisma.orderItem.updateMany({
+          where: { orderId: order.id, status: { not: 'CANCELLED' } },
+          data: { status: 'SERVED' },
+        }),
+        prisma.order.update({
+          where: { id: order.id },
+          data: {
+            paymentMethod: method,
+            ...(order.status !== 'SERVED' && { status: 'SERVED', servedAt: new Date() }),
+          },
+        }),
+      ]);
       return res.json({ success: true, data: { paid: true, amount: 0, alreadyPaid: true } });
     }
 
@@ -582,13 +621,19 @@ orderRouter.post('/:id/cashin', authenticate, requirePaymentRole,
       method,
     });
 
-    await prisma.order.update({
-      where: { id: order.id },
-      data: {
-        paymentMethod: method,
-        ...(order.status !== 'SERVED' && { status: 'SERVED', servedAt: new Date() }),
-      },
-    });
+    await prisma.$transaction([
+      prisma.orderItem.updateMany({
+        where: { orderId: order.id, status: { not: 'CANCELLED' } },
+        data: { status: 'SERVED' },
+      }),
+      prisma.order.update({
+        where: { id: order.id },
+        data: {
+          paymentMethod: method,
+          ...(order.status !== 'SERVED' && { status: 'SERVED', servedAt: new Date() }),
+        },
+      }),
+    ]);
 
     res.json({
       success: true,

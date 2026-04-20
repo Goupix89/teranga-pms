@@ -482,16 +482,19 @@ model Order {
 }
 
 model OrderItem {
-  id        String  @id @default(uuid())
-  orderId   String  @map("order_id")
-  articleId String  @map("article_id")
+  id        String      @id @default(uuid())
+  orderId   String      @map("order_id")
+  articleId String      @map("article_id")
   quantity  Int
-  unitPrice Decimal @map("unit_price") @db.Decimal(10, 2)
+  unitPrice Decimal     @map("unit_price") @db.Decimal(10, 2)
   notes     String?
+  status    OrderStatus @default(PENDING)
+  createdAt DateTime    @default(now()) @map("created_at")
 
   order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   article Article @relation(fields: [articleId], references: [id])
 
+  @@index([orderId, status])
   @@map("order_items")
 }
 

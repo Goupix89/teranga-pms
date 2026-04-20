@@ -316,6 +316,7 @@ export interface OrderItem {
   articleId: string;
   quantity: number;
   unitPrice: number;
+  status?: OrderStatus;
   article?: { id: string; name: string };
 }
 

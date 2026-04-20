@@ -279,6 +279,11 @@ data class CashInRequest(
     val method: String
 )
 
+data class AddOrderItemsRequest(
+    val items: List<CreateOrderItem>,
+    val idempotencyKey: String? = null
+)
+
 data class CreateOrderRequest(
     val establishmentId: String,
     val idempotencyKey: String? = null,

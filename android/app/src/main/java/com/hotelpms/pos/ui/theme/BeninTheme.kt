@@ -10,44 +10,47 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-// === Benin-inspired Color Palette ===
+// === Teranga Sober Palette ===
+// Names kept for backwards compatibility; hex values retuned for a sober,
+// high-contrast look: deep oxblood primary, teal-green secondary, ochre tertiary,
+// neutral linen background that lets each accent carry weight.
 
-// Rouge Dahomey — inspired by the red walls of Abomey Royal Palaces
-val RougeDahomey = Color(0xFFC0392B)
-val RougeDahomeyDark = Color(0xFF962D22)
-val RougeDahomeyLight = Color(0xFFE57373)
-val RougeDahomeyContainer = Color(0xFFFDDEDE)
+// Rouge Dahomey — oxblood primary
+val RougeDahomey = Color(0xFF7A2520)
+val RougeDahomeyDark = Color(0xFF551914)
+val RougeDahomeyLight = Color(0xFFB25148)
+val RougeDahomeyContainer = Color(0xFFF4E4E1)
 
-// Or Béninois — the gold of the flag and Abomey bronze sculptures
-val OrBeninois = Color(0xFFF1C40F)
-val OrBeninoisDark = Color(0xFFC29D0A)
-val OrBeninoisLight = Color(0xFFF7DC6F)
-val OrBeninoisContainer = Color(0xFFFFF9E0)
+// Or Béninois — warm ochre accent (darker than before, used sparingly)
+val OrBeninois = Color(0xFFB8853A)
+val OrBeninoisDark = Color(0xFF8C6324)
+val OrBeninoisLight = Color(0xFFD4A862)
+val OrBeninoisContainer = Color(0xFFF7EBD3)
 
-// Vert Béninois — the green of the national flag
-val VertBeninois = Color(0xFF27AE60)
-val VertBeninoisDark = Color(0xFF1E8449)
-val VertBeninoisLight = Color(0xFF82E0AA)
-val VertBeninoisContainer = Color(0xFFD5F5E3)
+// Vert Béninois — deep teal-green for success / availability
+val VertBeninois = Color(0xFF1F584F)
+val VertBeninoisDark = Color(0xFF143B35)
+val VertBeninoisLight = Color(0xFF4F8278)
+val VertBeninoisContainer = Color(0xFFDDEAE6)
 
-// Bronze d'Abomey — traditional brass and bronze
-val BronzeAbomey = Color(0xFF8D6E63)
-val BronzeAbomeyDark = Color(0xFF5D4037)
-val BronzeAbomeyLight = Color(0xFFBCAAA4)
+// Bronze d'Abomey — warm neutral
+val BronzeAbomey = Color(0xFF7B6352)
+val BronzeAbomeyDark = Color(0xFF4A3B30)
+val BronzeAbomeyLight = Color(0xFFBAAA9A)
 
-// Terre & Sable — earth tones of Benin
-val TerreFon = Color(0xFF3E2723)
-val SableOuidah = Color(0xFFFFF8E1)
-val CremeGanvie = Color(0xFFFFFDE7)
-val SurfaceVariant = Color(0xFFF5F0E1)
-val Outline = Color(0xFFD7CCC8)
+// Terre & Sable — earth neutrals for surface system
+val TerreFon = Color(0xFF2A211C)
+val SableOuidah = Color(0xFFF5F1EA)
+val CremeGanvie = Color(0xFFFFFFFF)
+val SurfaceVariant = Color(0xFFEDE6DA)
+val Outline = Color(0xFFC9BDAD)
 
-// Status colors
-val StatusAvailable = Color(0xFF27AE60)
-val StatusOccupied = Color(0xFFC0392B)
-val StatusCleaning = Color(0xFFF1C40F)
-val StatusMaintenance = Color(0xFF8D6E63)
-val StatusPending = Color(0xFFF39C12)
+// Status colors (desaturated to sit comfortably on neutral surface)
+val StatusAvailable = Color(0xFF2D7A4F)
+val StatusOccupied = Color(0xFF8B2A22)
+val StatusCleaning = Color(0xFFB8853A)
+val StatusMaintenance = Color(0xFF7B6352)
+val StatusPending = Color(0xFFC27D1E)
 
 private val BeninLightColorScheme = lightColorScheme(
     primary = RougeDahomey,
@@ -59,7 +62,7 @@ private val BeninLightColorScheme = lightColorScheme(
     secondaryContainer = VertBeninoisContainer,
     onSecondaryContainer = VertBeninoisDark,
     tertiary = OrBeninois,
-    onTertiary = TerreFon,
+    onTertiary = Color.White,
     tertiaryContainer = OrBeninoisContainer,
     onTertiaryContainer = OrBeninoisDark,
     background = SableOuidah,
@@ -69,7 +72,7 @@ private val BeninLightColorScheme = lightColorScheme(
     surfaceVariant = SurfaceVariant,
     onSurfaceVariant = BronzeAbomeyDark,
     outline = Outline,
-    error = Color(0xFFD32F2F),
+    error = Color(0xFFB3261E),
     onError = Color.White,
 )
 

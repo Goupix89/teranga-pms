@@ -4,12 +4,30 @@ import android.app.Application
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CleaningServices
@@ -23,6 +41,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
+import kotlinx.coroutines.launch
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -79,20 +99,28 @@ val allNavItems = listOf(
     NavItem("notifications", "Notifs", Icons.Outlined.Notifications)
 )
 
-fun navItemsForRole(role: String): List<NavItem> {
-    val allowedRoutes = when (role.uppercase()) {
-        "COOK" -> listOf("dashboard", "kitchen", "notifications")
-        "SERVER" -> listOf("dashboard", "orders", "invoices", "pos", "notifications")
-        "CLEANER" -> listOf("dashboard", "cleaning", "notifications")
-        "POS" -> listOf("dashboard", "orders", "invoices", "pos", "notifications")
-        "MAITRE_HOTEL" -> listOf("dashboard", "orders", "invoices", "stock", "pos", "notifications")
-        "MANAGER" -> listOf("dashboard", "rooms", "reservations", "orders", "invoices", "stock", "approvals", "pos", "notifications")
-        "DAF" -> listOf("dashboard", "rooms", "reservations", "orders", "invoices", "stock", "approvals", "notifications")
-        "OWNER" -> listOf("dashboard", "rooms", "reservations", "orders", "invoices", "stock", "approvals", "notifications")
-        "SUPERADMIN" -> listOf("dashboard", "orders", "kitchen", "rooms", "reservations", "cleaning", "invoices", "stock", "approvals", "pos", "notifications")
-        else -> listOf("dashboard", "orders", "invoices", "pos", "notifications")
+data class NavLayout(
+    val primary: List<NavItem>,
+    val overflow: List<NavItem>
+)
+
+private fun itemsFor(routes: List<String>): List<NavItem> =
+    routes.mapNotNull { r -> allNavItems.firstOrNull { it.route == r } }
+
+fun navLayoutForRole(role: String): NavLayout {
+    val (primaryRoutes, overflowRoutes) = when (role.uppercase()) {
+        "COOK" -> listOf("dashboard", "kitchen", "notifications") to emptyList()
+        "CLEANER" -> listOf("dashboard", "cleaning", "notifications") to emptyList()
+        "SERVER" -> listOf("dashboard", "orders", "invoices", "pos") to listOf("notifications")
+        "POS" -> listOf("dashboard", "orders", "invoices", "pos") to listOf("notifications")
+        "MAITRE_HOTEL" -> listOf("dashboard", "orders", "invoices", "pos") to listOf("stock", "notifications")
+        "MANAGER" -> listOf("dashboard", "orders", "invoices", "pos") to listOf("rooms", "reservations", "stock", "approvals", "notifications")
+        "DAF" -> listOf("dashboard", "orders", "invoices", "approvals") to listOf("rooms", "reservations", "stock", "notifications")
+        "OWNER" -> listOf("dashboard", "orders", "invoices", "approvals") to listOf("rooms", "reservations", "stock", "notifications")
+        "SUPERADMIN" -> listOf("dashboard", "orders", "kitchen", "invoices") to listOf("rooms", "reservations", "cleaning", "stock", "approvals", "pos", "notifications")
+        else -> listOf("dashboard", "orders", "invoices", "pos") to listOf("notifications")
     }
-    return allNavItems.filter { it.route in allowedRoutes }
+    return NavLayout(primary = itemsFor(primaryRoutes), overflow = itemsFor(overflowRoutes))
 }
 
 // =============================================================================
@@ -103,6 +131,7 @@ fun navItemsForRole(role: String): List<NavItem> {
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
 
         setContent {
@@ -184,9 +213,24 @@ fun MainScaffold(
     val currentRoute = navBackStackEntry?.destination?.route ?: startRoute
 
     val role = authViewModel.uiState.currentRole ?: "SERVER"
-    val navItems = navItemsForRole(role)
+    val layout = navLayoutForRole(role)
+    val overflowRoutes = remember(layout) { layout.overflow.map { it.route }.toSet() }
 
-    val userName = authViewModel.uiState.currentEstablishment?.name ?: "Teranga PMS"
+    var showOverflow by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+
+    fun navigateTo(route: String) {
+        if (currentRoute != route) {
+            innerNavController.navigate(route) {
+                popUpTo(innerNavController.graph.findStartDestination().id) {
+                    saveState = true
+                }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -218,22 +262,21 @@ fun MainScaffold(
         },
         bottomBar = {
             NavigationBar {
-                navItems.forEach { item ->
+                layout.primary.forEach { item ->
                     NavigationBarItem(
                         icon = { Icon(item.icon, contentDescription = item.label) },
                         label = { Text(item.label) },
                         selected = currentRoute == item.route,
-                        onClick = {
-                            if (currentRoute != item.route) {
-                                innerNavController.navigate(item.route) {
-                                    popUpTo(innerNavController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
-                        }
+                        onClick = { navigateTo(item.route) }
+                    )
+                }
+                if (layout.overflow.isNotEmpty()) {
+                    val overflowSelected = currentRoute in overflowRoutes
+                    NavigationBarItem(
+                        icon = { Icon(Icons.Default.MoreHoriz, contentDescription = "Plus") },
+                        label = { Text("Plus") },
+                        selected = overflowSelected,
+                        onClick = { showOverflow = true }
                     )
                 }
             }
@@ -304,5 +347,84 @@ fun MainScaffold(
                 NotificationsScreen()
             }
         }
+    }
+
+    if (showOverflow && layout.overflow.isNotEmpty()) {
+        ModalBottomSheet(
+            onDismissRequest = { showOverflow = false },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                Text(
+                    "Plus d'options",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(4),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(layout.overflow) { item ->
+                        OverflowTile(
+                            item = item,
+                            selected = currentRoute == item.route,
+                            onClick = {
+                                scope.launch {
+                                    sheetState.hide()
+                                    showOverflow = false
+                                    navigateTo(item.route)
+                                }
+                            }
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun OverflowTile(
+    item: NavItem,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val bg = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+    val fg = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .clip(CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = bg,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(item.icon, contentDescription = item.label, tint = fg)
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            item.label,
+            style = MaterialTheme.typography.labelSmall,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }

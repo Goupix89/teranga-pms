@@ -9,6 +9,36 @@ function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('fr-FR').format(Math.round(amount)) + ' FCFA';
 }
 
+// Upstream-to-downstream progression; CANCELLED is terminal and ignored.
+const STATUS_RANK: Record<Exclude<OrderStatus, 'CANCELLED'>, number> = {
+  PENDING: 0,
+  IN_PROGRESS: 1,
+  READY: 2,
+  SERVED: 3,
+};
+
+/**
+ * Aggregate order status from item statuses: the most upstream (lowest rank)
+ * status among non-cancelled items. If every item is CANCELLED the order is
+ * CANCELLED; if the order has no items (shouldn't happen) we return PENDING.
+ */
+function aggregateOrderStatus(itemStatuses: OrderStatus[]): OrderStatus {
+  const active = itemStatuses.filter((s) => s !== 'CANCELLED');
+  if (active.length === 0) {
+    return itemStatuses.length > 0 ? 'CANCELLED' : 'PENDING';
+  }
+  let min: OrderStatus = 'SERVED';
+  let minRank = STATUS_RANK.SERVED;
+  for (const s of active) {
+    const r = STATUS_RANK[s as Exclude<OrderStatus, 'CANCELLED'>];
+    if (r < minRank) {
+      min = s;
+      minRank = r;
+    }
+  }
+  return min;
+}
+
 export class OrderService {
   /**
    * List orders with filters and pagination.
@@ -342,29 +372,169 @@ export class OrderService {
   }
 
   /**
+   * Append items to an existing open order. The order stays open; items are added
+   * to both the order and its invoice; totals are recomputed. Throws if the order
+   * is SERVED/CANCELLED or the invoice is already PAID.
+   */
+  async addItems(
+    tenantId: string,
+    orderId: string,
+    userId: string,
+    data: {
+      items: Array<{ articleId: string; quantity: number }>;
+      idempotencyKey?: string;
+    }
+  ) {
+    if (!data.items || data.items.length === 0) {
+      throw new ValidationError('Au moins un article est requis');
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const order = await tx.order.findFirst({
+        where: { id: orderId, tenantId },
+        include: { invoice: true },
+      });
+      if (!order) throw new NotFoundError('Commande');
+
+      if (order.status === 'CANCELLED') {
+        throw new ValidationError('Commande annulée — impossible d\'ajouter des articles');
+      }
+      if (!order.invoiceId || !order.invoice) {
+        throw new ValidationError('Aucune facture liée à cette commande');
+      }
+      if (order.invoice.status === 'PAID' || order.invoice.status === 'CANCELLED') {
+        throw new ValidationError(`Facture ${order.invoice.status === 'PAID' ? 'déjà payée' : 'annulée'} — impossible d'ajouter des articles`);
+      }
+
+      // Validate articles
+      const articleIds = data.items.map((i) => i.articleId);
+      const articles = await tx.article.findMany({
+        where: { id: { in: articleIds }, tenantId, isActive: true },
+      });
+      if (articles.length !== new Set(articleIds).size) {
+        throw new ValidationError('Un ou plusieurs articles sont introuvables ou inactifs');
+      }
+      const articleMap = new Map(articles.map((a) => [a.id, a]));
+
+      // Build new items + subtotal delta
+      let deltaSubtotal = 0;
+      const orderItemsData = data.items.map((item) => {
+        const article = articleMap.get(item.articleId)!;
+        const unitPrice = article.unitPrice.toNumber();
+        deltaSubtotal += unitPrice * item.quantity;
+        return {
+          articleId: item.articleId,
+          quantity: item.quantity,
+          unitPrice,
+        };
+      });
+
+      // Insert order items — new items always start PENDING so the kitchen
+      // sees them in the "En attente" column even when the parent order was
+      // already IN_PROGRESS, READY, or SERVED.
+      await tx.orderItem.createMany({
+        data: orderItemsData.map((i) => ({ ...i, orderId: order.id, status: 'PENDING' as OrderStatus })),
+      });
+
+      // Insert invoice items mirroring the order items
+      await tx.invoiceItem.createMany({
+        data: orderItemsData.map((i) => ({
+          invoiceId: order.invoiceId!,
+          articleId: i.articleId,
+          description: articleMap.get(i.articleId)!.name,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice,
+          totalPrice: i.unitPrice * i.quantity,
+        })),
+      });
+
+      // Recompute totals. Discount (if any) is kept as-is — rule wasn't re-applied
+      // because adding items may or may not change eligibility; keep behaviour
+      // predictable and leave the original discountAmount intact.
+      const newOrderTotal = order.totalAmount.toNumber() + deltaSubtotal;
+      const newInvoiceSubtotal = order.invoice.subtotal.toNumber() + deltaSubtotal;
+      const newInvoiceTotal = order.invoice.totalAmount.toNumber() + deltaSubtotal;
+
+      // New items are PENDING → aggregate becomes PENDING regardless of the
+      // previous order status (adding to a SERVED order reopens it).
+      await tx.order.update({
+        where: { id: order.id },
+        data: {
+          totalAmount: newOrderTotal,
+          status: 'PENDING',
+          ...(order.status === 'SERVED' && { servedAt: null }),
+        },
+      });
+      await tx.invoice.update({
+        where: { id: order.invoiceId! },
+        data: { subtotal: newInvoiceSubtotal, totalAmount: newInvoiceTotal },
+      });
+
+      // Notify cooks of the new items
+      notificationService.notifyRole({
+        tenantId,
+        establishmentId: order.establishmentId,
+        roles: ['COOK'],
+        type: 'ORDER_NEW',
+        title: 'Articles ajoutés',
+        message: `Commande ${order.orderNumber}${order.tableNumber ? ` (Table ${order.tableNumber})` : ''} — ${data.items.length} article(s) ajouté(s).`,
+        data: { orderId: order.id, orderNumber: order.orderNumber, tableNumber: order.tableNumber, addedBy: userId },
+      }).catch(() => {});
+
+      const fresh = await tx.order.findUnique({
+        where: { id: order.id },
+        include: {
+          items: { include: { article: { select: { id: true, name: true } } } },
+          createdBy: { select: { id: true, firstName: true, lastName: true } },
+        },
+      });
+      return { ...fresh!, totalAmount: Number(fresh!.totalAmount), addedCount: data.items.length };
+    });
+  }
+
+  /**
    * Update order status with validation of transitions and role checks.
+   * Operates on the "current batch": moves only items currently at the
+   * previous status to the requested status, then recomputes the order
+   * aggregate. This lets an order re-enter PENDING when items are appended
+   * mid-preparation without rewinding items already being cooked.
    */
   async updateStatus(tenantId: string, id: string, status: OrderStatus, userId: string) {
     return prisma.$transaction(async (tx) => {
       const order = await tx.order.findFirst({
         where: { id, tenantId },
+        include: { items: { select: { id: true, status: true } } },
       });
 
       if (!order) throw new NotFoundError('Commande');
 
-      // Validate status transitions
-      const validTransitions: Record<OrderStatus, OrderStatus[]> = {
-        PENDING: ['IN_PROGRESS', 'CANCELLED'],
-        IN_PROGRESS: ['READY', 'CANCELLED'],
-        READY: ['SERVED'],
-        SERVED: [],
-        CANCELLED: [],
+      // The "from" status for this transition is the one immediately upstream
+      // in the kitchen workflow. Cancelling applies to every non-terminal item.
+      const fromByTarget: Partial<Record<OrderStatus, OrderStatus>> = {
+        IN_PROGRESS: 'PENDING',
+        READY: 'IN_PROGRESS',
+        SERVED: 'READY',
       };
 
-      if (!validTransitions[order.status]?.includes(status)) {
-        throw new ValidationError(
-          `Transition de statut invalide : ${order.status} → ${status}`
-        );
+      // Validate that the transition is meaningful — i.e. at least one item
+      // sits at the expected upstream status (CANCELLED has its own rule).
+      if (status !== 'CANCELLED') {
+        const fromStatus = fromByTarget[status];
+        if (!fromStatus) {
+          throw new ValidationError(`Transition de statut invalide : ${status}`);
+        }
+        const hasItemsToAdvance = order.items.some((it) => it.status === fromStatus);
+        if (!hasItemsToAdvance) {
+          throw new ValidationError(
+            `Aucun article à ${fromStatus === 'PENDING' ? 'démarrer' : fromStatus === 'IN_PROGRESS' ? 'marquer prêt' : 'servir'}`
+          );
+        }
+      } else {
+        // CANCELLED: only meaningful if at least one item is not yet finalised.
+        const hasCancellable = order.items.some((it) => it.status !== 'CANCELLED' && it.status !== 'SERVED');
+        if (!hasCancellable && order.status === 'CANCELLED') {
+          throw new ValidationError('Commande déjà annulée');
+        }
       }
 
       // Check role-based restrictions on status changes
@@ -393,17 +563,36 @@ export class OrderService {
         if (status === 'SERVED') {
           throw new ForbiddenError('Seul un serveur peut définir le statut SERVI');
         }
-        // MANAGER and DAF can only set CANCELLED
         if (status !== 'CANCELLED') {
           throw new ForbiddenError('Un gestionnaire ne peut qu\'annuler les commandes');
         }
       }
 
-      // Set timestamps based on status
-      const updateData: any = { status };
-      if (status === 'READY') {
+      // Advance the matching item batch.
+      if (status === 'CANCELLED') {
+        await tx.orderItem.updateMany({
+          where: { orderId: id, status: { notIn: ['CANCELLED', 'SERVED'] } },
+          data: { status: 'CANCELLED' },
+        });
+      } else {
+        const fromStatus = fromByTarget[status]!;
+        await tx.orderItem.updateMany({
+          where: { orderId: id, status: fromStatus },
+          data: { status },
+        });
+      }
+
+      // Recompute the aggregate order status from current items.
+      const postItems = await tx.orderItem.findMany({
+        where: { orderId: id },
+        select: { status: true },
+      });
+      const aggregate = aggregateOrderStatus(postItems.map((i) => i.status));
+
+      const updateData: any = { status: aggregate };
+      if (aggregate === 'READY' && !order.readyAt) {
         updateData.readyAt = new Date();
-      } else if (status === 'SERVED') {
+      } else if (aggregate === 'SERVED' && !order.servedAt) {
         updateData.servedAt = new Date();
       }
 
@@ -420,8 +609,8 @@ export class OrderService {
         },
       });
 
-      // Cancel the associated invoice when an order is cancelled
-      if (status === 'CANCELLED' && order.invoiceId) {
+      // Cancel the associated invoice only when the whole order is cancelled.
+      if (aggregate === 'CANCELLED' && order.invoiceId) {
         await tx.invoice.update({
           where: { id: order.invoiceId },
           data: { status: 'CANCELLED' },
@@ -480,7 +669,9 @@ export class OrderService {
   }
 
   /**
-   * Get kitchen orders (PENDING or IN_PROGRESS), ordered by creation time.
+   * Kitchen orders: any order with at least one item in PENDING or IN_PROGRESS.
+   * Items keep their own status so the UI can split them across columns even
+   * when some of the order is already SERVED (items added after service).
    */
   async getKitchenOrders(tenantId: string, establishmentId: string) {
     const db = createTenantClient(tenantId);
@@ -488,13 +679,14 @@ export class OrderService {
     return db.order.findMany({
       where: {
         establishmentId,
-        status: { in: ['PENDING', 'IN_PROGRESS'] },
+        items: { some: { status: { in: ['PENDING', 'IN_PROGRESS'] } } },
       },
       include: {
         items: {
           include: {
             article: { select: { id: true, name: true } },
           },
+          orderBy: { createdAt: 'asc' },
         },
         createdBy: { select: { id: true, firstName: true, lastName: true } },
       },
