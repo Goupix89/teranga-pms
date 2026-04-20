@@ -112,6 +112,9 @@ export const requireDAFOrManager = requireEstablishmentRole('OWNER', 'DAF', 'MAN
 /** OWNER, DAF, Manager, Server, or POS */
 export const requireDAFOrManagerOrServer = requireEstablishmentRole('OWNER', 'DAF', 'MANAGER', 'MAITRE_HOTEL', 'SERVER', 'POS');
 
+/** Order creators — DAF excluded (financial controllers don't place orders) */
+export const requireOrderCreator = requireEstablishmentRole('OWNER', 'MANAGER', 'MAITRE_HOTEL', 'SERVER', 'POS');
+
 /** OWNER, DAF, Manager, Server, POS (payment-related operations) */
 export const requirePaymentRole = requireEstablishmentRole('OWNER', 'DAF', 'MANAGER', 'MAITRE_HOTEL', 'SERVER', 'POS');
 
@@ -130,6 +133,26 @@ export const requireAnyEstablishmentRole = requireEstablishmentRole('OWNER', 'DA
 export function getEstablishmentRole(req: Request, establishmentId: string): EstablishmentRole | null {
   if (req.user?.role === 'SUPERADMIN') return 'OWNER'; // SUPERADMIN treated as OWNER everywhere
   return req.user?.memberships?.find((m) => m.establishmentId === establishmentId)?.role || null;
+}
+
+/**
+ * Can the current user modify this order?
+ *
+ * Rule: yes if SUPERADMIN, if they created the order, if they are the attributed
+ * server, or if they are a supervisor (OWNER/DAF/MANAGER/MAITRE_HOTEL) in the
+ * order's establishment. Blocks a POS user from cashing in / modifying an order
+ * attributed to another server unless they opened it themselves.
+ */
+export function canEditOrder(
+  req: Request,
+  order: { createdById: string | null; serverId: string | null; establishmentId: string }
+): boolean {
+  if (req.user?.role === 'SUPERADMIN') return true;
+  if (!req.user) return false;
+  if (order.createdById && order.createdById === req.user.id) return true;
+  if (order.serverId && order.serverId === req.user.id) return true;
+  const role = req.user.memberships?.find((m) => m.establishmentId === order.establishmentId)?.role;
+  return role === 'OWNER' || role === 'DAF' || role === 'MANAGER' || role === 'MAITRE_HOTEL';
 }
 
 /**

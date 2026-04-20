@@ -36,6 +36,10 @@ interface PmsApiService {
     @GET("api/establishments")
     suspend fun getEstablishments(): EstablishmentsResponse
 
+    // Servers attributable to POS-created orders (SERVER + MAITRE_HOTEL of the estab)
+    @GET("api/establishments/{id}/servers")
+    suspend fun getEstablishmentServers(@Path("id") establishmentId: String): Response<EstablishmentServersResponse>
+
     // Rooms
     @GET("api/rooms")
     suspend fun getRooms(@Query("establishmentId") establishmentId: String): RoomsResponse
@@ -75,7 +79,8 @@ interface PmsApiService {
     suspend fun getOrders(
         @Query("establishmentId") establishmentId: String? = null,
         @Query("status") status: String? = null,
-        @Query("createdById") createdById: String? = null
+        @Query("createdById") createdById: String? = null,
+        @Query("forUserId") forUserId: String? = null
     ): OrdersResponse
 
     @GET("api/orders/kitchen/{establishmentId}")

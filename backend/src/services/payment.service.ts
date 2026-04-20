@@ -13,6 +13,7 @@ export class PaymentService {
     method: PaymentMethod;
     reference?: string;
     transactionUuid?: string;
+    paidAt?: Date;
   }) {
     return prisma.$transaction(async (tx) => {
       // Check idempotence for POS transactions
@@ -61,6 +62,7 @@ export class PaymentService {
           method: data.method,
           reference: data.reference,
           transactionUuid: data.transactionUuid,
+          ...(data.paidAt ? { paidAt: data.paidAt } : {}),
         },
       });
 
@@ -80,7 +82,7 @@ export class PaymentService {
           where: { id: data.invoiceId },
           data: {
             status: newStatus,
-            ...(newStatus === 'PAID' && { paidAt: new Date() }),
+            ...(newStatus === 'PAID' && { paidAt: data.paidAt ?? new Date() }),
           },
         });
 

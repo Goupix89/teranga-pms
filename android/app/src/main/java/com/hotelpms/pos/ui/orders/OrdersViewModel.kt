@@ -46,6 +46,11 @@ data class OrdersUiState(
     val voucherOwnerId: String = "",
     val voucherOwnerName: String = "",
     val owners: List<com.hotelpms.pos.domain.model.OwnerInfo> = emptyList(),
+    // Server attribution (POS only: pick which server the order is for)
+    val establishmentServers: List<com.hotelpms.pos.domain.model.EstablishmentServer> = emptyList(),
+    val selectedServerId: String = "",
+    // Operation date offset in days (0 = today, 1 = yesterday, -1 = 14 days ago for supervisors)
+    val operationDateOffset: Int = 0,
     val menuSearchQuery: String = "",
     val qrCodeData: QrCodeData? = null,
     val showQrCode: Boolean = false,
@@ -134,7 +139,41 @@ class OrdersViewModel @Inject constructor(
         fetchArticles()
         fetchCategories()
         fetchRestaurantTables()
+        fetchEstablishmentServers()
         startRealtimeSync()
+    }
+
+    fun fetchEstablishmentServers() {
+        viewModelScope.launch {
+            val estId = tokenManager.establishmentId ?: return@launch
+            try {
+                val response = apiService.getEstablishmentServers(estId)
+                if (response.isSuccessful) {
+                    uiState = uiState.copy(
+                        establishmentServers = response.body()?.data ?: emptyList()
+                    )
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun setSelectedServer(serverId: String) {
+        uiState = uiState.copy(selectedServerId = serverId)
+    }
+
+    fun setOperationDateOffset(offset: Int) {
+        uiState = uiState.copy(operationDateOffset = offset)
+    }
+
+    private fun operationDateIso(): String? {
+        val offset = uiState.operationDateOffset
+        if (offset == 0) return null
+        val cal = java.util.Calendar.getInstance()
+        val daysBack = if (offset < 0) 14 else offset
+        cal.add(java.util.Calendar.DAY_OF_YEAR, -daysBack)
+        return java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply {
+            timeZone = java.util.TimeZone.getTimeZone("UTC")
+        }.format(cal.time)
     }
 
     fun fetchCategories() {
@@ -171,8 +210,9 @@ class OrdersViewModel @Inject constructor(
     private fun fetchOrdersSilent() {
         viewModelScope.launch {
             try {
-                val createdById = if (uiState.myOrdersOnly) tokenManager.userId else null
-                val response = apiService.getOrders(createdById = createdById)
+                // forUserId matches createdById OR serverId so servers see POS-entered orders assigned to them.
+                val forUserId = if (uiState.myOrdersOnly) tokenManager.userId else null
+                val response = apiService.getOrders(forUserId = forUserId)
                 if (response.data != uiState.orders) {
                     uiState = uiState.copy(orders = response.data)
                 }
@@ -189,8 +229,8 @@ class OrdersViewModel @Inject constructor(
         viewModelScope.launch {
             uiState = uiState.copy(isLoading = true, error = null)
             try {
-                val createdById = if (uiState.myOrdersOnly) tokenManager.userId else null
-                val response = apiService.getOrders(createdById = createdById)
+                val forUserId = if (uiState.myOrdersOnly) tokenManager.userId else null
+                val response = apiService.getOrders(forUserId = forUserId)
                 uiState = uiState.copy(
                     orders = response.data,
                     isLoading = false
@@ -367,6 +407,8 @@ class OrdersViewModel @Inject constructor(
                     voucherOwnerName = if (uiState.isVoucher) uiState.voucherOwnerName.ifBlank { null } else null,
                     paymentMethod = null,
                     notes = uiState.orderNotes.ifBlank { null },
+                    serverId = uiState.selectedServerId.ifBlank { null },
+                    operationDate = operationDateIso(),
                     items = uiState.cart.map { entry ->
                         CreateOrderItem(
                             articleId = entry.article.id,
@@ -386,6 +428,8 @@ class OrdersViewModel @Inject constructor(
                         isVoucher = false,
                         voucherOwnerId = "",
                         voucherOwnerName = "",
+                        selectedServerId = "",
+                        operationDateOffset = 0,
                         viewMode = "orders"
                     )
                     fetchOrders()
@@ -656,7 +700,7 @@ class OrdersViewModel @Inject constructor(
         }
     }
 
-    fun cashIn(orderId: String, method: String) {
+    fun cashIn(orderId: String, method: String, paidAt: String? = null) {
         // Async methods (FedaPay, mobile money) require client-side confirmation.
         // The invoice is paid via FedaPay checkout + webhook, or a customer-scanned
         // QR + manual reconciliation — never synchronously from /cashin.
@@ -677,7 +721,7 @@ class OrdersViewModel @Inject constructor(
         viewModelScope.launch {
             uiState = uiState.copy(isCashingIn = true)
             try {
-                val response = apiService.cashInOrder(orderId, CashInRequest(method = method))
+                val response = apiService.cashInOrder(orderId, CashInRequest(method = method, paidAt = paidAt))
                 if (response.isSuccessful) {
                     uiState = uiState.copy(
                         isCashingIn = false,

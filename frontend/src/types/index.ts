@@ -307,6 +307,8 @@ export interface Order {
   servedAt?: string | null;
   items: OrderItem[];
   createdBy?: { id: string; firstName: string; lastName: string };
+  serverId?: string | null;
+  server?: { id: string; firstName: string; lastName: string } | null;
   establishment?: { id: string; name: string };
   createdAt: string;
 }

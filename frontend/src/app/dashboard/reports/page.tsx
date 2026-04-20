@@ -183,13 +183,14 @@ export default function ReportsPage() {
   const pendingInvoices = invoiceList.filter((i: any) => ['ISSUED', 'OVERDUE'].includes(i.status));
   const totalPending = pendingInvoices.reduce((sum: number, i: any) => sum + (Number(i.totalAmount) || 0), 0);
 
-  // Orders per server — exclude cancelled, pending, and merged source orders
+  // Orders per server — attribution priority: server (when POS enters on someone's behalf) else createdBy
   const serverOrders: Record<string, { name: string; count: number; revenue: number }> = {};
   activeOrders.forEach((o: any) => {
-    if (o.createdBy) {
-      const key = o.createdBy.id;
+    const attributed = o.server || o.createdBy;
+    if (attributed) {
+      const key = attributed.id;
       if (!serverOrders[key]) {
-        serverOrders[key] = { name: `${o.createdBy.firstName} ${o.createdBy.lastName}`, count: 0, revenue: 0 };
+        serverOrders[key] = { name: `${attributed.firstName} ${attributed.lastName}`, count: 0, revenue: 0 };
       }
       serverOrders[key].count++;
       serverOrders[key].revenue += Number(o.totalAmount) || 0;
@@ -272,7 +273,8 @@ export default function ReportsPage() {
     if (type === 'orders') {
       csv = 'N° Commande,Date,Serveur,Total,Statut,Paiement\n';
       orderList.forEach((o: any) => {
-        csv += `${o.orderNumber},${o.createdAt},${o.createdBy?.firstName || ''} ${o.createdBy?.lastName || ''},${o.totalAmount},${o.status},${o.paymentMethod || ''}\n`;
+        const attributed = o.server || o.createdBy;
+        csv += `${o.orderNumber},${o.createdAt},${attributed?.firstName || ''} ${attributed?.lastName || ''},${o.totalAmount},${o.status},${o.paymentMethod || ''}\n`;
       });
     } else if (type === 'rooms') {
       csv = 'Chambre,Statut,Type,Étage\n';
@@ -301,7 +303,8 @@ export default function ReportsPage() {
       });
       csv += `\nDétail des transactions\nN° Commande,Date,Montant,Mode paiement,Serveur\n`;
       activeOrders.filter((o: any) => o.paymentMethod).forEach((o: any) => {
-        csv += `${o.orderNumber},${o.createdAt},${o.totalAmount},${paymentLabels[o.paymentMethod] || o.paymentMethod},${o.createdBy?.firstName || ''} ${o.createdBy?.lastName || ''}\n`;
+        const attributed = o.server || o.createdBy;
+        csv += `${o.orderNumber},${o.createdAt},${o.totalAmount},${paymentLabels[o.paymentMethod] || o.paymentMethod},${attributed?.firstName || ''} ${attributed?.lastName || ''}\n`;
       });
     }
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });

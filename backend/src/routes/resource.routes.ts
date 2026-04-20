@@ -7,6 +7,7 @@ import {
   requireDAF,
   requireDAFOrManager,
   requireDAFOrManagerOrServer,
+  requireOrderCreator,
   requirePaymentRole,
   requireKitchenAccess,
   requireCleaningAccess,
@@ -14,10 +15,11 @@ import {
   requireSelfOrRole,
   requireEstablishmentRole,
   getEstablishmentRole,
+  canEditOrder,
 } from '../middlewares/rbac.middleware';
 import { validate, validateQuery } from '../middlewares/validate.middleware';
 import { checkPlanLimit } from '../middlewares/plan-limits.middleware';
-import { parsePagination } from '../utils/helpers';
+import { parsePagination, validateOperationDate } from '../utils/helpers';
 import * as v from '../validators';
 
 import { userService, establishmentService, supplierService, articleService, categoryService } from '../services/crud.service';
@@ -193,6 +195,26 @@ establishmentRouter.delete('/:id', authenticate, requireOwner,
   asyncHandler(async (req, res) => {
     await establishmentService.delete(req.user!.tenantId, req.params.id);
     res.json({ success: true, message: 'Établissement supprimé' });
+  })
+);
+
+// Servers/maitres: used by POS to attribute orders to the floor staff
+establishmentRouter.get('/:id/servers', authenticate, requireAnyEstablishmentRole,
+  asyncHandler(async (req, res) => {
+    const members = await prisma.establishmentMember.findMany({
+      where: {
+        establishmentId: req.params.id,
+        role: { in: ['SERVER', 'MAITRE_HOTEL'] },
+        user: { tenantId: req.user!.tenantId, status: 'ACTIVE' },
+      },
+      include: {
+        user: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+    const data = members
+      .map((m) => ({ id: m.user.id, firstName: m.user.firstName, lastName: m.user.lastName, role: m.role }))
+      .sort((a, b) => a.firstName.localeCompare(b.firstName));
+    res.json({ success: true, data });
   })
 );
 
@@ -439,9 +461,9 @@ export const orderRouter = Router();
 orderRouter.get('/', authenticate, requireDAFOrManagerOrServer,
   asyncHandler(async (req, res) => {
     const params = parsePagination(req);
-    const { establishmentId, status, createdById, from, to } = req.query as any;
+    const { establishmentId, status, createdById, forUserId, from, to } = req.query as any;
     const data = await orderService.list(req.user!.tenantId, params, {
-      establishmentId, status, createdById, from, to,
+      establishmentId, status, createdById, forUserId, from, to,
     });
     res.json({ success: true, ...data });
   })
@@ -501,7 +523,7 @@ orderRouter.post('/duplicates/cancel', authenticate, requireEstablishmentRole('D
 );
 
 // Servers create orders — LEISURE/LOCATION orders restricted to POS/OWNER/SUPERADMIN
-orderRouter.post('/', authenticate, requireDAFOrManagerOrServer, validate(v.createOrderSchema),
+orderRouter.post('/', authenticate, requireOrderCreator, validate(v.createOrderSchema),
   asyncHandler(async (req, res) => {
     if (req.body.orderType === 'LEISURE' || req.body.orderType === 'LOCATION') {
       const userRole = req.user!.role;
@@ -513,13 +535,28 @@ orderRouter.post('/', authenticate, requireDAFOrManagerOrServer, validate(v.crea
         return res.status(403).json({ success: false, error: 'Seuls le POS, les propriétaires et le superadmin peuvent créer des commandes de loisirs/location' });
       }
     }
-    const data = await orderService.create(req.user!.tenantId, req.user!.id, req.body);
+    // Validate optional operationDate (used as Invoice.issueDate for backdated POS entries)
+    let operationDate: Date | null = null;
+    if (req.body.operationDate) {
+      operationDate = validateOperationDate(req.body.operationDate, {
+        userRole: req.user!.role,
+        establishmentRole: req.user?.memberships?.find(
+          (m) => m.establishmentId === req.body.establishmentId
+        )?.role ?? null,
+        fieldLabel: "la date de l'opération",
+      });
+    }
+    const data = await orderService.create(
+      req.user!.tenantId,
+      req.user!.id,
+      { ...req.body, ...(operationDate ? { operationDate } : {}) }
+    );
     res.status(201).json({ success: true, data });
   })
 );
 
 // Append items to an open order (no more merge needed — one order grows)
-orderRouter.post('/:id/items', authenticate, requireDAFOrManagerOrServer,
+orderRouter.post('/:id/items', authenticate, requireOrderCreator,
   asyncHandler(async (req, res) => {
     const tenantId = req.user!.tenantId;
     const items = req.body?.items;
@@ -530,6 +567,14 @@ orderRouter.post('/:id/items', authenticate, requireDAFOrManagerOrServer,
       if (!it?.articleId || typeof it?.quantity !== 'number' || it.quantity < 1) {
         return res.status(400).json({ success: false, error: 'Chaque item doit avoir articleId et quantity ≥ 1' });
       }
+    }
+    const ownership = await prisma.order.findFirst({
+      where: { id: req.params.id, tenantId },
+      select: { createdById: true, serverId: true, establishmentId: true },
+    });
+    if (!ownership) return res.status(404).json({ success: false, error: 'Commande introuvable' });
+    if (!canEditOrder(req, ownership)) {
+      return res.status(403).json({ success: false, error: 'Vous ne pouvez pas modifier une commande ouverte par un autre serveur' });
     }
     const data = await orderService.addItems(tenantId, req.params.id, req.user!.id, {
       items,
@@ -543,7 +588,22 @@ orderRouter.post('/:id/items', authenticate, requireDAFOrManagerOrServer,
 orderRouter.patch('/:id/status', authenticate, requireEstablishmentRole('DAF', 'MANAGER', 'SERVER', 'COOK'),
   validate(v.updateOrderStatusSchema),
   asyncHandler(async (req, res) => {
-    const data = await orderService.updateStatus(req.user!.tenantId, req.params.id, req.body.status, req.user!.id);
+    const tenantId = req.user!.tenantId;
+    // Kitchen-facing transitions (IN_PROGRESS/READY) are role-scoped only.
+    // Server-facing transitions (SERVED/CANCELLED) also enforce the order
+    // ownership rule so a second POS/server can't close someone else's ticket.
+    const target = req.body.status;
+    if (target === 'SERVED' || target === 'CANCELLED') {
+      const ownership = await prisma.order.findFirst({
+        where: { id: req.params.id, tenantId },
+        select: { createdById: true, serverId: true, establishmentId: true },
+      });
+      if (!ownership) return res.status(404).json({ success: false, error: 'Commande introuvable' });
+      if (!canEditOrder(req, ownership)) {
+        return res.status(403).json({ success: false, error: 'Vous ne pouvez pas modifier une commande ouverte par un autre serveur' });
+      }
+    }
+    const data = await orderService.updateStatus(tenantId, req.params.id, target, req.user!.id);
     res.json({ success: true, data });
   })
 );
@@ -573,14 +633,29 @@ orderRouter.post('/:id/cashin', authenticate, requirePaymentRole,
 
     const order = await prisma.order.findFirst({
       where: { id: req.params.id, tenantId },
-      select: { id: true, invoiceId: true, status: true },
+      select: { id: true, invoiceId: true, status: true, createdById: true, serverId: true, establishmentId: true },
     });
     if (!order) return res.status(404).json({ success: false, error: 'Commande introuvable' });
+    if (!canEditOrder(req, order)) {
+      return res.status(403).json({ success: false, error: 'Vous ne pouvez pas encaisser une commande ouverte par un autre serveur' });
+    }
     if (order.status === 'CANCELLED') {
       return res.status(400).json({ success: false, error: 'Commande annulée' });
     }
     if (!order.invoiceId) {
       return res.status(400).json({ success: false, error: 'Aucune facture liée à cette commande' });
+    }
+
+    // Optional backdated payment date (accountants catching up on previous day's ops)
+    let paidAt: Date | null = null;
+    try {
+      paidAt = validateOperationDate(req.body.paidAt, {
+        userRole: req.user!.role,
+        establishmentRole: getEstablishmentRole(req, order.establishmentId),
+        fieldLabel: 'la date de paiement',
+      });
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
     }
 
     const invoice = await invoiceService.getById(tenantId, order.invoiceId);
@@ -619,6 +694,7 @@ orderRouter.post('/:id/cashin', authenticate, requirePaymentRole,
       invoiceId: invoice.id,
       amount: remaining,
       method,
+      ...(paidAt ? { paidAt } : {}),
     });
 
     await prisma.$transaction([
@@ -719,7 +795,20 @@ invoiceRouter.get('/:id', authenticate, requireDAFOrManagerOrServer,
 
 invoiceRouter.post('/', authenticate, requireDAFOrManagerOrServer, validate(v.createInvoiceSchema),
   asyncHandler(async (req, res) => {
-    const data = await invoiceService.create(req.user!.tenantId, req.user!.id, req.body);
+    let issueDate: Date | null = null;
+    try {
+      issueDate = validateOperationDate(req.body.issueDate, {
+        userRole: req.user!.role,
+        establishmentRole: req.body.establishmentId ? getEstablishmentRole(req, req.body.establishmentId) : null,
+        fieldLabel: 'la date d\'émission',
+      });
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+    const data = await invoiceService.create(req.user!.tenantId, req.user!.id, {
+      ...req.body,
+      ...(issueDate ? { issueDate } : {}),
+    });
     res.status(201).json({ success: true, data });
   })
 );
@@ -1202,10 +1291,24 @@ stockMovementRouter.post('/', authenticate, requireDAFOrManager, validate(v.crea
     const estId = req.body.establishmentId;
     const estRole = estId ? getEstablishmentRole(req, estId) : null;
 
+    // Business date for accounting — may be backdated within 15 days, or further if supervisor
+    let occurredAt: Date | null = null;
+    try {
+      occurredAt = validateOperationDate(req.body.occurredAt, {
+        userRole: req.user!.role,
+        establishmentRole: estRole,
+        fieldLabel: 'la date du mouvement',
+      });
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+
+    const payload = { ...req.body, ...(occurredAt ? { occurredAt } : {}) };
+
     // MANAGER stock movements require DAF approval
     if (estRole === 'MANAGER') {
       const movement = await stockService.createMovement(req.user!.tenantId, req.user!.id, {
-        ...req.body,
+        ...payload,
         requiresApproval: true,
       });
 
@@ -1213,7 +1316,7 @@ stockMovementRouter.post('/', authenticate, requireDAFOrManager, validate(v.crea
         establishmentId: estId,
         type: 'STOCK_MOVEMENT',
         requestedById: req.user!.id,
-        payload: req.body,
+        payload,
         targetId: (movement as any).id || (movement as any).data?.id,
       });
 
@@ -1224,7 +1327,7 @@ stockMovementRouter.post('/', authenticate, requireDAFOrManager, validate(v.crea
       });
     }
 
-    const data = await stockService.createMovement(req.user!.tenantId, req.user!.id, req.body);
+    const data = await stockService.createMovement(req.user!.tenantId, req.user!.id, payload);
     res.status(201).json({ success: true, ...data });
   })
 );
@@ -2549,7 +2652,7 @@ async function buildDailyReport(tenantId: string, date: string, establishmentId?
               room: { select: { number: true, establishmentId: true } },
             },
           },
-          orders: { select: { id: true, orderNumber: true, createdBy: { select: { firstName: true, lastName: true } }, paymentMethod: true, isVoucher: true, voucherOwnerName: true } },
+          orders: { select: { id: true, orderNumber: true, createdBy: { select: { firstName: true, lastName: true } }, server: { select: { firstName: true, lastName: true } }, paymentMethod: true, isVoucher: true, voucherOwnerName: true } },
         },
       },
     },
@@ -2563,6 +2666,7 @@ async function buildDailyReport(tenantId: string, date: string, establishmentId?
     },
     include: {
       createdBy: { select: { id: true, firstName: true, lastName: true } },
+      server: { select: { id: true, firstName: true, lastName: true } },
     },
     orderBy: { createdAt: 'asc' },
   });
@@ -2610,11 +2714,13 @@ async function buildDailyReport(tenantId: string, date: string, establishmentId?
       return {
         invoiceNumber: p.invoice?.invoiceNumber || '-',
         orderNumber: order?.orderNumber || (reservation ? `Réservation ch. ${reservation.room?.number || '?'}` : '-'),
-        server: order?.createdBy
-          ? `${order.createdBy.firstName} ${order.createdBy.lastName}`
-          : reservation
-            ? (reservation.guestName || reservation.source || '-')
-            : '-',
+        server: (order as any)?.server
+          ? `${(order as any).server.firstName} ${(order as any).server.lastName}`
+          : order?.createdBy
+            ? `${order.createdBy.firstName} ${order.createdBy.lastName}`
+            : reservation
+              ? (reservation.guestName || reservation.source || '-')
+              : '-',
         method: p.method,
         amount: Number(p.amount),
         time: p.createdAt,
@@ -2622,13 +2728,14 @@ async function buildDailyReport(tenantId: string, date: string, establishmentId?
       };
     });
 
-  // Orders by server
+  // Orders by server — attribution priority: server (if POS entered on someone's behalf) else createdBy
   const byServer: Record<string, { name: string; count: number; revenue: number }> = {};
   const activeOrders = orders.filter((o: any) => !['CANCELLED', 'PENDING'].includes(o.status) && !o.isVoucher);
   for (const o of activeOrders) {
-    if (o.createdBy) {
-      const key = (o.createdBy as any).id;
-      const name = `${(o.createdBy as any).firstName} ${(o.createdBy as any).lastName}`;
+    const attributed = (o as any).server || (o as any).createdBy;
+    if (attributed) {
+      const key = attributed.id;
+      const name = `${attributed.firstName} ${attributed.lastName}`;
       if (!byServer[key]) byServer[key] = { name, count: 0, revenue: 0 };
       byServer[key].count++;
       byServer[key].revenue += Number((o as any).totalAmount) || 0;
@@ -2850,7 +2957,17 @@ async function buildRangeReport(tenantId: string, from: string, to: string, esta
     },
     include: {
       invoice: {
-        select: { isVoucher: true, orders: { select: { isVoucher: true, paymentMethod: true, createdBy: { select: { id: true, firstName: true, lastName: true } } } } },
+        select: {
+          isVoucher: true,
+          orders: {
+            select: {
+              isVoucher: true,
+              paymentMethod: true,
+              createdBy: { select: { id: true, firstName: true, lastName: true } },
+              server: { select: { id: true, firstName: true, lastName: true } },
+            },
+          },
+        },
       },
     },
     orderBy: { createdAt: 'asc' },
@@ -2895,9 +3012,10 @@ async function buildRangeReport(tenantId: string, from: string, to: string, esta
       grandByMethod[method].count++;
       grandByMethod[method].total += amount;
 
-      if (order?.createdBy) {
-        const key = (order.createdBy as any).id;
-        const name = `${(order.createdBy as any).firstName} ${(order.createdBy as any).lastName}`;
+      const attributed = (order as any)?.server || order?.createdBy;
+      if (attributed) {
+        const key = (attributed as any).id;
+        const name = `${(attributed as any).firstName} ${(attributed as any).lastName}`;
         if (!grandByServer[key]) grandByServer[key] = { name, count: 0, revenue: 0 };
         grandByServer[key].count++;
         grandByServer[key].revenue += amount;

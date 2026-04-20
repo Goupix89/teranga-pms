@@ -97,6 +97,7 @@ export class InvoiceService {
     currency?: string;
     dueDate?: string;
     notes?: string;
+    issueDate?: Date;
   }) {
     return prisma.$transaction(async (tx) => {
       // Generate sequential invoice number
@@ -136,6 +137,7 @@ export class InvoiceService {
           currency: data.currency || 'XOF',
           dueDate: data.dueDate ? new Date(data.dueDate) : null,
           notes: data.notes,
+          ...(data.issueDate ? { issueDate: data.issueDate } : {}),
           items: {
             create: items.map((item) => ({
               articleId: item.articleId,

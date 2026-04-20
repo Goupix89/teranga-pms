@@ -32,6 +32,8 @@ export default function InvoicesPage() {
   const [isFetchingMerge, setIsFetchingMerge] = useState(false);
   const [items, setItems] = useState([{ description: '', quantity: '1', unitPrice: '' }]);
   const [taxRate, setTaxRate] = useState('0');
+  const [issueDate, setIssueDate] = useState('');
+  const canBackdateBeyondCap = isSuperAdmin || ['OWNER', 'DAF', 'MANAGER'].includes(currentEstRole || '');
 
   const { data, isLoading } = useQuery({
     queryKey: ['invoices', page, search, statusFilter],
@@ -148,6 +150,7 @@ export default function InvoicesPage() {
         unitPrice: Number(it.unitPrice),
       })),
       taxRate: Number(taxRate),
+      issueDate: issueDate ? new Date(issueDate).toISOString() : undefined,
     });
   };
 
@@ -272,9 +275,23 @@ export default function InvoicesPage() {
             ))}
             <button type="button" onClick={addItem} className="btn-ghost text-sm text-primary-600"><Plus className="mr-1 h-4 w-4" />Ajouter un article</button>
           </div>
-          <div className="w-32">
-            <label className="label">Taxe (%)</label>
-            <input type="number" value={taxRate} onChange={(e) => setTaxRate(e.target.value)} className="input" min="0" max="100" />
+          <div className="flex gap-4">
+            <div className="w-32">
+              <label className="label">Taxe (%)</label>
+              <input type="number" value={taxRate} onChange={(e) => setTaxRate(e.target.value)} className="input" min="0" max="100" />
+            </div>
+            <div className="flex-1">
+              <label className="label">Date d&apos;émission (optionnel)</label>
+              <input
+                type="datetime-local"
+                value={issueDate}
+                min={new Date(Date.now() - (canBackdateBeyondCap ? 365 : 15) * 86400000).toISOString().slice(0, 16)}
+                max={new Date().toISOString().slice(0, 16)}
+                onChange={(e) => setIssueDate(e.target.value)}
+                className="input"
+              />
+              <p className="text-xs text-gray-500 mt-1">Laisser vide = maintenant. {canBackdateBeyondCap ? 'Rétrodatage libre.' : 'Limité à 15 jours en arrière.'}</p>
+            </div>
           </div>
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={() => setShowCreate(false)} className="btn-secondary">Annuler</button>

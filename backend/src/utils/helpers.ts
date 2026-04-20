@@ -44,6 +44,55 @@ export function toSkipTake(params: PaginationParams) {
 }
 
 /**
+ * Validate a user-supplied operation date (payment date, stock movement, invoice issue).
+ *
+ * Rules:
+ *   - must be a parseable date
+ *   - cannot be in the future (>1h tolerance for client clock skew)
+ *   - default cap: 15 days in the past
+ *   - beyond the cap: only OWNER/DAF/MANAGER in the target establishment, or SUPERADMIN
+ *
+ * Returns the parsed Date on success, or throws ValidationError with a useful message.
+ * Caller is responsible for deciding if the field is required — pass undefined/null
+ * through to skip validation (defaults handled by DB).
+ */
+export function validateOperationDate(
+  raw: string | Date | undefined | null,
+  opts: {
+    userRole?: string;
+    establishmentRole?: string | null;
+    capDays?: number;
+    fieldLabel?: string;
+  } = {}
+): Date | null {
+  if (raw === undefined || raw === null || raw === '') return null;
+  const date = raw instanceof Date ? raw : new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Date invalide pour ${opts.fieldLabel ?? 'l\'opération'}`);
+  }
+  const now = new Date();
+  if (date.getTime() - now.getTime() > 60 * 60 * 1000) {
+    throw new Error(`La date d'opération ne peut pas être dans le futur`);
+  }
+  const capDays = opts.capDays ?? 15;
+  const capMs = capDays * 24 * 60 * 60 * 1000;
+  const ageMs = now.getTime() - date.getTime();
+  if (ageMs > capMs) {
+    const isSupervisor =
+      opts.userRole === 'SUPERADMIN' ||
+      opts.establishmentRole === 'OWNER' ||
+      opts.establishmentRole === 'DAF' ||
+      opts.establishmentRole === 'MANAGER';
+    if (!isSupervisor) {
+      throw new Error(
+        `Rétrodatage au-delà de ${capDays} jours réservé aux superviseurs (OWNER, DAF, MANAGER)`
+      );
+    }
+  }
+  return date;
+}
+
+/**
  * Generate a sequential invoice number for a tenant.
  * Format: INV-YYYYMM-NNNN
  */

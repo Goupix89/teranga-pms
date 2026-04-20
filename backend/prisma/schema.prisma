@@ -227,7 +227,8 @@ model User {
   stockMovements    StockMovement[]
   invoicesCreated   Invoice[]             @relation("InvoiceCreator")
   approvedMovements StockMovement[]       @relation("MovementApprover")
-  ordersCreated     Order[]
+  ordersCreated     Order[]               @relation("OrderCreator")
+  ordersServed      Order[]               @relation("OrderServer")
   approvalRequests  ApprovalRequest[]     @relation("ApprovalRequester")
   approvalReviews   ApprovalRequest[]     @relation("ApprovalReviewer")
   stockAlerts       StockAlert[]
@@ -447,6 +448,7 @@ model Order {
   tenantId         String         @map("tenant_id")
   establishmentId  String         @map("establishment_id")
   createdById      String         @map("created_by_id")
+  serverId         String?        @map("server_id")
   orderNumber      String         @map("order_number")
   tableNumber      String?        @map("table_number")
   orderType        String         @default("RESTAURANT") @map("order_type") // RESTAURANT | LEISURE
@@ -470,7 +472,8 @@ model Order {
 
   tenant        Tenant        @relation(fields: [tenantId], references: [id])
   establishment Establishment @relation(fields: [establishmentId], references: [id])
-  createdBy     User          @relation(fields: [createdById], references: [id])
+  createdBy     User          @relation("OrderCreator", fields: [createdById], references: [id])
+  server        User?         @relation("OrderServer", fields: [serverId], references: [id])
   invoice       Invoice?      @relation(fields: [invoiceId], references: [id])
   discountRule  DiscountRule? @relation(fields: [discountRuleId], references: [id])
   items         OrderItem[]
@@ -478,6 +481,7 @@ model Order {
   @@unique([tenantId, orderNumber])
   @@index([tenantId, establishmentId, status])
   @@index([tenantId, createdAt])
+  @@index([tenantId, serverId])
   @@map("orders")
 }
 
@@ -549,6 +553,7 @@ model Invoice {
   notes            String?
   isVoucher        Boolean        @default(false) @map("is_voucher")
   voucherOwnerName String?        @map("voucher_owner_name")
+  issueDate        DateTime       @default(now()) @map("issue_date")
   createdAt        DateTime       @default(now()) @map("created_at")
   updatedAt        DateTime       @updatedAt @map("updated_at")
 
@@ -699,6 +704,7 @@ model StockMovement {
   requiresApproval Boolean           @default(false) @map("requires_approval")
   approvedById     String?           @map("approved_by_id")
   approvedAt       DateTime?         @map("approved_at")
+  occurredAt       DateTime          @default(now()) @map("occurred_at")
   createdAt        DateTime          @default(now()) @map("created_at")
 
   tenant      Tenant    @relation(fields: [tenantId], references: [id])

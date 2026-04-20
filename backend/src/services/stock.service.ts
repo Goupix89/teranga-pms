@@ -51,6 +51,7 @@ export class StockService {
     quantity: number;
     unitCost?: number;
     reason?: string;
+    occurredAt?: Date;
   }) {
     return prisma.$transaction(async (tx) => {
       const article = await tx.article.findFirst({
@@ -112,6 +113,7 @@ export class StockService {
           newStock,
           reason: data.reason,
           requiresApproval,
+          ...(data.occurredAt ? { occurredAt: data.occurredAt } : {}),
         },
         include: {
           article: { select: { name: true, sku: true } },

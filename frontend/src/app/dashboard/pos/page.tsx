@@ -44,6 +44,8 @@ export default function PosPage() {
   const queryClient = useQueryClient();
   const currentEstId = useAuthStore((s) => s.currentEstablishmentId);
   const currentUser = useAuthStore((s) => s.user);
+  const currentEstRole = useAuthStore((s) => s.currentEstablishmentRole);
+  const isPOS = currentEstRole === 'POS';
 
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
@@ -54,6 +56,8 @@ export default function PosPage() {
   const [isVoucher, setIsVoucher] = useState(false);
   const [voucherOwnerId, setVoucherOwnerId] = useState('');
   const [voucherOwnerName, setVoucherOwnerName] = useState('');
+  const [serverId, setServerId] = useState<string>('');
+  const [operationDate, setOperationDate] = useState<string>('');
   const [qrModal, setQrModal] = useState<{
     open: boolean;
     invoiceId?: string;
@@ -69,7 +73,17 @@ export default function PosPage() {
     invoiceId?: string;
     totalAmount?: number;
     method: PaymentMethod;
-  }>({ open: false, method: 'CASH' });
+    paidAt: string;
+  }>({ open: false, method: 'CASH', paidAt: '' });
+
+  const isSuperAdmin = currentUser?.role === 'SUPERADMIN';
+  const canBackdateBeyondCap = isSuperAdmin || ['OWNER', 'DAF', 'MANAGER'].includes(currentEstRole || '');
+  const toLocalInput = (d: Date) => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  const nowLocal = toLocalInput(new Date());
+  const minLocal = toLocalInput(new Date(Date.now() - (canBackdateBeyondCap ? 365 : 15) * 24 * 3600 * 1000));
 
   // Fetch articles
   const { data: articlesData, isLoading } = useQuery({
@@ -88,6 +102,14 @@ export default function PosPage() {
     queryFn: () => apiGet<any>('/users/owners'),
     enabled: isVoucher,
   });
+
+  // Servers of the current establishment — POS picks whom to attribute the order to
+  const { data: serversData } = useQuery({
+    queryKey: ['establishment-servers', currentEstId],
+    queryFn: () => currentEstId ? apiGet<any>(`/establishments/${currentEstId}/servers`) : null,
+    enabled: isPOS && !!currentEstId,
+  });
+  const servers: Array<{ id: string; firstName: string; lastName: string; role: string }> = serversData?.data || [];
 
   // Fetch applicable discount rules for orders
   const { data: discountRulesData } = useQuery({
@@ -139,7 +161,7 @@ export default function PosPage() {
     setCart((prev) => prev.filter((item) => item.article.id !== articleId));
   };
 
-  const clearCart = () => { setCart([]); setIsVoucher(false); setVoucherOwnerId(''); setVoucherOwnerName(''); };
+  const clearCart = () => { setCart([]); setIsVoucher(false); setVoucherOwnerId(''); setVoucherOwnerName(''); setServerId(''); setOperationDate(''); };
 
   const cartTotal = cart.reduce((sum, item) => sum + item.article.unitPrice * item.quantity, 0);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -163,6 +185,7 @@ export default function PosPage() {
           invoiceId: order.invoiceId,
           totalAmount: order.totalAmount,
           method: 'CASH',
+          paidAt: operationDate,
         });
       }
     },
@@ -170,11 +193,12 @@ export default function PosPage() {
   });
 
   const cashInMutation = useMutation({
-    mutationFn: ({ id, method }: { id: string; method: PaymentMethod }) => apiPost<any>(`/orders/${id}/cashin`, { method }),
+    mutationFn: ({ id, method, paidAt }: { id: string; method: PaymentMethod; paidAt?: string }) =>
+      apiPost<any>(`/orders/${id}/cashin`, { method, ...(paidAt ? { paidAt } : {}) }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
-      setCashInModal({ open: false, method: 'CASH' });
+      setCashInModal({ open: false, method: 'CASH', paidAt: '' });
       toast.success('Encaissement enregistré — commande servie');
     },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur encaissement'),
@@ -192,7 +216,7 @@ export default function PosPage() {
         paid: false,
         fedapayCheckoutUrl: qr?.data?.fedapayCheckoutUrl,
       });
-      setCashInModal({ open: false, method: 'CASH' });
+      setCashInModal({ open: false, method: 'CASH', paidAt: '' });
     } catch {
       toast.error('QR code indisponible');
     }
@@ -203,6 +227,7 @@ export default function PosPage() {
       toast.error('Le panier est vide');
       return;
     }
+    const operationDateIso = operationDate ? new Date(operationDate).toISOString() : undefined;
     createMutation.mutate({
       establishmentId: currentEstId,
       idempotencyKey: crypto.randomUUID(),
@@ -212,6 +237,8 @@ export default function PosPage() {
       isVoucher: isVoucher || undefined,
       voucherOwnerId: isVoucher && voucherOwnerId ? voucherOwnerId : undefined,
       voucherOwnerName: isVoucher && voucherOwnerName ? voucherOwnerName : undefined,
+      serverId: isPOS && serverId ? serverId : undefined,
+      operationDate: operationDateIso,
       items: cart.map((item) => ({
         articleId: item.article.id,
         quantity: item.quantity,
@@ -425,6 +452,42 @@ export default function PosPage() {
             <p className="text-[11px] text-gray-400 mt-1">Le paiement sera choisi après la création de la commande.</p>
           </div>
 
+          {/* Serveur attribué (POS uniquement) */}
+          {isPOS && servers.length > 0 && (
+            <div>
+              <label className="text-xs font-medium text-gray-500">Serveur attribué</label>
+              <select
+                value={serverId}
+                onChange={(e) => setServerId(e.target.value)}
+                className="input mt-1 text-sm"
+              >
+                <option value="">— Aucun (moi-même) —</option>
+                {servers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.firstName} {s.lastName} · {s.role}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-gray-400 mt-1">La commande sera attribuée à ce serveur. Votre saisie reste tracée.</p>
+            </div>
+          )}
+
+          {/* Date de l'opération (rétrodatage pour saisie de veille) */}
+          <div>
+            <label className="text-xs font-medium text-gray-500">Date de l'opération</label>
+            <input
+              type="datetime-local"
+              value={operationDate}
+              min={minLocal}
+              max={nowLocal}
+              onChange={(e) => setOperationDate(e.target.value)}
+              className="input mt-1 text-sm"
+            />
+            <p className="text-[11px] text-gray-400 mt-1">
+              {canBackdateBeyondCap ? 'Rétrodatage illimité (superviseur).' : 'Rétrodatage limité à 15 jours.'} Laissez vide pour aujourd'hui.
+            </p>
+          </div>
+
           {/* Notes */}
           <div>
             <label className="text-xs font-medium text-gray-500">Notes</label>
@@ -515,7 +578,7 @@ export default function PosPage() {
               <h3 className="font-semibold text-gray-900 flex items-center gap-2">
                 <Wallet className="h-5 w-5 text-red-600" /> Encaisser la commande
               </h3>
-              <button onClick={() => setCashInModal({ open: false, method: 'CASH' })} className="p-1 text-gray-400 hover:text-gray-600">
+              <button onClick={() => setCashInModal({ open: false, method: 'CASH', paidAt: '' })} className="p-1 text-gray-400 hover:text-gray-600">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -552,9 +615,23 @@ export default function PosPage() {
                 <QrCode className="h-4 w-4" /> Afficher le QR code de paiement
               </button>
             )}
+            <div className="mb-4">
+              <label className="text-xs font-medium text-gray-500">Date de l'opération</label>
+              <input
+                type="datetime-local"
+                value={cashInModal.paidAt}
+                min={minLocal}
+                max={nowLocal}
+                onChange={(e) => setCashInModal((prev) => ({ ...prev, paidAt: e.target.value }))}
+                className="input mt-1 text-sm w-full"
+              />
+              <p className="text-[11px] text-gray-400 mt-1">
+                {canBackdateBeyondCap ? 'Rétrodatage illimité (superviseur).' : 'Rétrodatage limité à 15 jours.'} Laissez vide pour utiliser maintenant.
+              </p>
+            </div>
             <div className="flex gap-2">
               <button
-                onClick={() => setCashInModal({ open: false, method: 'CASH' })}
+                onClick={() => setCashInModal({ open: false, method: 'CASH', paidAt: '' })}
                 className="btn-secondary flex-1"
               >
                 Plus tard
@@ -562,7 +639,8 @@ export default function PosPage() {
               <button
                 onClick={() => {
                   if (cashInModal.orderId) {
-                    cashInMutation.mutate({ id: cashInModal.orderId, method: cashInModal.method });
+                    const paidAtIso = cashInModal.paidAt ? new Date(cashInModal.paidAt).toISOString() : undefined;
+                    cashInMutation.mutate({ id: cashInModal.orderId, method: cashInModal.method, paidAt: paidAtIso });
                   }
                 }}
                 disabled={cashInMutation.isPending || !cashInModal.orderId}

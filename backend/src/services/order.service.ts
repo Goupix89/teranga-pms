@@ -50,6 +50,7 @@ export class OrderService {
       establishmentId?: string;
       status?: OrderStatus;
       createdById?: string;
+      forUserId?: string;
       from?: string;
       to?: string;
     } = {}
@@ -60,6 +61,14 @@ export class OrderService {
       ...(filters.establishmentId && { establishmentId: filters.establishmentId }),
       ...(filters.status && { status: filters.status }),
       ...(filters.createdById && { createdById: filters.createdById }),
+      // forUserId matches orders the user created OR is the attributed server for.
+      // Used by "Mes commandes" so servers see POS-entered orders assigned to them.
+      ...(filters.forUserId && {
+        OR: [
+          { createdById: filters.forUserId },
+          { serverId: filters.forUserId },
+        ],
+      }),
       ...(filters.from && { createdAt: { gte: new Date(filters.from) } }),
       ...(filters.to && {
         createdAt: {
@@ -79,6 +88,7 @@ export class OrderService {
             },
           },
           createdBy: { select: { id: true, firstName: true, lastName: true } },
+          server: { select: { id: true, firstName: true, lastName: true } },
         },
         ...toSkipTake(params),
       }),
@@ -110,6 +120,7 @@ export class OrderService {
           },
         },
         createdBy: { select: { id: true, firstName: true, lastName: true } },
+        server: { select: { id: true, firstName: true, lastName: true } },
         establishment: { select: { id: true, name: true } },
       },
     });
@@ -138,6 +149,11 @@ export class OrderService {
       voucherOwnerId?: string;
       voucherOwnerName?: string;
       discountRuleId?: string;
+      serverId?: string;
+      // Business/operation date — used as Invoice.issueDate so accounting reflects when
+      // the sale actually occurred (not when it was entered). Backdating is validated
+      // by the route layer (15-day cap with supervisor bypass).
+      operationDate?: Date;
     }
   ) {
     if (!data.items || data.items.length === 0) {
@@ -167,6 +183,23 @@ export class OrderService {
         where: { id: data.establishmentId, tenantId },
       });
       if (!establishment) throw new NotFoundError('Établissement');
+
+      // Validate serverId if provided: must be an active member of this establishment
+      // with a role that can be attributed orders (SERVER / MAITRE_HOTEL).
+      let serverIdToAttach: string | null = null;
+      if (data.serverId) {
+        const membership = await tx.establishmentMember.findFirst({
+          where: {
+            userId: data.serverId,
+            establishmentId: data.establishmentId,
+            role: { in: ['SERVER', 'MAITRE_HOTEL'] },
+          },
+        });
+        if (!membership) {
+          throw new ValidationError('Serveur invalide pour cet établissement');
+        }
+        serverIdToAttach = data.serverId;
+      }
 
       // Fetch all articles and validate
       const articleIds = data.items.map((i) => i.articleId);
@@ -232,6 +265,7 @@ export class OrderService {
           tenantId,
           establishmentId: data.establishmentId,
           createdById: userId,
+          serverId: serverIdToAttach,
           orderNumber,
           idempotencyKey: data.idempotencyKey || null,
           orderType: data.orderType || 'RESTAURANT',
@@ -257,6 +291,7 @@ export class OrderService {
             },
           },
           createdBy: { select: { id: true, firstName: true, lastName: true } },
+          server: { select: { id: true, firstName: true, lastName: true } },
         },
       });
 
@@ -288,6 +323,7 @@ export class OrderService {
           isVoucher: data.isVoucher || false,
           voucherOwnerName: data.isVoucher ? (data.voucherOwnerName || null) : null,
           status: 'ISSUED',
+          ...(data.operationDate ? { issueDate: data.operationDate } : {}),
           items: {
             create: itemsData.map((item) => {
               const article = articleMap.get(item.articleId)!;
@@ -486,6 +522,7 @@ export class OrderService {
         include: {
           items: { include: { article: { select: { id: true, name: true } } } },
           createdBy: { select: { id: true, firstName: true, lastName: true } },
+          server: { select: { id: true, firstName: true, lastName: true } },
         },
       });
       return { ...fresh!, totalAmount: Number(fresh!.totalAmount), addedCount: data.items.length };
@@ -606,6 +643,7 @@ export class OrderService {
             },
           },
           createdBy: { select: { id: true, firstName: true, lastName: true } },
+          server: { select: { id: true, firstName: true, lastName: true } },
         },
       });
 
@@ -711,9 +749,15 @@ export class OrderService {
 
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
+    // userId filter matches orders the user created OR was attributed as server.
     const baseWhere: any = {
       establishmentId,
-      ...(userId && { createdById: userId }),
+      ...(userId && {
+        OR: [
+          { createdById: userId },
+          { serverId: userId },
+        ],
+      }),
     };
 
     const [today, thisWeek, thisMonth] = await Promise.all([

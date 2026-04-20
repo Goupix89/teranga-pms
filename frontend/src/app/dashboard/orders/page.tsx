@@ -28,7 +28,7 @@ export default function OrdersPage() {
   const currentEstId = useAuthStore((s) => s.currentEstablishmentId);
   const currentEstRole = useAuthStore((s) => s.currentEstablishmentRole);
   const isSuperAdmin = currentUser?.role === 'SUPERADMIN';
-  const canCreate = isSuperAdmin || ['DAF', 'MANAGER', 'MAITRE_HOTEL', 'SERVER', 'POS'].includes(currentEstRole || '');
+  const canCreate = isSuperAdmin || ['OWNER', 'MANAGER', 'MAITRE_HOTEL', 'SERVER', 'POS'].includes(currentEstRole || '');
   const canDownloadReceipt = isSuperAdmin || ['OWNER', 'DAF', 'MANAGER', 'MAITRE_HOTEL', 'SERVER', 'POS'].includes(currentEstRole || '');
 
   const [page, setPage] = useState(1);
@@ -42,9 +42,11 @@ export default function OrdersPage() {
   const canManageDuplicates = isSuperAdmin || ['OWNER', 'DAF', 'MANAGER'].includes(currentEstRole || '');
   const isDAFOrManager = isSuperAdmin || ['DAF', 'MANAGER'].includes(currentEstRole || '');
 
-  const [form, setForm] = useState({ establishmentId: '', tableNumber: '', orderType: 'RESTAURANT' as 'RESTAURANT' | 'LEISURE' | 'LOCATION', items: [{ articleId: '', quantity: 1 }] as Array<{ articleId: string; quantity: number }>, notes: '', startTime: '', endTime: '', isVoucher: false, voucherOwnerId: '', voucherOwnerName: '', discountRuleId: '' });
+  const [form, setForm] = useState({ establishmentId: '', tableNumber: '', orderType: 'RESTAURANT' as 'RESTAURANT' | 'LEISURE' | 'LOCATION', items: [{ articleId: '', quantity: 1 }] as Array<{ articleId: string; quantity: number }>, notes: '', startTime: '', endTime: '', isVoucher: false, voucherOwnerId: '', voucherOwnerName: '', discountRuleId: '', serverId: '', operationDate: '' });
+  const isPOS = currentEstRole === 'POS';
   const [qrModal, setQrModal] = useState<{ open: boolean; invoiceId?: string; qrCode?: string; invoiceNumber?: string; totalAmount?: number; paymentLabel?: string; currency?: string; paid?: boolean; fedapayCheckoutUrl?: string }>({ open: false });
-  const [cashInModal, setCashInModal] = useState<{ open: boolean; order?: Order; method: PaymentMethod }>({ open: false, method: 'CASH' });
+  const [cashInModal, setCashInModal] = useState<{ open: boolean; order?: Order; method: PaymentMethod; paidAt: string }>({ open: false, method: 'CASH', paidAt: '' });
+  const canBackdateBeyondCap = isSuperAdmin || ['OWNER', 'DAF', 'MANAGER'].includes(currentEstRole || '');
   const [addItemsModal, setAddItemsModal] = useState<{ open: boolean; order?: Order; items: Array<{ articleId: string; quantity: number }> }>({ open: false, items: [{ articleId: '', quantity: 1 }] });
 
   // Fetch users (servers) for filter — only for DAF/Manager
@@ -54,10 +56,11 @@ export default function OrdersPage() {
     enabled: isDAFOrManager,
   });
 
-  const effectiveCreatedById = myOrdersOnly ? currentUser?.id : serverFilter;
+  // forUserId matches createdById OR serverId so servers see POS-entered orders attributed to them.
+  const effectiveForUserId = myOrdersOnly ? currentUser?.id : serverFilter;
   const { data, isLoading } = useQuery({
-    queryKey: ['orders', page, statusFilter, effectiveCreatedById, currentEstId],
-    queryFn: () => apiGet<any>(`/orders?page=${page}&limit=20${statusFilter ? `&status=${statusFilter}` : ''}${effectiveCreatedById ? `&createdById=${effectiveCreatedById}` : ''}${currentEstId ? `&establishmentId=${currentEstId}` : ''}`),
+    queryKey: ['orders', page, statusFilter, effectiveForUserId, currentEstId],
+    queryFn: () => apiGet<any>(`/orders?page=${page}&limit=20${statusFilter ? `&status=${statusFilter}` : ''}${effectiveForUserId ? `&forUserId=${effectiveForUserId}` : ''}${currentEstId ? `&establishmentId=${currentEstId}` : ''}`),
     refetchInterval: 15000,
   });
 
@@ -89,6 +92,14 @@ export default function OrdersPage() {
   });
   const discountRules: any[] = discountRulesData?.data || [];
 
+  // Servers list (for POS attribution) — only fetched when a POS user is creating an order
+  const { data: serversData } = useQuery({
+    queryKey: ['establishment-servers', currentEstId],
+    queryFn: () => currentEstId ? apiGet<any>(`/establishments/${currentEstId}/servers`) : null,
+    enabled: isPOS && !!currentEstId && showModal,
+  });
+  const servers: Array<{ id: string; firstName: string; lastName: string; role: string }> = serversData?.data || [];
+
   const createMutation = useMutation({
     mutationFn: (body: any) => apiPost<any>('/orders', body),
     onSuccess: () => {
@@ -114,12 +125,13 @@ export default function OrdersPage() {
   });
 
   const cashInMutation = useMutation({
-    mutationFn: ({ id, method }: { id: string; method: PaymentMethod }) => apiPost<any>(`/orders/${id}/cashin`, { method }),
+    mutationFn: ({ id, method, paidAt }: { id: string; method: PaymentMethod; paidAt?: string }) =>
+      apiPost<any>(`/orders/${id}/cashin`, { method, ...(paidAt ? { paidAt } : {}) }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       queryClient.invalidateQueries({ queryKey: ['order-stats'] });
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
-      setCashInModal({ open: false, method: 'CASH' });
+      setCashInModal({ open: false, method: 'CASH', paidAt: '' });
       toast.success('Encaissement enregistré — commande servie');
     },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur encaissement'),
@@ -171,7 +183,7 @@ export default function OrdersPage() {
     }
   };
 
-  const resetForm = () => setForm({ establishmentId: currentEstId || '', tableNumber: '', orderType: 'RESTAURANT', items: [{ articleId: '', quantity: 1 }], notes: '', startTime: '', endTime: '', isVoucher: false, voucherOwnerId: '', voucherOwnerName: '', discountRuleId: '' });
+  const resetForm = () => setForm({ establishmentId: currentEstId || '', tableNumber: '', orderType: 'RESTAURANT', items: [{ articleId: '', quantity: 1 }], notes: '', startTime: '', endTime: '', isVoucher: false, voucherOwnerId: '', voucherOwnerName: '', discountRuleId: '', serverId: '', operationDate: '' });
 
   const addItem = () => setForm((prev) => ({ ...prev, items: [...prev.items, { articleId: '', quantity: 1 }] }));
   const removeItem = (idx: number) => setForm((prev) => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
@@ -386,7 +398,16 @@ export default function OrdersPage() {
                           )}
                         </div>
                       </td>
-                      <td className="text-gray-500 text-sm">{order.createdBy ? `${order.createdBy.firstName} ${order.createdBy.lastName}` : '-'}</td>
+                      <td className="text-gray-500 text-sm">
+                        {order.server && order.server.id !== order.createdBy?.id ? (
+                          <div>
+                            <div className="text-gray-800">{order.server.firstName} {order.server.lastName}</div>
+                            <div className="text-xs text-gray-400">Saisie: {order.createdBy ? `${order.createdBy.firstName} ${order.createdBy.lastName}` : '-'}</div>
+                          </div>
+                        ) : (
+                          order.createdBy ? `${order.createdBy.firstName} ${order.createdBy.lastName}` : '-'
+                        )}
+                      </td>
                       <td className="text-gray-400 text-xs">{formatDateTime(order.createdAt)}</td>
                       <td>
                         <div className="flex gap-1 flex-wrap">
@@ -401,7 +422,7 @@ export default function OrdersPage() {
                           )}
                           {order.invoiceId && order.status !== 'SERVED' && order.status !== 'CANCELLED' && (
                             <button
-                              onClick={() => setCashInModal({ open: true, order, method: 'CASH' })}
+                              onClick={() => setCashInModal({ open: true, order, method: 'CASH', paidAt: '' })}
                               className="btn-ghost text-xs px-2 py-1 text-red-600 font-medium"
                               title="Enregistrer le paiement et marquer Servie"
                             >
@@ -476,9 +497,14 @@ export default function OrdersPage() {
                   <span>{formatDateTime(order.createdAt)}</span>
                 </div>
 
-                {order.createdBy && (
+                {order.server && order.server.id !== order.createdBy?.id ? (
+                  <div className="text-xs text-gray-500">
+                    Serveur <span className="font-medium text-gray-700">{order.server.firstName} {order.server.lastName}</span>
+                    {order.createdBy && <span className="text-gray-400"> — saisie par {order.createdBy.firstName} {order.createdBy.lastName}</span>}
+                  </div>
+                ) : order.createdBy ? (
                   <div className="text-xs text-gray-400">Par {order.createdBy.firstName} {order.createdBy.lastName}</div>
-                )}
+                ) : null}
 
                 {/* Actions row */}
                 <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-gray-100">
@@ -492,7 +518,7 @@ export default function OrdersPage() {
                   )}
                   {order.invoiceId && order.status !== 'SERVED' && order.status !== 'CANCELLED' && (
                     <button
-                      onClick={() => setCashInModal({ open: true, order, method: 'CASH' })}
+                      onClick={() => setCashInModal({ open: true, order, method: 'CASH', paidAt: '' })}
                       className="btn-ghost text-xs px-2 py-1 text-red-600 font-medium"
                     >
                       <Wallet className="h-3.5 w-3.5 mr-1 inline" /> Encaisser
@@ -655,6 +681,8 @@ export default function OrdersPage() {
             voucherOwnerId: form.isVoucher && form.voucherOwnerId ? form.voucherOwnerId : undefined,
             voucherOwnerName: form.isVoucher && form.voucherOwnerName ? form.voucherOwnerName : undefined,
             discountRuleId: !form.isVoucher && form.discountRuleId ? form.discountRuleId : undefined,
+            serverId: isPOS && form.serverId ? form.serverId : undefined,
+            operationDate: form.operationDate ? new Date(form.operationDate).toISOString() : undefined,
           };
           createMutation.mutate(body);
         }} className="space-y-4">
@@ -680,7 +708,46 @@ export default function OrdersPage() {
               <label className="label">Notes (optionnel)</label>
               <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="input" placeholder="Instructions spéciales..." />
             </div>
+            {(() => {
+              const minDays = canBackdateBeyondCap ? 365 : 15;
+              const minDate = new Date(Date.now() - minDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
+              const maxDate = new Date().toISOString().slice(0, 16);
+              return (
+                <div>
+                  <label className="label">Date de l'opération (optionnel)</label>
+                  <input
+                    type="datetime-local"
+                    value={form.operationDate}
+                    min={minDate}
+                    max={maxDate}
+                    onChange={(e) => setForm({ ...form, operationDate: e.target.value })}
+                    className="input"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Laissez vide pour aujourd'hui. {canBackdateBeyondCap ? 'Rétrodatage illimité (superviseur).' : 'Rétrodatage limité à 15 jours.'}
+                  </p>
+                </div>
+              );
+            })()}
           </div>
+          {isPOS && (
+            <div className="rounded-lg border border-primary-200 bg-primary-50 p-3">
+              <label className="label text-primary-900">Serveur attribué (optionnel)</label>
+              <select
+                value={form.serverId}
+                onChange={(e) => setForm({ ...form, serverId: e.target.value })}
+                className="input border-primary-300 focus:ring-primary-500"
+              >
+                <option value="">— Commande POS (sans serveur) —</option>
+                {servers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.firstName} {s.lastName}{s.role === 'MAITRE_HOTEL' ? ' (Maître d\'hôtel)' : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-primary-700 mt-1">La commande sera attribuée au serveur sélectionné. Votre compte POS reste saisissant pour l&apos;audit.</p>
+            </div>
+          )}
           <p className="text-xs text-gray-500">Le moyen de paiement sera choisi au moment de l&apos;encaissement.</p>
 
           {/* Remise manuelle */}
@@ -897,7 +964,7 @@ export default function OrdersPage() {
       </Modal>
 
       {/* Cash-in modal — choose payment method and confirm */}
-      <Modal open={cashInModal.open} onClose={() => setCashInModal({ open: false, method: 'CASH' })} title="Encaisser la commande" size="md">
+      <Modal open={cashInModal.open} onClose={() => setCashInModal({ open: false, method: 'CASH', paidAt: '' })} title="Encaisser la commande" size="md">
         <div className="space-y-4">
           {cashInModal.order && (
             <div className="bg-gray-50 rounded-lg p-3 text-sm">
@@ -931,13 +998,43 @@ export default function OrdersPage() {
               ))}
             </div>
           </div>
+
+          {/* Backdated payment date (accounting catch-up) */}
+          {(() => {
+            const minDays = canBackdateBeyondCap ? 365 : 15;
+            const minDate = new Date(Date.now() - minDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
+            const maxDate = new Date().toISOString().slice(0, 16);
+            const backdated = cashInModal.paidAt && new Date(cashInModal.paidAt).getTime() < Date.now() - 24 * 60 * 60 * 1000;
+            return (
+              <div>
+                <label className="label">Date du paiement (laisser vide = maintenant)</label>
+                <input
+                  type="datetime-local"
+                  value={cashInModal.paidAt}
+                  min={minDate}
+                  max={maxDate}
+                  onChange={(e) => setCashInModal((prev) => ({ ...prev, paidAt: e.target.value }))}
+                  className="input"
+                />
+                {backdated && (
+                  <p className="text-xs text-amber-700 mt-1">
+                    ⓘ Paiement rétrodaté — apparaîtra à cette date dans les rapports comptables.
+                  </p>
+                )}
+                {!canBackdateBeyondCap && (
+                  <p className="text-xs text-gray-500 mt-1">Limite : 15 jours en arrière. Au-delà, contactez un manager/DAF.</p>
+                )}
+              </div>
+            );
+          })()}
           <div className="flex justify-end gap-3">
-            <button type="button" onClick={() => setCashInModal({ open: false, method: 'CASH' })} className="btn-secondary">Annuler</button>
+            <button type="button" onClick={() => setCashInModal({ open: false, method: 'CASH', paidAt: '' })} className="btn-secondary">Annuler</button>
             <button
               type="button"
               onClick={() => {
                 if (cashInModal.order) {
-                  cashInMutation.mutate({ id: cashInModal.order.id, method: cashInModal.method });
+                  const paidAt = cashInModal.paidAt ? new Date(cashInModal.paidAt).toISOString() : undefined;
+                  cashInMutation.mutate({ id: cashInModal.order.id, method: cashInModal.method, paidAt });
                 }
               }}
               disabled={cashInMutation.isPending || !cashInModal.order}

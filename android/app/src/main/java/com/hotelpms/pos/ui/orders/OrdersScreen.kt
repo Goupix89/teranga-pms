@@ -59,6 +59,14 @@ fun OrdersScreen(
     val uiState = viewModel.uiState
     var receiptOrder by remember { mutableStateOf<Order?>(null) }
 
+    // DAF (financial controller) cannot create orders — force orders list view
+    val canCreate = userRole in listOf("OWNER", "MANAGER", "MAITRE_HOTEL", "SERVER", "POS", "SUPERADMIN")
+    LaunchedEffect(canCreate) {
+        if (!canCreate && uiState.viewMode == "menu") {
+            viewModel.setViewMode("orders")
+        }
+    }
+
     // Receipt dialog — use InvoiceReceiptScreen for orders with invoices (supports thermal invoice printing)
     if (receiptOrder != null && establishment != null) {
         if (receiptOrder!!.invoiceId != null) {
@@ -89,8 +97,9 @@ fun OrdersScreen(
         CashInDialog(
             order = uiState.cashInOrder!!,
             isCashingIn = uiState.isCashingIn,
+            userRole = userRole,
             onDismiss = { viewModel.dismissCashInDialog() },
-            onConfirm = { method -> viewModel.cashIn(uiState.cashInOrder!!.id, method) }
+            onConfirm = { method, paidAt -> viewModel.cashIn(uiState.cashInOrder!!.id, method, paidAt) }
         )
     }
 
@@ -133,14 +142,16 @@ fun OrdersScreen(
                             Icon(Icons.Default.MergeType, contentDescription = "Regrouper factures")
                         }
                     }
-                    // Toggle between menu and orders list
-                    IconButton(onClick = {
-                        viewModel.setViewMode(if (uiState.viewMode == "menu") "orders" else "menu")
-                    }) {
-                        Icon(
-                            if (uiState.viewMode == "menu") Icons.Default.List else Icons.Default.Restaurant,
-                            contentDescription = if (uiState.viewMode == "menu") "Voir commandes" else "Voir menu"
-                        )
+                    // Toggle between menu and orders list — hidden for roles that can't create
+                    if (canCreate) {
+                        IconButton(onClick = {
+                            viewModel.setViewMode(if (uiState.viewMode == "menu") "orders" else "menu")
+                        }) {
+                            Icon(
+                                if (uiState.viewMode == "menu") Icons.Default.List else Icons.Default.Restaurant,
+                                contentDescription = if (uiState.viewMode == "menu") "Voir commandes" else "Voir menu"
+                            )
+                        }
                     }
                     IconButton(onClick = {
                         if (uiState.viewMode == "menu") viewModel.fetchArticles() else viewModel.fetchOrders()
@@ -198,7 +209,7 @@ fun OrdersScreen(
             }
 
             if (uiState.viewMode == "menu") {
-                MenuView(viewModel = viewModel, uiState = uiState)
+                MenuView(viewModel = viewModel, uiState = uiState, userRole = userRole)
             } else {
                 OrdersListView(viewModel = viewModel, uiState = uiState, userRole = userRole, onReceipt = { receiptOrder = it })
             }
@@ -212,7 +223,7 @@ fun OrdersScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MenuView(viewModel: OrdersViewModel, uiState: OrdersUiState) {
+private fun MenuView(viewModel: OrdersViewModel, uiState: OrdersUiState, userRole: String) {
     Column(modifier = Modifier.fillMaxSize()) {
         // Table number row — payment method is chosen at cash-in time
         Row(
@@ -270,6 +281,123 @@ private fun MenuView(viewModel: OrdersViewModel, uiState: OrdersUiState) {
                                     viewModel.setTableNumber(table.number)
                                     tableExpanded = false
                                 }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Server attribution (POS only) — assigns the order to a given server
+        if (userRole == "POS" && uiState.establishmentServers.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(CremeGanvie)
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    var serverExpanded by remember { mutableStateOf(false) }
+                    val selectedLabel = uiState.establishmentServers
+                        .find { it.id == uiState.selectedServerId }
+                        ?.let { "${it.firstName} ${it.lastName}" }
+                        ?: "— Serveur attribué (optionnel) —"
+                    ExposedDropdownMenuBox(
+                        expanded = serverExpanded,
+                        onExpandedChange = { serverExpanded = it }
+                    ) {
+                        OutlinedTextField(
+                            value = selectedLabel,
+                            onValueChange = {},
+                            readOnly = true,
+                            modifier = Modifier
+                                .menuAnchor()
+                                .fillMaxWidth(),
+                            singleLine = true,
+                            textStyle = LocalTextStyle.current.copy(fontSize = 13.sp, color = TerreFon),
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = serverExpanded) },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = TerreFon,
+                                unfocusedTextColor = TerreFon,
+                                focusedBorderColor = RougeDahomey,
+                                unfocusedBorderColor = BronzeAbomey
+                            )
+                        )
+                        ExposedDropdownMenu(
+                            expanded = serverExpanded,
+                            onDismissRequest = { serverExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("— Aucun (commande POS) —", fontSize = 13.sp) },
+                                onClick = {
+                                    viewModel.setSelectedServer("")
+                                    serverExpanded = false
+                                }
+                            )
+                            uiState.establishmentServers.forEach { srv ->
+                                val suffix = if (srv.role == "MAITRE_HOTEL") " (Maître d'hôtel)" else ""
+                                DropdownMenuItem(
+                                    text = { Text("${srv.firstName} ${srv.lastName}$suffix", fontSize = 13.sp) },
+                                    onClick = {
+                                        viewModel.setSelectedServer(srv.id)
+                                        serverExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Operation date — allow backdating an order for yesterday's sales
+        run {
+            val isSupervisor = userRole == "OWNER" || userRole == "DAF" || userRole == "MANAGER" || userRole == "SUPERADMIN"
+            val options = buildList {
+                add(0 to "Aujourd'hui")
+                add(1 to "Hier")
+                add(2 to "Avant-hier")
+                add(3 to "Il y a 3j")
+                if (isSupervisor) add(-1 to "Il y a 14j")
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(CremeGanvie)
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    "Date de l'opération",
+                    fontSize = 11.sp,
+                    color = BronzeAbomey,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    options.forEach { (value, label) ->
+                        val isSel = uiState.operationDateOffset == value
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { viewModel.setOperationDateOffset(value) },
+                            color = if (isSel) OrBeninois.copy(alpha = 0.2f) else Color.Transparent,
+                            shape = RoundedCornerShape(6.dp),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                if (isSel) OrBeninois else BronzeAbomey.copy(alpha = 0.3f)
+                            )
+                        ) {
+                            Text(
+                                label,
+                                modifier = Modifier.padding(vertical = 6.dp, horizontal = 2.dp),
+                                fontSize = 10.sp,
+                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                color = TerreFon,
+                                textAlign = TextAlign.Center
                             )
                         }
                     }
@@ -1185,6 +1313,20 @@ private fun OrderCard(
                     Text("+${(order.items?.size ?: 0) - 3} autre(s)", fontSize = 12.sp, color = BronzeAbomey)
                 }
 
+                // Server / creator attribution
+                val serverName = order.server?.let { "${it.firstName} ${it.lastName}" }
+                val creatorName = order.createdBy?.let { "${it.firstName} ${it.lastName}" }
+                val sameAsCreator = order.server?.id != null && order.server.id == order.createdBy?.id
+                if (serverName != null && !sameAsCreator) {
+                    Text(
+                        text = "Serveur $serverName${creatorName?.let { " · saisie $it" } ?: ""}",
+                        fontSize = 11.sp,
+                        color = BronzeAbomey
+                    )
+                } else if (creatorName != null) {
+                    Text("Par $creatorName", fontSize = 11.sp, color = BronzeAbomey)
+                }
+
                 Spacer(Modifier.height(8.dp))
 
                 Row(
@@ -1216,7 +1358,7 @@ private fun OrderCard(
                             }
                         }
                         val canAddItems = order.status !in listOf("CANCELLED", "SERVED") &&
-                            userRole in listOf("SERVER", "MAITRE_HOTEL", "MANAGER", "DAF", "OWNER", "POS", "SUPERADMIN")
+                            userRole in listOf("SERVER", "MAITRE_HOTEL", "MANAGER", "OWNER", "POS", "SUPERADMIN")
                         if (canAddItems) {
                             OutlinedButton(
                                 onClick = onAddItems,
@@ -1585,10 +1727,14 @@ private fun MergeInvoicesDialog(
 private fun CashInDialog(
     order: Order,
     isCashingIn: Boolean,
+    userRole: String,
     onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit
+    onConfirm: (String, String?) -> Unit
 ) {
     var selected by remember { mutableStateOf("CASH") }
+    // 0 = today, 1 = yesterday, 2 = day before, 3 = 3 days ago, -1 = earlier (supervisor)
+    var dateOffset by remember { mutableStateOf(0) }
+    val isSupervisor = userRole == "OWNER" || userRole == "DAF" || userRole == "MANAGER" || userRole == "SUPERADMIN"
     val methods = listOf(
         "CASH" to "Espèces",
         "MOBILE_MONEY" to "Mobile Money",
@@ -1599,6 +1745,18 @@ private fun CashInDialog(
         "BANK_TRANSFER" to "Virement",
         "OTHER" to "Autre"
     )
+
+    fun buildPaidAtIso(): String? {
+        if (dateOffset == 0) return null
+        val cal = Calendar.getInstance()
+        val daysBack = if (dateOffset < 0) 14 else dateOffset
+        cal.add(Calendar.DAY_OF_YEAR, -daysBack)
+        // Keep current time-of-day (payment occurred "around now" on that business date)
+        val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }.format(cal.time)
+        return iso
+    }
 
     Dialog(onDismissRequest = { if (!isCashingIn) onDismiss() }) {
         Card(
@@ -1673,6 +1831,54 @@ private fun CashInDialog(
                 }
 
                 Spacer(Modifier.height(16.dp))
+                Text("Date de l'opération", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TerreFon)
+                Spacer(Modifier.height(6.dp))
+                val dateOptions = buildList {
+                    add(0 to "Aujourd'hui")
+                    add(1 to "Hier")
+                    add(2 to "Avant-hier")
+                    add(3 to "Il y a 3j")
+                    if (isSupervisor) add(-1 to "Il y a 14j")
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    dateOptions.forEach { (value, label) ->
+                        val isSel = dateOffset == value
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(enabled = !isCashingIn) { dateOffset = value },
+                            color = if (isSel) OrBeninois.copy(alpha = 0.2f) else Color.Transparent,
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                if (isSel) OrBeninois else BronzeAbomey.copy(alpha = 0.3f)
+                            )
+                        ) {
+                            Text(
+                                label,
+                                modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                                fontSize = 11.sp,
+                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                color = TerreFon,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+                if (!isSupervisor) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Rétrodatage >15j réservé aux superviseurs",
+                        fontSize = 10.sp,
+                        color = BronzeAbomey,
+                        fontWeight = FontWeight.Normal
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
@@ -1686,7 +1892,7 @@ private fun CashInDialog(
                     }
                     Spacer(Modifier.width(8.dp))
                     Button(
-                        onClick = { onConfirm(selected) },
+                        onClick = { onConfirm(selected, buildPaidAtIso()) },
                         enabled = !isCashingIn,
                         colors = ButtonDefaults.buttonColors(containerColor = RougeDahomey)
                     ) {

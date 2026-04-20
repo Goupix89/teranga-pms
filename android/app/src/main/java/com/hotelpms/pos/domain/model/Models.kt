@@ -243,6 +243,8 @@ data class Order(
     val notes: String? = null,
     val items: List<OrderItem>? = null,
     val createdBy: UserSummary? = null,
+    val serverId: String? = null,
+    val server: UserSummary? = null,
     val createdAt: String? = null
 )
 
@@ -276,7 +278,8 @@ data class OrderStatusRequest(
 )
 
 data class CashInRequest(
-    val method: String
+    val method: String,
+    val paidAt: String? = null
 )
 
 data class AddOrderItemsRequest(
@@ -296,7 +299,21 @@ data class CreateOrderRequest(
     val items: List<CreateOrderItem>,
     val notes: String? = null,
     val startTime: String? = null,
-    val endTime: String? = null
+    val endTime: String? = null,
+    val serverId: String? = null,
+    val operationDate: String? = null
+)
+
+data class EstablishmentServer(
+    val id: String,
+    val firstName: String,
+    val lastName: String,
+    val role: String
+)
+
+data class EstablishmentServersResponse(
+    val success: Boolean,
+    val data: List<EstablishmentServer>
 )
 
 data class PaymentStatusResponse(

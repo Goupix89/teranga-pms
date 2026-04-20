@@ -188,6 +188,7 @@ export const updateReservationSchema = z.object({
 // =============================================================================
 
 export const createInvoiceSchema = z.object({
+  establishmentId: z.string().uuid().optional(),
   reservationId: z.string().uuid().optional(),
   items: z.array(z.object({
     articleId: z.string().uuid().optional(),
@@ -199,6 +200,7 @@ export const createInvoiceSchema = z.object({
   currency: z.string().length(3).default('XOF'),
   dueDate: z.string().date().optional(),
   notes: z.string().max(500).optional(),
+  issueDate: z.string().datetime().optional(),
 });
 
 export const updateInvoiceSchema = z.object({
@@ -312,6 +314,7 @@ export const createStockMovementSchema = z.object({
   quantity: z.number().int(),
   unitCost: z.number().min(0).optional(),
   reason: z.string().max(500).optional(),
+  occurredAt: z.string().datetime().optional(),
 });
 
 export const approveStockMovementSchema = z.object({});
@@ -396,6 +399,8 @@ export const createOrderSchema = z.object({
   voucherOwnerId: z.string().uuid().optional(),
   voucherOwnerName: z.string().max(200).optional(),
   discountRuleId: z.string().uuid().optional(),
+  serverId: z.string().uuid().optional(),
+  operationDate: z.string().datetime().optional(),
 });
 
 export const updateOrderStatusSchema = z.object({

@@ -28,7 +28,8 @@ export default function StockPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [movementForm, setMovementForm] = useState({ articleId: '', type: 'PURCHASE', quantity: '', unitCost: '', reason: '' });
+  const [movementForm, setMovementForm] = useState({ articleId: '', type: 'PURCHASE', quantity: '', unitCost: '', reason: '', occurredAt: '' });
+  const isSupervisor = ['OWNER', 'DAF', 'MANAGER'].includes(currentEstablishmentRole || '');
   const [showNewCategory, setShowNewCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
 
@@ -701,7 +702,7 @@ export default function StockPage() {
 
       {/* Stock Movement Modal */}
       <Modal open={showMovement} onClose={() => setShowMovement(false)} title="Nouveau mouvement de stock" size="md">
-        <form onSubmit={(e) => { e.preventDefault(); createMovementMutation.mutate({ articleId: movementForm.articleId, type: movementForm.type, quantity: Number(movementForm.quantity), unitCost: movementForm.unitCost ? Number(movementForm.unitCost) : undefined, reason: movementForm.reason || undefined }); }} className="space-y-4">
+        <form onSubmit={(e) => { e.preventDefault(); createMovementMutation.mutate({ articleId: movementForm.articleId, type: movementForm.type, quantity: Number(movementForm.quantity), unitCost: movementForm.unitCost ? Number(movementForm.unitCost) : undefined, reason: movementForm.reason || undefined, occurredAt: movementForm.occurredAt ? new Date(movementForm.occurredAt).toISOString() : undefined }); }} className="space-y-4">
           <div>
             <label className="label">Article</label>
             <select value={movementForm.articleId} onChange={(e) => setMovementForm({ ...movementForm, articleId: e.target.value })} className="input" required>
@@ -724,6 +725,20 @@ export default function StockPage() {
             <div><label className="label">Coût unitaire</label><input type="number" value={movementForm.unitCost} onChange={(e) => setMovementForm({ ...movementForm, unitCost: e.target.value })} className="input" min="0" /></div>
           </div>
           <div><label className="label">Raison</label><textarea value={movementForm.reason} onChange={(e) => setMovementForm({ ...movementForm, reason: e.target.value })} className="input" rows={2} /></div>
+          <div>
+            <label className="label">Date du mouvement (optionnel)</label>
+            <input
+              type="datetime-local"
+              value={movementForm.occurredAt}
+              min={new Date(Date.now() - (isSupervisor ? 365 : 15) * 86400000).toISOString().slice(0, 16)}
+              max={new Date().toISOString().slice(0, 16)}
+              onChange={(e) => setMovementForm({ ...movementForm, occurredAt: e.target.value })}
+              className="input"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Laisser vide = maintenant. {isSupervisor ? 'Rétrodatage illimité autorisé.' : 'Rétrodatage limité à 15 jours (au-delà : contacter un manager/DAF).'}
+            </p>
+          </div>
           <div className="flex justify-end gap-3">
             <button type="button" onClick={() => setShowMovement(false)} className="btn-secondary">Annuler</button>
             <button type="submit" className="btn-primary" disabled={createMovementMutation.isPending}>
