@@ -599,7 +599,7 @@ export class ArticleService {
   async create(tenantId: string, data: {
     categoryId?: string; name: string; sku?: string;
     description?: string; imageUrl?: string; unitPrice: number; costPrice?: number;
-    currentStock?: number; minimumStock?: number; unit?: string;
+    currentStock?: number; minimumStock?: number; trackStock?: boolean; unit?: string;
     isApproved?: boolean; isActive?: boolean; createdById?: string; establishmentId?: string;
   }) {
     const article = await prisma.article.create({

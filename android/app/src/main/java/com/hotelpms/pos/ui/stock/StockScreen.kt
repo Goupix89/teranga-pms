@@ -166,9 +166,9 @@ fun StockScreen(
             title = "Nouvel article",
             categories = state.categories,
             onDismiss = { showArticleDialog = false },
-            onSave = { name, sku, price, stock, unit, description, imageUrl, categoryId ->
+            onSave = { name, sku, price, stock, minimumStock, trackStock, unit, description, imageUrl, categoryId ->
                 showArticleDialog = false
-                viewModel.createArticle(name, sku, price, stock, unit, description, imageUrl, categoryId)
+                viewModel.createArticle(name, sku, price, stock, minimumStock, trackStock, unit, description, imageUrl, categoryId)
             }
         )
     }
@@ -180,10 +180,10 @@ fun StockScreen(
             article = editingArticle,
             categories = state.categories,
             onDismiss = { editingArticle = null },
-            onSave = { name, sku, price, stock, unit, description, imageUrl, categoryId ->
+            onSave = { name, sku, price, stock, minimumStock, trackStock, unit, description, imageUrl, categoryId ->
                 val id = editingArticle!!.id
                 editingArticle = null
-                viewModel.updateArticle(id, name, sku, price, stock, unit, description, imageUrl, categoryId)
+                viewModel.updateArticle(id, name, sku, price, stock, minimumStock, trackStock, unit, description, imageUrl, categoryId)
             }
         )
     }
@@ -219,7 +219,7 @@ private fun ArticleStockCard(
     onEdit: () -> Unit = {},
     onDelete: () -> Unit = {}
 ) {
-    val isLowStock = article.currentStock <= 5
+    val isLowStock = article.trackStock && article.minimumStock > 0 && article.currentStock <= article.minimumStock
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -267,12 +267,26 @@ private fun ArticleStockCard(
             }
 
             Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = "${article.currentStock} ${article.unit}",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isLowStock) RougeDahomey else VertBeninois
-                )
+                if (article.trackStock) {
+                    Text(
+                        text = "${article.currentStock} ${article.unit}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isLowStock) RougeDahomey else VertBeninois
+                    )
+                } else {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            text = "Non suivi",
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
                 Text(
                     text = "${currencyFormat.format(article.unitPrice)} FCFA",
                     style = MaterialTheme.typography.bodySmall,
@@ -431,12 +445,14 @@ private fun ArticleFormDialog(
     article: Article? = null,
     categories: List<ArticleCategory> = emptyList(),
     onDismiss: () -> Unit,
-    onSave: (String, String, Double, Int, String, String, String, String?) -> Unit
+    onSave: (String, String, Double, Int, Int, Boolean, String, String, String, String?) -> Unit
 ) {
     var name by remember { mutableStateOf(article?.name ?: "") }
     var sku by remember { mutableStateOf(article?.sku ?: "") }
     var price by remember { mutableStateOf(article?.unitPrice?.let { if (it > 0) it.toInt().toString() else "" } ?: "") }
+    var trackStock by remember { mutableStateOf(article?.trackStock ?: false) }
     var stock by remember { mutableStateOf(article?.currentStock?.toString() ?: "") }
+    var minimumStock by remember { mutableStateOf(article?.minimumStock?.toString() ?: "") }
     var unit by remember { mutableStateOf(article?.unit ?: "piece") }
     var description by remember { mutableStateOf(article?.description ?: "") }
     var imageUrl by remember { mutableStateOf(article?.imageUrl ?: "") }
@@ -528,22 +544,13 @@ private fun ArticleFormDialog(
                         singleLine = true
                     )
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedTextField(
-                            value = price,
-                            onValueChange = { price = it },
-                            label = { Text("Prix (FCFA) *") },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true
-                        )
-                        OutlinedTextField(
-                            value = stock,
-                            onValueChange = { stock = it },
-                            label = { Text("Stock") },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true
-                        )
-                    }
+                    OutlinedTextField(
+                        value = price,
+                        onValueChange = { price = it },
+                        label = { Text("Prix (FCFA) *") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
 
                     OutlinedTextField(
                         value = unit,
@@ -552,6 +559,53 @@ private fun ArticleFormDialog(
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Checkbox(
+                                    checked = trackStock,
+                                    onCheckedChange = { trackStock = it }
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "Suivre le stock",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        "Activez pour les boissons et produits en inventaire. Laissez desactive pour les plats prepares.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            if (trackStock) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    OutlinedTextField(
+                                        value = stock,
+                                        onValueChange = { stock = it },
+                                        label = { Text("Stock initial") },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true
+                                    )
+                                    OutlinedTextField(
+                                        value = minimumStock,
+                                        onValueChange = { minimumStock = it },
+                                        label = { Text("Stock min.") },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true
+                                    )
+                                }
+                            }
+                        }
+                    }
                     OutlinedTextField(
                         value = description,
                         onValueChange = { description = it },
@@ -587,7 +641,9 @@ private fun ArticleFormDialog(
                             onSave(
                                 name, sku,
                                 price.toDoubleOrNull() ?: 0.0,
-                                stock.toIntOrNull() ?: 0,
+                                if (trackStock) stock.toIntOrNull() ?: 0 else 0,
+                                if (trackStock) minimumStock.toIntOrNull() ?: 0 else 0,
+                                trackStock,
                                 unit, description, imageUrl,
                                 selectedCategoryId
                             )

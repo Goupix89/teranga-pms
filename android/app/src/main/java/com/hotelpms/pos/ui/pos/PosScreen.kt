@@ -329,11 +329,13 @@ private fun ArticleCard(
                             fontSize = 13.sp,
                             color = RougeDahomey
                         )
-                        Text(
-                            text = "Stock: ${article.currentStock}",
-                            fontSize = 10.sp,
-                            color = if (article.currentStock <= 5) RougeDahomey else BronzeAbomey
-                        )
+                        if (article.trackStock) {
+                            Text(
+                                text = "Stock: ${article.currentStock}",
+                                fontSize = 10.sp,
+                                color = if (article.currentStock <= 5) RougeDahomey else BronzeAbomey
+                            )
+                        }
                     }
 
                     if (cartQuantity > 0) {

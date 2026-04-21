@@ -126,6 +126,8 @@ class StockViewModel @Inject constructor(
         sku: String,
         unitPrice: Double,
         currentStock: Int,
+        minimumStock: Int,
+        trackStock: Boolean,
         unit: String,
         description: String,
         imageUrl: String,
@@ -138,6 +140,8 @@ class StockViewModel @Inject constructor(
                     "name" to name,
                     "unitPrice" to unitPrice,
                     "currentStock" to currentStock,
+                    "minimumStock" to minimumStock,
+                    "trackStock" to trackStock,
                     "unit" to unit,
                     "establishmentId" to establishmentId
                 )
@@ -165,6 +169,8 @@ class StockViewModel @Inject constructor(
         sku: String,
         unitPrice: Double,
         currentStock: Int,
+        minimumStock: Int,
+        trackStock: Boolean,
         unit: String,
         description: String,
         imageUrl: String,
@@ -177,6 +183,8 @@ class StockViewModel @Inject constructor(
                     "name" to name,
                     "unitPrice" to unitPrice,
                     "currentStock" to currentStock,
+                    "minimumStock" to minimumStock,
+                    "trackStock" to trackStock,
                     "unit" to unit
                 )
                 if (sku.isNotBlank()) body["sku"] = sku

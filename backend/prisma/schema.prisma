@@ -474,9 +474,10 @@ model Order {
   establishment Establishment @relation(fields: [establishmentId], references: [id])
   createdBy     User          @relation("OrderCreator", fields: [createdById], references: [id])
   server        User?         @relation("OrderServer", fields: [serverId], references: [id])
-  invoice       Invoice?      @relation(fields: [invoiceId], references: [id])
-  discountRule  DiscountRule? @relation(fields: [discountRuleId], references: [id])
-  items         OrderItem[]
+  invoice        Invoice?        @relation(fields: [invoiceId], references: [id])
+  discountRule   DiscountRule?   @relation(fields: [discountRuleId], references: [id])
+  items          OrderItem[]
+  stockMovements StockMovement[]
 
   @@unique([tenantId, orderNumber])
   @@index([tenantId, establishmentId, status])
@@ -645,6 +646,7 @@ model Article {
   costPrice       Decimal  @default(0) @map("cost_price") @db.Decimal(10, 2)
   currentStock    Int      @default(0) @map("current_stock")
   minimumStock    Int      @default(0) @map("minimum_stock")
+  trackStock      Boolean  @default(false) @map("track_stock")
   unit            String   @default("pièce")
   isActive        Boolean  @default(true) @map("is_active")
   isApproved      Boolean  @default(true) @map("is_approved")
@@ -694,6 +696,7 @@ model StockMovement {
   tenantId         String            @map("tenant_id")
   articleId        String            @map("article_id")
   supplierId       String?           @map("supplier_id")
+  orderId          String?           @map("order_id")
   performedById    String            @map("performed_by_id")
   type             StockMovementType
   quantity         Int
@@ -710,12 +713,14 @@ model StockMovement {
   tenant      Tenant    @relation(fields: [tenantId], references: [id])
   article     Article   @relation(fields: [articleId], references: [id])
   supplier    Supplier? @relation(fields: [supplierId], references: [id])
+  order       Order?    @relation(fields: [orderId], references: [id])
   performedBy User      @relation(fields: [performedById], references: [id])
   approvedBy  User?     @relation("MovementApprover", fields: [approvedById], references: [id])
 
   @@index([tenantId])
   @@index([tenantId, articleId])
   @@index([tenantId, createdAt])
+  @@index([tenantId, orderId])
   @@map("stock_movements")
 }
 

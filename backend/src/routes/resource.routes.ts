@@ -517,7 +517,7 @@ orderRouter.post('/duplicates/cancel', authenticate, requireEstablishmentRole('D
     if (!Array.isArray(orderIds) || orderIds.length === 0) {
       return res.status(400).json({ success: false, error: 'orderIds requis (tableau d\'IDs)' });
     }
-    const data = await orderService.cancelDuplicates(req.user!.tenantId, orderIds);
+    const data = await orderService.cancelDuplicates(req.user!.tenantId, orderIds, req.user!.id);
     res.json({ success: true, data });
   })
 );

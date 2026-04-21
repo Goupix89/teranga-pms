@@ -65,7 +65,8 @@
       "Bash(./gradlew :app:compileDebugKotlin --no-daemon -q)",
       "Bash(./gradlew :app:compileDebugKotlin --no-daemon --stacktrace)",
       "Bash(java -version)",
-      "Bash(update-java-alternatives --list)"
+      "Bash(update-java-alternatives --list)",
+      "Bash(echo \"Exit: $?\")"
     ],
     "additionalDirectories": [
       "/home/user/hotel-pms/frontend/src/app/dashboard/clients",

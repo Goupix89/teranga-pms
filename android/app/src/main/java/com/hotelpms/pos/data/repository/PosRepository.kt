@@ -73,6 +73,7 @@ class PosRepository(
                         sku = article.sku,
                         unitPrice = article.unitPrice,
                         currentStock = article.currentStock,
+                        trackStock = article.trackStock,
                         unit = article.unit,
                         categoryName = article.category?.name
                     )

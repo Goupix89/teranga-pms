@@ -279,6 +279,7 @@ export const createArticleSchema = z.object({
   costPrice: z.number({ invalid_type_error: 'Le prix d\'achat doit être un nombre' }).min(0, 'Le prix d\'achat ne peut pas être négatif').default(0),
   currentStock: z.number({ invalid_type_error: 'Le stock doit être un nombre entier' }).int('Le stock doit être un nombre entier').min(0, 'Le stock ne peut pas être négatif').default(0),
   minimumStock: z.number({ invalid_type_error: 'Le stock minimum doit être un nombre entier' }).int('Le stock minimum doit être un nombre entier').min(0, 'Le stock minimum ne peut pas être négatif').default(0),
+  trackStock: z.boolean().optional().default(false),
   unit: z.string().max(20).default('pièce'),
   imageUrl: z.string().max(500, 'URL trop longue').optional().transform(v => v === '' ? undefined : v),
   establishmentId: z.string().uuid().optional(),

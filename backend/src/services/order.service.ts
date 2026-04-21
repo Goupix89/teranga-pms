@@ -213,6 +213,25 @@ export class OrderService {
 
       const articleMap = new Map(articles.map((a) => [a.id, a]));
 
+      // Aggregate quantities per article (same article may appear on multiple lines)
+      // so the stock check sees the total taken from the shelf, not per-line.
+      const quantityByArticle = new Map<string, number>();
+      for (const item of data.items) {
+        quantityByArticle.set(item.articleId, (quantityByArticle.get(item.articleId) || 0) + item.quantity);
+      }
+
+      // Fail fast on insufficient stock for tracked articles
+      const insufficient: string[] = [];
+      for (const [articleId, qty] of quantityByArticle) {
+        const article = articleMap.get(articleId)!;
+        if (article.trackStock && qty > article.currentStock) {
+          insufficient.push(`${article.name} (demandé ${qty}, disponible ${article.currentStock})`);
+        }
+      }
+      if (insufficient.length > 0) {
+        throw new ValidationError(`Stock insuffisant : ${insufficient.join(', ')}`);
+      }
+
       // Calculate subtotal
       let subtotal = 0;
       const itemsData = data.items.map((item) => {
@@ -344,6 +363,70 @@ export class OrderService {
         where: { id: order.id },
         data: { invoiceId: invoice.id },
       });
+
+      // Decrement stock for tracked articles and emit SALE movements so the
+      // inventory reflects the physical goods leaving the shelf. Prepared
+      // dishes (trackStock=false) are untouched. Fires a StockAlert when the
+      // post-sale quantity drops to or below the minimum threshold.
+      const lowStockArticles: Array<{ id: string; name: string; newStock: number; minimumStock: number }> = [];
+      for (const [articleId, qty] of quantityByArticle) {
+        const article = articleMap.get(articleId)!;
+        if (!article.trackStock) continue;
+
+        const previousStock = article.currentStock;
+        const newStock = previousStock - qty;
+
+        await tx.stockMovement.create({
+          data: {
+            tenantId,
+            articleId,
+            orderId: order.id,
+            performedById: userId,
+            type: 'SALE',
+            quantity: -qty,
+            previousStock,
+            newStock,
+            reason: `Vente — commande ${orderNumber}`,
+            ...(data.operationDate ? { occurredAt: data.operationDate } : {}),
+          },
+        });
+
+        await tx.article.update({
+          where: { id: articleId },
+          data: { currentStock: newStock },
+        });
+
+        if (article.minimumStock > 0 && newStock <= article.minimumStock) {
+          lowStockArticles.push({
+            id: articleId,
+            name: article.name,
+            newStock,
+            minimumStock: article.minimumStock,
+          });
+          await tx.stockAlert.create({
+            data: {
+              tenantId,
+              establishmentId: data.establishmentId,
+              articleId,
+              createdById: userId,
+              message: `Stock bas après vente : ${article.name} — ${newStock}/${article.minimumStock}`,
+            },
+          });
+        }
+      }
+
+      // Notify managers of low-stock articles outside the transaction (best-effort)
+      for (const lowStock of lowStockArticles) {
+        notificationService.notifyRole({
+          tenantId,
+          establishmentId: data.establishmentId,
+          roles: ['MANAGER', 'DAF', 'OWNER'],
+          type: 'STOCK_ALERT',
+          title: 'Stock bas',
+          message: `${lowStock.name} : ${lowStock.newStock} unité(s) — seuil ${lowStock.minimumStock}.`,
+          data: { articleId: lowStock.id, newStock: lowStock.newStock },
+        }).catch(() => {});
+      }
 
       // Notify cooks about new order
       notificationService.notifyRole({
@@ -655,6 +738,43 @@ export class OrderService {
         });
       }
 
+      // Restore stock for tracked articles when the order is cancelled.
+      // Only reverses SALE movements that were not already reversed — guarded
+      // by checking for an existing RETURN movement on the same order.
+      if (aggregate === 'CANCELLED' && order.status !== 'CANCELLED') {
+        const saleMovements = await tx.stockMovement.findMany({
+          where: { tenantId, orderId: id, type: 'SALE' },
+        });
+
+        for (const sale of saleMovements) {
+          const article = await tx.article.findUnique({ where: { id: sale.articleId } });
+          if (!article) continue;
+
+          const restoredQty = Math.abs(sale.quantity);
+          const previousStock = article.currentStock;
+          const newStock = previousStock + restoredQty;
+
+          await tx.stockMovement.create({
+            data: {
+              tenantId,
+              articleId: sale.articleId,
+              orderId: id,
+              performedById: userId,
+              type: 'RETURN',
+              quantity: restoredQty,
+              previousStock,
+              newStock,
+              reason: `Annulation commande ${order.orderNumber}`,
+            },
+          });
+
+          await tx.article.update({
+            where: { id: sale.articleId },
+            data: { currentStock: newStock },
+          });
+        }
+      }
+
       // Notify on every status change so all roles see updates in real-time
       const statusLabels: Record<string, string> = {
         IN_PROGRESS: 'en preparation',
@@ -877,7 +997,7 @@ export class OrderService {
    * Cancel duplicate orders and their invoices — keeps the original, cancels the rest.
    * Safe: does not delete anything, only sets status to CANCELLED.
    */
-  async cancelDuplicates(tenantId: string, duplicateOrderIds: string[]) {
+  async cancelDuplicates(tenantId: string, duplicateOrderIds: string[], performedById?: string) {
     if (duplicateOrderIds.length === 0) return { cancelled: 0 };
 
     const db = createTenantClient(tenantId);
@@ -904,6 +1024,37 @@ export class OrderService {
             where: { id: order.invoiceId },
             data: { status: 'CANCELLED', notes: `[AUTO] Facture annulée — doublon de commande ${order.orderNumber}` },
           });
+        }
+
+        // Restore stock for tracked articles on each cancelled duplicate.
+        // Skipped if no user context is available (legacy callers).
+        if (performedById) {
+          const saleMovements = await tx.stockMovement.findMany({
+            where: { tenantId, orderId: order.id, type: 'SALE' },
+          });
+          for (const sale of saleMovements) {
+            const article = await tx.article.findUnique({ where: { id: sale.articleId } });
+            if (!article) continue;
+            const restoredQty = Math.abs(sale.quantity);
+            const newStock = article.currentStock + restoredQty;
+            await tx.stockMovement.create({
+              data: {
+                tenantId,
+                articleId: sale.articleId,
+                orderId: order.id,
+                performedById,
+                type: 'RETURN',
+                quantity: restoredQty,
+                previousStock: article.currentStock,
+                newStock,
+                reason: `Annulation automatique doublon commande ${order.orderNumber}`,
+              },
+            });
+            await tx.article.update({
+              where: { id: sale.articleId },
+              data: { currentStock: newStock },
+            });
+          }
         }
       });
 

@@ -22,7 +22,7 @@ export default function StockPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [showMovement, setShowMovement] = useState(false);
 
-  const defaultForm = { name: '', sku: '', unitPrice: '', costPrice: '', currentStock: '', minimumStock: '', unit: 'plat', description: '', imageUrl: '', categoryId: '' };
+  const defaultForm = { name: '', sku: '', unitPrice: '', costPrice: '', currentStock: '', minimumStock: '', unit: 'plat', description: '', imageUrl: '', categoryId: '', trackStock: false };
   const [articleForm, setArticleForm] = useState(defaultForm);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [isUploading, setIsUploading] = useState(false);
@@ -230,6 +230,7 @@ export default function StockPage() {
       costPrice: articleForm.costPrice ? Number(articleForm.costPrice) : 0,
       currentStock: articleForm.currentStock ? Number(articleForm.currentStock) : 0,
       minimumStock: articleForm.minimumStock ? Number(articleForm.minimumStock) : 0,
+      trackStock: articleForm.trackStock,
       unit: articleForm.unit,
       categoryId: articleForm.categoryId || undefined,
       description: articleForm.description || undefined,
@@ -352,10 +353,12 @@ export default function StockPage() {
                           </span>
                         </td>
                         <td className="font-semibold">{formatCurrency(art.unitPrice)}</td>
-                        <td className="font-semibold">{art.currentStock} {art.unit}</td>
-                        <td className="text-gray-400">{art.minimumStock}</td>
+                        <td className="font-semibold">{art.trackStock ? `${art.currentStock} ${art.unit}` : <span className="text-gray-300">—</span>}</td>
+                        <td className="text-gray-400">{art.trackStock ? art.minimumStock : '—'}</td>
                         <td>
-                          {art.currentStock <= art.minimumStock ? (
+                          {!art.trackStock ? (
+                            <span className="badge-secondary">Non suivi</span>
+                          ) : art.currentStock <= art.minimumStock ? (
                             <span className="badge-danger"><AlertTriangle className="mr-1 h-3 w-3" />Bas</span>
                           ) : (
                             <span className="badge-success">OK</span>
@@ -389,6 +392,7 @@ export default function StockPage() {
                                     description: art.description || '',
                                     imageUrl: art.imageUrl || '',
                                     categoryId: art.category?.id || '',
+                                    trackStock: !!art.trackStock,
                                   });
                                   setImagePreview(art.imageUrl ? resolveImageUrl(art.imageUrl) : null);
                                   setFieldErrors({});
@@ -652,22 +656,37 @@ export default function StockPage() {
             />
           </div>
 
-          {/* Stock fields — collapsible, optional */}
-          <details className="rounded-lg border border-wood-200 p-3">
-            <summary className="cursor-pointer text-sm font-medium text-wood-600 select-none">
-              Stock & inventaire <span className="text-wood-400 text-xs">(optionnel pour les plats préparés)</span>
-            </summary>
-            <div className="grid grid-cols-2 gap-4 mt-3">
+          {/* Stock tracking — opt-in. When enabled, each sale decrements the
+              stock. For prepared dishes, leave this off. */}
+          <div className="rounded-lg border border-wood-200 p-3">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={articleForm.trackStock}
+                onChange={(e) => setArticleForm({ ...articleForm, trackStock: e.target.checked })}
+                className="mt-1"
+              />
               <div>
-                <label className="label">Stock initial</label>
-                <input type="number" value={articleForm.currentStock} onChange={(e) => setArticleForm({ ...articleForm, currentStock: e.target.value })} className="input" min="0" placeholder="0" />
+                <div className="text-sm font-medium text-wood-700">Suivre le stock de cet article</div>
+                <div className="text-xs text-wood-400">
+                  Activez pour les boissons, produits packagés, articles à inventaire. Chaque vente décrémente le stock. Laissez désactivé pour les plats préparés.
+                </div>
               </div>
-              <div>
-                <label className="label">Stock minimum</label>
-                <input type="number" value={articleForm.minimumStock} onChange={(e) => setArticleForm({ ...articleForm, minimumStock: e.target.value })} className="input" min="0" placeholder="0" />
+            </label>
+
+            {articleForm.trackStock && (
+              <div className="grid grid-cols-2 gap-4 mt-3">
+                <div>
+                  <label className="label">Stock initial</label>
+                  <input type="number" value={articleForm.currentStock} onChange={(e) => setArticleForm({ ...articleForm, currentStock: e.target.value })} className="input" min="0" placeholder="0" />
+                </div>
+                <div>
+                  <label className="label">Stock minimum <span className="text-wood-400 text-xs">(alerte)</span></label>
+                  <input type="number" value={articleForm.minimumStock} onChange={(e) => setArticleForm({ ...articleForm, minimumStock: e.target.value })} className="input" min="0" placeholder="0" />
+                </div>
               </div>
-            </div>
-          </details>
+            )}
+          </div>
 
           <div className="flex justify-end gap-3">
             <button type="button" onClick={() => { setShowCreate(false); setEditingArticle(null); setArticleForm(defaultForm); setFieldErrors({}); setImagePreview(null); }} className="btn-secondary">Annuler</button>

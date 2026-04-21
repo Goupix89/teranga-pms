@@ -199,6 +199,7 @@ export interface Article {
   costPrice: number;
   currentStock: number;
   minimumStock: number;
+  trackStock?: boolean;
   unit: string;
   isActive: boolean;
   category?: { id: string; name: string } | null;

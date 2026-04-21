@@ -848,7 +848,7 @@ private fun ArticleDetailDialog(
                     }
 
                     // Stock info
-                    if (article.currentStock > 0) {
+                    if (article.trackStock && article.currentStock > 0) {
                         Spacer(Modifier.height(8.dp))
                         Text(
                             text = "En stock : ${article.currentStock} ${article.unit}",
