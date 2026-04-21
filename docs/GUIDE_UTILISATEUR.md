@@ -28,6 +28,7 @@ Ce guide vous accompagne dans l'utilisation quotidienne de la plateforme Teranga
 20. [Application mobile](#20-application-mobile)
 21. [Fonctionnalités à venir](#21-fonctionnalités-à-venir)
 22. [Questions fréquentes](#22-questions-fréquentes)
+23. [Point de vente (POS) — attribution au serveur & date d'opération](#23-point-de-vente-pos--attribution-au-serveur--date-dopération)
 
 ---
 
@@ -211,6 +212,7 @@ Le serveur prend les commandes des clients et génère les QR codes de paiement.
    - **Moyen de paiement** : Flooz (Moov Money), Yas (MTN), FedaPay, Espèces, Carte, etc.
    - **Articles** : sélectionnez les articles dans la liste déroulante. Seuls les articles des catégories Restaurant et Boissons sont proposés. Ajustez la quantité. Cliquez sur *"+ Ajouter un article"* pour en ajouter d'autres.
    - **Notes** (optionnel) : instructions spéciales
+   - **Date de l'opération** (optionnel) : permet de saisir aujourd'hui une vente effectuée hier ou avant-hier. Laissez vide pour utiliser la date du jour. Limite : 15 jours dans le passé (les rôles Owner/DAF/Manager peuvent dépasser).
 4. Cliquez sur **Créer la commande**
 5. Un **QR code de paiement** s'affiche automatiquement. Montrez-le au client pour qu'il scanne avec son application Flooz ou Yas.
 6. Si **FedaPay** est sélectionné : un bouton et un lien vers la gateway FedaPay s'affichent pour rediriger le client vers la page de paiement.
@@ -232,6 +234,15 @@ Le serveur prend les commandes des clients et génère les QR codes de paiement.
 ### Afficher le QR code d'une commande existante
 
 Dans la liste des commandes, cliquez sur l'icône QR code (colonne "Paiement") pour réafficher le QR code d'une commande déjà créée.
+
+### Filtrer « mes commandes »
+
+Dans la page **Commandes**, activez la case **Mes commandes** pour ne voir que les commandes qui vous concernent. Cette vue inclut :
+
+- Les commandes que **vous avez saisies**
+- Les commandes **saisies par le POS à votre nom** (serveur attribué)
+
+Les Manager, DAF, Owner et SuperAdmin disposent en plus d'un sélecteur **Serveur** pour filtrer les commandes d'un collaborateur spécifique.
 
 ### Suivi des commandes
 
@@ -694,6 +705,8 @@ Un tableau détaillé affiche pour chaque serveur :
 - Revenus générés
 - Moyenne par commande
 
+> **Attribution des commandes POS** : quand une commande est saisie par le POS pour le compte d'un serveur, c'est le **serveur attribué** qui apparaît dans les graphiques, le tableau et les exports CSV — pas le compte POS qui a tapé la commande en caisse.
+
 ### Exporter les données
 
 Trois boutons d'export CSV sont disponibles en haut de la page :
@@ -976,6 +989,58 @@ Le PDF utilise un séparateur de milliers compatible Helvetica (les anciens "/" 
 
 ---
 
-*Document mis à jour le 15 avril 2026 — Teranga PMS v2.6*
+## 23. Point de vente (POS) — attribution au serveur & date d'opération
+
+### Le rôle POS en bref
+
+Le rôle **POS** (caissier) gère la prise de commandes en caisse pour le compte des serveurs. Il a accès au module **Point de vente** (`/dashboard/pos` sur le web, écran équivalent sur mobile) avec une interface optimisée pour saisir rapidement des articles et encaisser.
+
+### Attribuer une commande à un serveur
+
+Depuis la page **Point de vente** (web) ou l'écran POS mobile :
+
+1. Ajoutez les articles dans le panier
+2. Dans le panneau de droite, sélectionnez le **Serveur attribué** dans la liste déroulante
+3. Choisissez le **Moyen de paiement** et, si nécessaire, la **Date de l'opération**
+4. Validez la commande
+
+**Conséquences de l'attribution :**
+
+- Le serveur attribué voit la commande dans sa liste **Commandes > Mes commandes** (web et mobile)
+- Le serveur peut également encaisser cette commande et afficher son QR code
+- Dans les **Rapports** (graphique « Performance par serveur », tableau et exports CSV), les revenus sont comptabilisés pour le serveur attribué, pas pour le compte POS
+
+> **Distinction technique** — `createdById` : qui a saisi la commande (audit, jamais modifié). `serverId` : à qui la commande est attribuée (pour le reporting et la visibilité). Les deux peuvent être la même personne (commande prise directement par le serveur) ou différentes (commande saisie par le POS en caisse).
+
+### Date d'opération rétroactive
+
+Un oubli de saisie la veille ? Le sélecteur **Date de l'opération** permet d'enregistrer aujourd'hui une commande effectuée un jour précédent.
+
+**Disponible dans :**
+
+- POS web (`/dashboard/pos`) — sélecteur datetime-local
+- Page Commandes (`/dashboard/orders`) — champ datetime-local dans le formulaire de création
+- App mobile Android — puces rapides : **Aujourd'hui / Hier / Avant-hier / Il y a 3j** (et **Il y a 14j** pour les rôles superviseurs)
+
+**Effet sur les données :**
+
+- La date est utilisée comme `issueDate` de la facture générée
+- Le paiement enregistré au même moment est daté au `paidAt` = date d'opération
+- Les rapports (ventes du jour, encaissement, tableau de bord) prennent en compte cette date, pas la date de création technique
+
+**Limites :**
+
+| Rôle | Plage autorisée |
+|------|-----------------|
+| Serveur, POS, Maître d'hôtel | Jusqu'à **15 jours dans le passé** |
+| Owner, DAF, Manager, SuperAdmin | Illimité (override superviseur) |
+
+Une opération datée au-delà de la limite retourne une erreur de validation côté API.
+
+---
+
+*Document mis à jour le 21 avril 2026 — Teranga PMS v2.7*
+
+**v2.7** : Point de vente avec attribution au serveur (POS → serveur), date d'opération rétroactive web + mobile (15 j + override superviseur), rapports corrigés pour afficher le serveur attribué plutôt que le compte POS.
 
 **v2.6** : Module Clients & Fidélité, remises automatiques + manuelles, catégories d'articles dynamiques (web + Android), CA consolidé incluant les revenus de réservations, correctifs PDF (séparateurs de milliers + colonnes du détail des transactions).

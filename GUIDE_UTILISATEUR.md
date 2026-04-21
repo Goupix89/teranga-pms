@@ -587,8 +587,12 @@ R : Le serveur génère un QR code depuis l'application. Le client scanne le QR 
 
 ---
 
-*Document mis à jour le 15 avril 2026 — Teranga PMS v2.5*
+*Document mis à jour le 21 avril 2026 — Teranga PMS v2.7*
 
-**Nouveautés v2.5** : module Clients & Fidélité, remises automatiques sur réservations longues, remises manuelles sur commandes, catégories d'articles dynamiques (web + Android), CA consolidé incluant les revenus de réservations.
+**Nouveautés v2.7** : Point de vente (POS) avec attribution au serveur, date d'opération rétroactive (web + mobile, 15 j + override superviseur), rapports corrigés pour afficher le serveur attribué.
+
+**v2.6** : Fiche client avec tier FIDELE, remises automatiques + manuelles, CA consolidé (commandes + réservations), correctifs PDF.
+
+**v2.5** : Module Clients & Fidélité, remises automatiques sur réservations longues, remises manuelles sur commandes, catégories d'articles dynamiques (web + Android), CA consolidé incluant les revenus de réservations.
 
 > **Note** : Le guide utilisateur complet et à jour se trouve dans [`docs/GUIDE_UTILISATEUR.md`](docs/GUIDE_UTILISATEUR.md).

@@ -139,6 +139,8 @@ Le serveur gère les commandes en salle.
 | **Commandes** | Marquer comme servie (`SERVED`) | Oui |
 | **Commandes** | Changer statut cuisine (EN_COURS / PRET) | Non |
 | **Commandes** | Annuler une commande | Non |
+| **Commandes** | Voir ses commandes (créées par lui OU attribuées par le POS) | Oui |
+| **Commandes** | Saisir une commande avec date d'opération rétroactive (≤ 15 jours) | Oui |
 | **Chambres** | Créer / modifier | Non |
 | **Stock** | Mouvements de stock | Non |
 | **Ménage** | Pointage | Non |
@@ -146,7 +148,28 @@ Le serveur gère les commandes en salle.
 #### Dashboard Serveur
 
 - Statistiques de commandes globales
-- Statistiques de commandes personnelles (mes commandes du jour)
+- Statistiques de commandes personnelles (mes commandes du jour — inclut les commandes saisies par le POS en son nom)
+
+---
+
+### POS (Caissier)
+
+Le POS saisit les commandes en caisse pour le compte des serveurs.
+
+#### Permissions
+
+| Module | Action | Autorisé |
+|--------|--------|----------|
+| **Point de vente** | Accès à `/dashboard/pos` (web) et écran POS (mobile) | Oui |
+| **Commandes** | Créer une commande | Oui |
+| **Commandes** | **Attribuer une commande à un serveur** (sélecteur Serveur attribué) | Oui |
+| **Commandes** | Saisir avec date d'opération rétroactive (≤ 15 jours) | Oui |
+| **Paiements** | Encaisser une commande (espèces, carte, mobile money) | Oui |
+| **Factures** | Voir les factures générées | Oui |
+| **Commandes** | Changer statut cuisine / annuler | Non |
+| **Chambres / Réservations / Stock** | Accès | Non |
+
+> **Attribution** — Lorsque le POS coche un serveur dans « Serveur attribué », la commande est enregistrée avec `createdById = POS` (audit de qui a tapé) et `serverId = serveur choisi` (pour le reporting). Le serveur verra la commande dans sa liste et dans ses stats ; les rapports l'attribuent au serveur, pas au POS.
 
 ---
 
@@ -205,6 +228,25 @@ Lorsqu'une commande est créée, une facture est automatiquement générée :
 - Statut : `ISSUED`
 - Montant : total de la commande
 - La facture est liée à la commande
+- Si `operationDate` est fournie : la facture utilise `issueDate = operationDate` (backdate), sinon la date courante
+
+### Attribution POS → Serveur
+
+Lorsqu'une commande est créée depuis le module Point de vente (POS) avec un `serverId` :
+
+- `createdById` = ID du compte POS (audit : qui a saisi en caisse)
+- `serverId` = ID du serveur attribué (revenue credit)
+- Filtre `forUserId=X` : retourne les commandes où `createdById = X` **OU** `serverId = X` — le serveur voit toutes les commandes qui le concernent
+- Agrégations de rapports : `attributed = server || createdBy` — priorité au serveur attribué, fallback sur le créateur
+
+### Date d'opération (backdate)
+
+Le paramètre `operationDate` permet d'enregistrer aujourd'hui une opération datée d'hier :
+
+- Validation côté backend via `validateOperationDate(date, roleCtx)`
+- Rôles opérationnels (SERVER, POS, MAITRE_HOTEL) : rejetés au-delà de 15 jours dans le passé
+- Rôles superviseurs (OWNER, DAF, MANAGER, SUPERADMIN) : aucune limite
+- Propagé sur `Invoice.issueDate`, `Payment.paidAt`, `Order.occurredAt` selon le contexte
 
 ### Création de réservation → Facture + QR code
 

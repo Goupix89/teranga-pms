@@ -64,6 +64,8 @@ hotel-pms/
 23. **Clients & Fidélité** — Fiche client unifiée (orders + réservations), tier `FIDELE` après 5 réservations payées, sinon `NEW`. Liaison automatique des paiements FedaPay et des paiements en ligne (WordPress/channel manager) via le webhook. Carte de fidélité PDF téléchargeable depuis la fiche client.
 24. **Remises (Discounts)** — Remises automatiques sur les réservations selon la durée du séjour : 3-5 nuits = 10 %, 6 nuits = 20 %, > 6 nuits = 25 %. Remises manuelles applicables aux commandes restaurant via des règles définies par le OWNER (montant fixe ou pourcentage, condition de panier minimum). Interface OWNER : `/dashboard/discounts`.
 25. **Rapports CA consolidés** — L'encaissement du jour comptabilise désormais à la fois les paiements de commandes ET les paiements de réservations (FedaPay, espèces, virement, etc.). PDF avec colonnes élargies, séparateur de milliers compatible Helvetica.
+26. **Attribution des commandes au serveur** — Le POS peut saisir une commande au nom d'un serveur (sélecteur **Serveur attribué**). Le serveur voit alors dans sa liste (web + mobile) les commandes saisies par le POS en son nom. Les rapports (dashboard, PDF, CSV) affichent le serveur attribué plutôt que l'opérateur POS. Distinction interne : `createdById` (qui a saisi, pour l'audit) vs `serverId` (à qui la commande est attribuée).
+27. **Date d'opération rétroactive** — Saisir aujourd'hui une commande ou un paiement effectif hier (web + mobile). Un sélecteur **Date de l'opération** apparaît sur le POS, la page Commandes et l'app Android (puces Aujourd'hui / Hier / Avant-hier / Il y a 3j). La date est propagée à la facture (`issueDate`) et au paiement (`paidAt`). Limite de **15 jours** dans le passé pour les rôles opérationnels (SERVER, POS, MAITRE_HOTEL) ; les rôles superviseurs (OWNER, DAF, MANAGER, SUPERADMIN) peuvent dépasser cette limite.
 
 ## Flux de Paiement (Commandes & Réservations)
 
@@ -236,7 +238,11 @@ Le système utilise un **RBAC à 2 niveaux** :
 | Clés API | X | X | X | | | | | |
 | Factures & Paiements | X | X | X | X | X | X | | |
 | Reçus & Factures PDF | X | X | X | X | X | | | |
-| Commandes + QR code | X | X | X | X | X | | | |
+| Commandes + QR code | X | X | X | X | X | X ^3 | | |
+| POS — attribuer la commande à un serveur | X | X | X | X | | X | | |
+| Voir ses commandes (inclut celles saisies par POS) | X | X | X | X | X | | | |
+| Date d'opération rétroactive (≤ 15 jours) | X | X | X | X | X | X | | |
+| Date d'opération > 15 jours | X | X | X | X | | | | |
 | Filtrer commandes par serveur | X | X | X | X | | | | |
 | Cuisine (temps réel) | X | X | X | X | | | X | |
 | Chambres | X | X | X | X | | | | X |
@@ -246,6 +252,7 @@ Le système utilise un **RBAC à 2 niveaux** :
 
 ^1 Le Manager ne peut créer que des serveurs, cuisiniers et ménage (soumis à validation DAF).
 ^2 Les articles créés par le Manager nécessitent l'approbation du DAF avant d'apparaître au menu.
+^3 Le POS saisit les commandes en caisse ; il peut attribuer chaque commande à un serveur via le sélecteur **Serveur attribué**.
 
 ## Endpoints API
 
@@ -266,7 +273,8 @@ Le système utilise un **RBAC à 2 niveaux** :
 ### Réservations & Commandes
 - `/api/reservations` — Réservations (+ check-in, check-out, cancel), auto-génération facture à la création
 - `GET /api/reservations/:id/receipt` — Télécharger le reçu PDF de réservation (format ticket 80mm)
-- `/api/orders` — Commandes (+ `GET /kitchen/:estId`, `GET /stats/:estId`, filtre `?createdById=`)
+- `/api/orders` — Commandes (+ `GET /kitchen/:estId`, `GET /stats/:estId`, filtre `?forUserId=` qui inclut les commandes *saisies par* OU *attribuées à* l'utilisateur)
+  - `POST /api/orders` accepte `serverId` (attribution, POS uniquement) et `operationDate` (ISO, ≤ 15 jours dans le passé sauf supervisor)
 - `GET /api/orders/:id/receipt` — Télécharger le reçu PDF (format ticket 80mm)
 
 ### Facturation & Paiements

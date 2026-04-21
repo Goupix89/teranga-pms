@@ -125,6 +125,14 @@ Ce document liste **tous les scenarios de tests** a executer avant la mise en pr
 | 5.4 | Marquer servie | PATCH /api/orders/:id {status: "SERVED"} | Statut SERVED |
 | 5.5 | Annuler commande | PATCH /api/orders/:id {status: "CANCELLED"} | Statut CANCELLED |
 | 5.6 | Commande avec FedaPay | paymentMethod=FEDAPAY | QR code avec URL FedaPay |
+| 5.7 | POS attribue commande a serveur | Compte POS : POST /api/orders {serverId: X, items: [...]} | Commande cree avec createdById=POS, serverId=X |
+| 5.8 | Serveur voit la commande POS | Compte serveur X : GET /api/orders?forUserId=X | La commande saisie par le POS en 5.7 apparait |
+| 5.9 | Rapport attribue au serveur | GET /api/orders/stats ou rapport daily apres 5.7 | Le revenu est compte pour X, pas pour POS |
+| 5.10 | Date d'operation retroactive (serveur) | POST /api/orders {operationDate: "2026-04-18T12:00:00Z"} (3j passe) | Accepte, facture avec issueDate = 2026-04-18 |
+| 5.11 | Date d'operation au-dela de 15j (serveur) | POST /api/orders {operationDate: J-20} avec role SERVER | 400 Bad Request (depasse la limite) |
+| 5.12 | Override superviseur | Meme POST en tant que DAF/OWNER/MANAGER | Accepte, pas de limite |
+| 5.13 | Puces date mobile | App Android, menu POS/Commandes | Puces "Aujourd'hui / Hier / Avant-hier / Il y a 3j" visibles ; puce "Il y a 14j" visible uniquement pour OWNER/DAF/MANAGER/SUPERADMIN |
+| 5.14 | CSV rapports attribue au serveur | /dashboard/reports > export CSV commandes et caisse | Colonne Serveur = serveur attribue (pas le POS) |
 
 ---
 
