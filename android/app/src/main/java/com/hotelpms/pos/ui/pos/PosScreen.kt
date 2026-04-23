@@ -273,9 +273,12 @@ private fun ArticleCard(
     onRemove: () -> Unit,
     currencyFormat: NumberFormat
 ) {
+    val outOfStock = article.trackStock && article.currentStock <= 0
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = CremeGanvie),
+        colors = CardDefaults.cardColors(
+            containerColor = if (outOfStock) CremeGanvie.copy(alpha = 0.5f) else CremeGanvie
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -294,6 +297,21 @@ private fun ArticleCard(
                     modifier = Modifier.size(28.dp),
                     tint = BronzeAbomey
                 )
+                if (outOfStock) {
+                    Surface(
+                        color = RougeDahomey,
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)
+                    ) {
+                        Text(
+                            text = "RUPTURE",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                }
             }
 
             Column(modifier = Modifier.padding(10.dp)) {
@@ -381,6 +399,7 @@ private fun ArticleCard(
                     } else {
                         FilledTonalButton(
                             onClick = onAdd,
+                            enabled = !outOfStock,
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                             colors = ButtonDefaults.filledTonalButtonColors(
                                 containerColor = VertBeninois.copy(alpha = 0.15f),

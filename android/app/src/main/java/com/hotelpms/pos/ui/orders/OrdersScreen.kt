@@ -551,6 +551,7 @@ private fun MenuCard(
     onRemove: () -> Unit
 ) {
     var showDetail by remember { mutableStateOf(false) }
+    val outOfStock = article.trackStock && article.currentStock <= 0
 
     // Article detail dialog
     if (showDetail) {
@@ -567,7 +568,9 @@ private fun MenuCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { showDetail = true },
-        colors = CardDefaults.cardColors(containerColor = CremeGanvie),
+        colors = CardDefaults.cardColors(
+            containerColor = if (outOfStock) CremeGanvie.copy(alpha = 0.5f) else CremeGanvie
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -630,6 +633,23 @@ private fun MenuCard(
                     overflow = TextOverflow.Ellipsis
                 )
 
+                if (outOfStock) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "En rupture",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = RougeDahomey
+                    )
+                } else if (article.trackStock) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "Stock : ${article.currentStock}",
+                        fontSize = 10.sp,
+                        color = if (article.currentStock <= 5) RougeDahomey else BronzeAbomey
+                    )
+                }
+
                 Spacer(Modifier.height(6.dp))
 
                 // Price + quantity controls
@@ -676,13 +696,14 @@ private fun MenuCard(
                             }
                             IconButton(
                                 onClick = onAdd,
+                                enabled = !outOfStock,
                                 modifier = Modifier.size(28.dp)
                             ) {
                                 Icon(
                                     Icons.Default.Add,
                                     contentDescription = "Ajouter",
                                     modifier = Modifier.size(16.dp),
-                                    tint = VertBeninois
+                                    tint = if (outOfStock) BronzeAbomey.copy(alpha = 0.4f) else VertBeninois
                                 )
                             }
                         }
@@ -690,6 +711,7 @@ private fun MenuCard(
                         // Add button
                         FilledTonalButton(
                             onClick = onAdd,
+                            enabled = !outOfStock,
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                             colors = ButtonDefaults.filledTonalButtonColors(
                                 containerColor = VertBeninois.copy(alpha = 0.15f),
@@ -698,7 +720,7 @@ private fun MenuCard(
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(2.dp))
-                            Text("Ajouter", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(if (outOfStock) "Rupture" else "Ajouter", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

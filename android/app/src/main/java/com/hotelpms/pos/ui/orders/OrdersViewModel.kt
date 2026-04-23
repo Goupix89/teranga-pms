@@ -333,9 +333,16 @@ class OrdersViewModel @Inject constructor(
 
     fun addToCart(article: Article) {
         val existing = uiState.cart.find { it.article.id == article.id }
+        val nextQty = (existing?.quantity ?: 0) + 1
+        if (article.trackStock && nextQty > article.currentStock) {
+            uiState = uiState.copy(
+                error = "Stock insuffisant pour ${article.name} (${article.currentStock} disponible)"
+            )
+            return
+        }
         val newCart = if (existing != null) {
             uiState.cart.map {
-                if (it.article.id == article.id) it.copy(quantity = it.quantity + 1) else it
+                if (it.article.id == article.id) it.copy(quantity = nextQty) else it
             }
         } else {
             uiState.cart + CartEntry(article, 1)
@@ -637,9 +644,16 @@ class OrdersViewModel @Inject constructor(
 
     fun addItemsIncrement(article: Article) {
         val existing = uiState.addItemsCart.find { it.article.id == article.id }
+        val nextQty = (existing?.quantity ?: 0) + 1
+        if (article.trackStock && nextQty > article.currentStock) {
+            uiState = uiState.copy(
+                error = "Stock insuffisant pour ${article.name} (${article.currentStock} disponible)"
+            )
+            return
+        }
         val newCart = if (existing != null) {
             uiState.addItemsCart.map {
-                if (it.article.id == article.id) it.copy(quantity = it.quantity + 1) else it
+                if (it.article.id == article.id) it.copy(quantity = nextQty) else it
             }
         } else {
             uiState.addItemsCart + CartEntry(article, 1)

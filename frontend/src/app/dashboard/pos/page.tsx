@@ -22,6 +22,7 @@ interface Article {
   imageUrl?: string | null;
   description?: string | null;
   currentStock?: number;
+  trackStock?: boolean;
 }
 
 interface CartItem {
@@ -132,6 +133,14 @@ export default function PosPage() {
 
   // Cart operations
   const addToCart = (article: Article) => {
+    if (article.trackStock) {
+      const available = article.currentStock ?? 0;
+      const current = cart.find((c) => c.article.id === article.id)?.quantity ?? 0;
+      if (current + 1 > available) {
+        toast.error(`Stock insuffisant pour ${article.name} (${available} disponible${available > 1 ? 's' : ''})`);
+        return;
+      }
+    }
     setCart((prev) => {
       const existing = prev.find((item) => item.article.id === article.id);
       if (existing) {
@@ -146,15 +155,23 @@ export default function PosPage() {
   };
 
   const updateQuantity = (articleId: string, delta: number) => {
-    setCart((prev) =>
-      prev
+    setCart((prev) => {
+      const item = prev.find((i) => i.article.id === articleId);
+      if (item && delta > 0 && item.article.trackStock) {
+        const available = item.article.currentStock ?? 0;
+        if (item.quantity + delta > available) {
+          toast.error(`Stock insuffisant pour ${item.article.name} (${available} disponible${available > 1 ? 's' : ''})`);
+          return prev;
+        }
+      }
+      return prev
         .map((item) =>
           item.article.id === articleId
             ? { ...item, quantity: Math.max(0, item.quantity + delta) }
             : item
         )
-        .filter((item) => item.quantity > 0)
-    );
+        .filter((item) => item.quantity > 0);
+    });
   };
 
   const removeFromCart = (articleId: string) => {
@@ -332,19 +349,28 @@ export default function PosPage() {
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
               {filteredArticles.map((article) => {
                 const inCart = cart.find((c) => c.article.id === article.id);
+                const outOfStock = article.trackStock && (article.currentStock ?? 0) <= 0;
                 return (
                   <button
                     key={article.id}
                     onClick={() => addToCart(article)}
-                    className={`group relative flex flex-col rounded-xl border-2 p-3 text-left transition-all hover:shadow-md ${
-                      inCart
-                        ? 'border-primary-500 bg-primary-50'
-                        : 'border-gray-200 bg-white hover:border-gray-300'
+                    disabled={outOfStock}
+                    className={`group relative flex flex-col rounded-xl border-2 p-3 text-left transition-all ${
+                      outOfStock
+                        ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'
+                        : inCart
+                          ? 'border-primary-500 bg-primary-50 hover:shadow-md'
+                          : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-md'
                     }`}
                   >
-                    {inCart && (
+                    {inCart && !outOfStock && (
                       <span className="absolute -top-2 -right-2 flex h-6 w-6 items-center justify-center rounded-full bg-primary-600 text-xs font-bold text-white">
                         {inCart.quantity}
+                      </span>
+                    )}
+                    {outOfStock && (
+                      <span className="absolute top-1 right-1 rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">
+                        Rupture
                       </span>
                     )}
                     {article.imageUrl ? (
@@ -360,7 +386,12 @@ export default function PosPage() {
                     <p className="mt-auto pt-1 text-sm font-bold text-primary-600">
                       {formatCurrency(article.unitPrice)}
                     </p>
-                    {article.category && (
+                    {article.trackStock && (
+                      <p className={`text-xs mt-0.5 ${outOfStock ? 'text-red-600 font-medium' : (article.currentStock ?? 0) <= 5 ? 'text-orange-600' : 'text-gray-400'}`}>
+                        Stock : {article.currentStock ?? 0}
+                      </p>
+                    )}
+                    {article.category && !article.trackStock && (
                       <p className="text-xs text-gray-400 mt-0.5">{article.category.name}</p>
                     )}
                   </button>

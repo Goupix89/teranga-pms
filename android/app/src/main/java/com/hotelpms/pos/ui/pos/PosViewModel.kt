@@ -132,9 +132,16 @@ class PosViewModel @Inject constructor(
     fun addToCart(article: CachedArticle) {
         val current = _cartItems.value.toMutableList()
         val existingIndex = current.indexOfFirst { it.article.id == article.id }
+        val nextQty = if (existingIndex >= 0) current[existingIndex].quantity + 1 else 1
+        if (article.trackStock && nextQty > article.currentStock) {
+            uiState = uiState.copy(
+                error = "Stock insuffisant pour ${article.name} (${article.currentStock} disponible)"
+            )
+            return
+        }
         if (existingIndex >= 0) {
             val existing = current[existingIndex]
-            current[existingIndex] = existing.copy(quantity = existing.quantity + 1)
+            current[existingIndex] = existing.copy(quantity = nextQty)
         } else {
             current.add(CartItem(article = article, quantity = 1))
         }

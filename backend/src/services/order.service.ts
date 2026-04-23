@@ -535,6 +535,24 @@ export class OrderService {
       }
       const articleMap = new Map(articles.map((a) => [a.id, a]));
 
+      // Aggregate quantities per article for stock validation
+      const quantityByArticle = new Map<string, number>();
+      for (const item of data.items) {
+        quantityByArticle.set(item.articleId, (quantityByArticle.get(item.articleId) || 0) + item.quantity);
+      }
+
+      // Fail fast on insufficient stock for tracked articles
+      const insufficient: string[] = [];
+      for (const [articleId, qty] of quantityByArticle) {
+        const article = articleMap.get(articleId)!;
+        if (article.trackStock && qty > article.currentStock) {
+          insufficient.push(`${article.name} (demandé ${qty}, disponible ${article.currentStock})`);
+        }
+      }
+      if (insufficient.length > 0) {
+        throw new ValidationError(`Stock insuffisant : ${insufficient.join(', ')}`);
+      }
+
       // Build new items + subtotal delta
       let deltaSubtotal = 0;
       const orderItemsData = data.items.map((item) => {
@@ -588,6 +606,65 @@ export class OrderService {
         where: { id: order.invoiceId! },
         data: { subtotal: newInvoiceSubtotal, totalAmount: newInvoiceTotal },
       });
+
+      // Decrement stock for tracked articles on the appended items.
+      const lowStockArticles: Array<{ id: string; name: string; newStock: number; minimumStock: number }> = [];
+      for (const [articleId, qty] of quantityByArticle) {
+        const article = articleMap.get(articleId)!;
+        if (!article.trackStock) continue;
+
+        const previousStock = article.currentStock;
+        const newStock = previousStock - qty;
+
+        await tx.stockMovement.create({
+          data: {
+            tenantId,
+            articleId,
+            orderId: order.id,
+            performedById: userId,
+            type: 'SALE',
+            quantity: -qty,
+            previousStock,
+            newStock,
+            reason: `Vente (ajout) — commande ${order.orderNumber}`,
+          },
+        });
+
+        await tx.article.update({
+          where: { id: articleId },
+          data: { currentStock: newStock },
+        });
+
+        if (article.minimumStock > 0 && newStock <= article.minimumStock) {
+          lowStockArticles.push({
+            id: articleId,
+            name: article.name,
+            newStock,
+            minimumStock: article.minimumStock,
+          });
+          await tx.stockAlert.create({
+            data: {
+              tenantId,
+              establishmentId: order.establishmentId,
+              articleId,
+              createdById: userId,
+              message: `Stock bas après vente : ${article.name} — ${newStock}/${article.minimumStock}`,
+            },
+          });
+        }
+      }
+
+      for (const lowStock of lowStockArticles) {
+        notificationService.notifyRole({
+          tenantId,
+          establishmentId: order.establishmentId,
+          roles: ['MANAGER', 'DAF', 'OWNER'],
+          type: 'STOCK_ALERT',
+          title: 'Stock bas',
+          message: `${lowStock.name} : ${lowStock.newStock} unité(s) — seuil ${lowStock.minimumStock}.`,
+          data: { articleId: lowStock.id, newStock: lowStock.newStock },
+        }).catch(() => {});
+      }
 
       // Notify cooks of the new items
       notificationService.notifyRole({
