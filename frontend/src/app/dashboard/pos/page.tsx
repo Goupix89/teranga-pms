@@ -7,12 +7,16 @@ import { api } from '@/lib/api';
 import { LoadingPage, EmptyState } from '@/components/ui';
 import {
   ShoppingCart, Search, Minus, Plus, Trash2, X, QrCode,
-  ExternalLink, CheckCircle2, Loader2, Receipt, FileDown, Wallet,
+  ExternalLink, CheckCircle2, Loader2, Receipt, FileDown, Wallet, WifiOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatCurrency, statusLabels } from '@/lib/utils';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { PaymentMethod } from '@/types';
+import { useOfflineStatus } from '@/hooks/useOfflineStatus';
+import {
+  cacheArticles, readCachedArticles, enqueueOp, newId, nextLocalOrderRef,
+} from '@/lib/offline-db';
 
 interface Article {
   id: string;
@@ -46,7 +50,10 @@ export default function PosPage() {
   const currentEstId = useAuthStore((s) => s.currentEstablishmentId);
   const currentUser = useAuthStore((s) => s.user);
   const currentEstRole = useAuthStore((s) => s.currentEstablishmentRole);
+  const currentTenantId = currentUser?.tenantId || '';
   const isPOS = currentEstRole === 'POS';
+  const { online, offline } = useOfflineStatus();
+  const [offlineArticles, setOfflineArticles] = useState<Article[]>([]);
 
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
@@ -119,8 +126,27 @@ export default function PosPage() {
   });
   const discountRules: any[] = discountRulesData?.data || [];
 
-  const articles: Article[] = articlesData?.data || [];
+  const onlineArticles: Article[] = articlesData?.data || [];
+  // Merge: prefer fresh server data, fall back to cached articles when offline
+  const articles: Article[] = onlineArticles.length > 0 ? onlineArticles : offlineArticles;
   const categories = categoriesData?.data || [];
+
+  // Cache articles to IndexedDB whenever they arrive (so the POS can survive a
+  // network outage with the menu it last saw).
+  useEffect(() => {
+    if (onlineArticles.length > 0 && currentEstId && currentTenantId) {
+      cacheArticles(currentTenantId, currentEstId, onlineArticles as unknown as Array<{ id: string }>)
+        .catch(() => { /* cache write failure is non-fatal */ });
+    }
+  }, [onlineArticles, currentEstId, currentTenantId]);
+
+  // Read from cache when offline on mount
+  useEffect(() => {
+    if (!currentEstId) return;
+    readCachedArticles(currentEstId)
+      .then((rows) => setOfflineArticles(rows as Article[]))
+      .catch(() => setOfflineArticles([]));
+  }, [currentEstId, offline]);
 
   // Filter articles
   const filteredArticles = useMemo(() => {
@@ -239,15 +265,18 @@ export default function PosPage() {
     }
   };
 
-  const handleSubmitOrder = () => {
+  const handleSubmitOrder = async () => {
     if (cart.length === 0) {
       toast.error('Le panier est vide');
       return;
     }
-    const operationDateIso = operationDate ? new Date(operationDate).toISOString() : undefined;
-    createMutation.mutate({
+    const operationDateIso = operationDate
+      ? new Date(operationDate).toISOString()
+      : new Date().toISOString();
+    const idempotencyKey = crypto.randomUUID();
+    const payload = {
       establishmentId: currentEstId,
-      idempotencyKey: crypto.randomUUID(),
+      idempotencyKey,
       tableNumber: tableNumber || undefined,
       notes: notes || undefined,
       discountRuleId: !isVoucher && discountRuleId ? discountRuleId : undefined,
@@ -261,7 +290,43 @@ export default function PosPage() {
         quantity: item.quantity,
         unitPrice: item.article.unitPrice,
       })),
+    };
+
+    // Online: existing happy path
+    if (online) {
+      createMutation.mutate(payload);
+      return;
+    }
+
+    // Offline: persist in IndexedDB; sync worker will drain on reconnection.
+    // We don't open the cash-in modal because digital methods need the server;
+    // operator can record CASH payment via the same offline queue later, or
+    // simply hand-write the ticket and wait for sync.
+    if (isVoucher && !voucherOwnerId) {
+      toast.error('Propriétaire requis pour un bon hors-ligne');
+      return;
+    }
+
+    const localRef = nextLocalOrderRef();
+    const summary = `${cart.length} article(s) — ${formatCurrency(cartTotal)}${tableNumber ? ` — Table ${tableNumber}` : ''}`;
+
+    await enqueueOp({
+      id: newId(),
+      type: 'order.create',
+      method: 'POST',
+      url: '/orders',
+      payload,
+      idempotencyKey,
+      localRef,
+      tenantId: currentTenantId,
+      establishmentId: currentEstId || undefined,
+      summary,
     });
+
+    toast.success(`Commande ${localRef} enregistrée hors-ligne — sera envoyée au retour du réseau`);
+    clearCart();
+    setTableNumber('');
+    setNotes('');
   };
 
   // Simulate payment (dev)
@@ -618,25 +683,40 @@ export default function PosPage() {
               <p className="text-xl font-bold text-primary-700 mt-1">{formatCurrency(cashInModal.totalAmount || 0)}</p>
             </div>
             <p className="text-xs font-medium text-gray-500 mb-2">Moyen de paiement</p>
+            {offline && (
+              <div className="mb-2 flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
+                <WifiOff className="h-3.5 w-3.5" />
+                Hors-ligne — seuls espèces, virement ou "autre" sont disponibles. Les paiements électroniques nécessitent Internet.
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-2 mb-4">
-              {CASHIN_METHODS.map((m) => (
-                <label
-                  key={m.value}
-                  className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${
-                    cashInModal.method === m.value ? 'border-primary-500 bg-primary-50' : 'border-gray-200 hover:bg-gray-50'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="posCashInMethod"
-                    value={m.value}
-                    checked={cashInModal.method === m.value}
-                    onChange={() => setCashInModal((prev) => ({ ...prev, method: m.value }))}
-                    className="h-4 w-4 text-primary-600"
-                  />
-                  <span className="text-sm">{m.label}</span>
-                </label>
-              ))}
+              {CASHIN_METHODS.map((m) => {
+                const requiresOnline = ['MOBILE_MONEY', 'MOOV_MONEY', 'MIXX_BY_YAS', 'FEDAPAY', 'CARD'].includes(m.value);
+                const disabled = offline && requiresOnline;
+                return (
+                  <label
+                    key={m.value}
+                    className={`flex items-center gap-2 rounded-lg border px-3 py-2 transition-colors ${
+                      disabled
+                        ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'
+                        : cashInModal.method === m.value
+                          ? 'border-primary-500 bg-primary-50 cursor-pointer'
+                          : 'border-gray-200 hover:bg-gray-50 cursor-pointer'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="posCashInMethod"
+                      value={m.value}
+                      checked={cashInModal.method === m.value}
+                      disabled={disabled}
+                      onChange={() => setCashInModal((prev) => ({ ...prev, method: m.value }))}
+                      className="h-4 w-4 text-primary-600"
+                    />
+                    <span className="text-sm">{m.label}</span>
+                  </label>
+                );
+              })}
             </div>
             {(cashInModal.method === 'FEDAPAY' || cashInModal.method === 'MOBILE_MONEY' || cashInModal.method === ('MOOV_MONEY' as PaymentMethod) || cashInModal.method === ('MIXX_BY_YAS' as PaymentMethod)) && (
               <button

@@ -225,6 +225,8 @@ export const createPaymentSchema = z.object({
   amount: z.number().positive(),
   method: z.enum(['CASH', 'CARD', 'BANK_TRANSFER', 'MOBILE_MONEY', 'MOOV_MONEY', 'MIXX_BY_YAS', 'FEDAPAY', 'OTHER']),
   reference: z.string().max(100).optional(),
+  transactionUuid: z.string().uuid('UUID invalide').optional(),
+  paidAt: z.string().datetime().optional(),
 });
 
 // =============================================================================

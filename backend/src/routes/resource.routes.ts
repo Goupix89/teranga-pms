@@ -1132,7 +1132,24 @@ export const paymentRouter = Router();
 
 paymentRouter.post('/', authenticate, requirePaymentRole, validate(v.createPaymentSchema),
   asyncHandler(async (req, res) => {
-    const { payment, alreadyProcessed } = await paymentService.create(req.user!.tenantId, req.body);
+    // Validate optional backdated paidAt (offline replay may carry a client clock)
+    let paidAt: Date | undefined;
+    if (req.body.paidAt) {
+      try {
+        const d = validateOperationDate(req.body.paidAt, {
+          userRole: req.user!.role,
+          establishmentRole: req.user?.memberships?.[0]?.role ?? null,
+          fieldLabel: 'la date du paiement',
+        });
+        paidAt = d ?? undefined;
+      } catch (e: any) {
+        return res.status(400).json({ success: false, error: e.message });
+      }
+    }
+    const { payment, alreadyProcessed } = await paymentService.create(req.user!.tenantId, {
+      ...req.body,
+      ...(paidAt ? { paidAt } : {}),
+    });
     res.status(alreadyProcessed ? 200 : 201).json({ success: true, data: payment });
   })
 );

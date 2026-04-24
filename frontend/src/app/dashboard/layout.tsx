@@ -4,6 +4,8 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { Sidebar } from '@/components/layout/Sidebar';
+import { OfflineBadge } from '@/components/layout/OfflineBadge';
+import { ServiceWorkerRegistrar } from '@/components/layout/ServiceWorkerRegistrar';
 import { LoadingPage } from '@/components/ui';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -46,6 +48,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex min-h-screen">
       <Sidebar />
+      <OfflineBadge />
+      <ServiceWorkerRegistrar />
       <main className="ml-64 flex-1 bg-wood-50 p-6 lg:p-8">
         {children}
       </main>

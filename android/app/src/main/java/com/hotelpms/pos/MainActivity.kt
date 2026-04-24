@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CleaningServices
+import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Inventory
 import androidx.compose.material.icons.outlined.KingBed
 import androidx.compose.material.icons.outlined.LocalDining
@@ -96,6 +97,7 @@ val allNavItems = listOf(
     NavItem("invoices", "Factures", Icons.Outlined.ReceiptLong),
     NavItem("approvals", "Approbations", Icons.Default.CheckCircle),
     NavItem("pos", "POS", Icons.Outlined.PointOfSale),
+    NavItem("offline", "Hors-ligne", Icons.Outlined.CloudOff),
     NavItem("notifications", "Notifs", Icons.Outlined.Notifications)
 )
 
@@ -111,14 +113,14 @@ fun navLayoutForRole(role: String): NavLayout {
     val (primaryRoutes, overflowRoutes) = when (role.uppercase()) {
         "COOK" -> listOf("dashboard", "kitchen", "notifications") to emptyList()
         "CLEANER" -> listOf("dashboard", "cleaning", "notifications") to emptyList()
-        "SERVER" -> listOf("dashboard", "orders", "invoices", "pos") to listOf("notifications")
-        "POS" -> listOf("dashboard", "orders", "invoices", "pos") to listOf("notifications")
-        "MAITRE_HOTEL" -> listOf("dashboard", "orders", "invoices", "pos") to listOf("stock", "notifications")
-        "MANAGER" -> listOf("dashboard", "orders", "invoices", "pos") to listOf("rooms", "reservations", "stock", "approvals", "notifications")
-        "DAF" -> listOf("dashboard", "orders", "invoices", "approvals") to listOf("rooms", "reservations", "stock", "notifications")
-        "OWNER" -> listOf("dashboard", "orders", "invoices", "approvals") to listOf("rooms", "reservations", "stock", "notifications")
-        "SUPERADMIN" -> listOf("dashboard", "orders", "kitchen", "invoices") to listOf("rooms", "reservations", "cleaning", "stock", "approvals", "pos", "notifications")
-        else -> listOf("dashboard", "orders", "invoices", "pos") to listOf("notifications")
+        "SERVER" -> listOf("dashboard", "orders", "invoices", "pos") to listOf("offline", "notifications")
+        "POS" -> listOf("dashboard", "orders", "invoices", "pos") to listOf("offline", "notifications")
+        "MAITRE_HOTEL" -> listOf("dashboard", "orders", "invoices", "pos") to listOf("stock", "offline", "notifications")
+        "MANAGER" -> listOf("dashboard", "orders", "invoices", "pos") to listOf("rooms", "reservations", "stock", "approvals", "offline", "notifications")
+        "DAF" -> listOf("dashboard", "orders", "invoices", "approvals") to listOf("rooms", "reservations", "stock", "offline", "notifications")
+        "OWNER" -> listOf("dashboard", "orders", "invoices", "approvals") to listOf("rooms", "reservations", "stock", "offline", "notifications")
+        "SUPERADMIN" -> listOf("dashboard", "orders", "kitchen", "invoices") to listOf("rooms", "reservations", "cleaning", "stock", "approvals", "pos", "offline", "notifications")
+        else -> listOf("dashboard", "orders", "invoices", "pos") to listOf("offline", "notifications")
     }
     return NavLayout(primary = itemsFor(primaryRoutes), overflow = itemsFor(overflowRoutes))
 }
@@ -341,6 +343,10 @@ fun MainScaffold(
 
             composable("pos") {
                 PosScreen(onLogout = onLogout)
+            }
+
+            composable("offline") {
+                com.hotelpms.pos.ui.offline.OfflineQueueScreen()
             }
 
             composable("notifications") {
