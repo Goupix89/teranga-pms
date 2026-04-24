@@ -93,6 +93,18 @@ enum StockMovementType {
   RETURN
 }
 
+enum ExpenseCategory {
+  SUPPLIES
+  SALARY
+  UTILITIES
+  RENT
+  MAINTENANCE
+  TRANSPORT
+  MARKETING
+  TAXES
+  OTHER
+}
+
 enum BookingSource {
   DIRECT
   BOOKING_COM
@@ -182,6 +194,7 @@ model Tenant {
   restaurantTables   RestaurantTable[]
   clients            Client[]
   discountRules      DiscountRule[]
+  expenses           Expense[]
 
   @@map("tenants")
 }
@@ -237,6 +250,8 @@ model User {
   notifications     Notification[]
   deviceTokens      DeviceToken[]
   dashboardConfigs  DashboardConfig[]
+  expensesCreated   Expense[]             @relation("ExpenseCreator")
+  expensesDeleted   Expense[]             @relation("ExpenseDeleter")
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -294,6 +309,7 @@ model Establishment {
   restaurantTables RestaurantTable[]
   dashboardConfigs DashboardConfig[]
   invoices         Invoice[]
+  expenses         Expense[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -685,6 +701,7 @@ model Supplier {
 
   tenant         Tenant          @relation(fields: [tenantId], references: [id])
   stockMovements StockMovement[]
+  expenses       Expense[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -722,6 +739,35 @@ model StockMovement {
   @@index([tenantId, createdAt])
   @@index([tenantId, orderId])
   @@map("stock_movements")
+}
+
+model Expense {
+  id              String          @id @default(uuid())
+  tenantId        String          @map("tenant_id")
+  establishmentId String          @map("establishment_id")
+  amount          Decimal         @db.Decimal(12, 2)
+  reason          String
+  category        ExpenseCategory @default(OTHER)
+  paymentMethod   PaymentMethod   @default(CASH) @map("payment_method")
+  supplierId      String?         @map("supplier_id")
+  operationDate   DateTime        @map("operation_date")
+  notes           String?
+  performedById   String          @map("performed_by_id")
+  deletedAt       DateTime?       @map("deleted_at")
+  deletedById     String?         @map("deleted_by_id")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id])
+  establishment Establishment @relation(fields: [establishmentId], references: [id])
+  supplier      Supplier?     @relation(fields: [supplierId], references: [id])
+  performedBy   User          @relation("ExpenseCreator", fields: [performedById], references: [id])
+  deletedBy     User?         @relation("ExpenseDeleter", fields: [deletedById], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, establishmentId, operationDate])
+  @@index([tenantId, establishmentId, deletedAt])
+  @@map("expenses")
 }
 
 model StockAlert {

@@ -337,6 +337,41 @@ export const updateSupplierSchema = createSupplierSchema.partial().extend({
 });
 
 // =============================================================================
+// Expense (Décaissement)
+// =============================================================================
+
+export const createExpenseSchema = z.object({
+  establishmentId: z.string().uuid(),
+  amount: z.number().positive(),
+  reason: z.string().min(3).max(500),
+  category: z
+    .enum(['SUPPLIES', 'SALARY', 'UTILITIES', 'RENT', 'MAINTENANCE', 'TRANSPORT', 'MARKETING', 'TAXES', 'OTHER'])
+    .default('OTHER'),
+  paymentMethod: z
+    .enum(['CASH', 'CARD', 'BANK_TRANSFER', 'MOBILE_MONEY', 'MOOV_MONEY', 'MIXX_BY_YAS', 'FEDAPAY', 'OTHER'])
+    .default('CASH'),
+  supplierId: z.string().uuid().optional().nullable(),
+  operationDate: z.string().datetime().optional(),
+  notes: z.string().max(1000).optional(),
+});
+
+export const updateExpenseSchema = createExpenseSchema
+  .partial()
+  .omit({ establishmentId: true });
+
+export const listExpensesQuerySchema = z.object({
+  establishmentId: z.string().uuid().optional(),
+  from: z.string().optional(),
+  to: z.string().optional(),
+  category: z
+    .enum(['SUPPLIES', 'SALARY', 'UTILITIES', 'RENT', 'MAINTENANCE', 'TRANSPORT', 'MARKETING', 'TAXES', 'OTHER'])
+    .optional(),
+  includeDeleted: z.string().optional(),
+  page: z.string().optional(),
+  limit: z.string().optional(),
+});
+
+// =============================================================================
 // Availability query
 // =============================================================================
 

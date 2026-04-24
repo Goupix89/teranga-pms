@@ -8,7 +8,7 @@ import { PageHeader, StatCard, StatusBadge, LoadingPage } from '@/components/ui'
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import {
-  BedDouble, TrendingUp, Download, FileText,
+  BedDouble, TrendingUp, TrendingDown, Download, FileText,
   UtensilsCrossed, DollarSign, Clock,
   Package, ShoppingCart, Wallet, Loader2,
 } from 'lucide-react';
@@ -427,8 +427,8 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {/* KPI Cards — from daily report (encaissements) */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      {/* KPI Cards — from daily report (encaissements / décaissements / net) */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
         <StatCard
           title="Taux d'occupation"
           value={`${occupancyRate}%`}
@@ -444,6 +444,20 @@ export default function ReportsPage() {
           color="accent"
         />
         <StatCard
+          title="Décaissements du jour"
+          value={formatCurrency(daily?.totalDecaisse || 0)}
+          subtitle={`${daily?.expenseCount || 0} décaissement${(daily?.expenseCount || 0) > 1 ? 's' : ''}`}
+          icon={TrendingDown}
+          color="red"
+        />
+        <StatCard
+          title="CA net du jour"
+          value={formatCurrency(daily?.netRevenue || 0)}
+          subtitle="Encaissé − Décaissé"
+          icon={DollarSign}
+          color={(daily?.netRevenue || 0) >= 0 ? 'sage' : 'red'}
+        />
+        <StatCard
           title="Factures en attente"
           value={formatCurrency(totalPending)}
           subtitle={`${pendingInvoices.length} factures`}
@@ -456,13 +470,6 @@ export default function ReportsPage() {
           subtitle={`Semaine: ${stats.thisWeek ?? '—'} | Mois: ${stats.thisMonth ?? '—'}`}
           icon={UtensilsCrossed}
           color="accent"
-        />
-        <StatCard
-          title="Commandes annulées"
-          value={cancelledCount}
-          subtitle={`sur ${orderList.length} au total`}
-          icon={UtensilsCrossed}
-          color="red"
         />
       </div>
 
@@ -710,6 +717,53 @@ export default function ReportsPage() {
           </BarChart>
         </ResponsiveContainer>
       </div>
+
+      {/* ═══════════ DÉCAISSEMENTS ═══════════ */}
+      {(daily?.expenseCount || 0) > 0 && (
+        <div className="card-accent p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="font-display text-sm font-bold text-wood-700 flex items-center gap-2">
+              <TrendingDown className="h-4 w-4" /> Décaissements du jour
+            </h4>
+            <div className="text-xs text-wood-500">
+              {daily?.expenseCount} décaissement{daily?.expenseCount > 1 ? 's' : ''} —
+              <span className="ml-1 font-bold text-red-600">− {formatCurrency(daily?.totalDecaisse || 0)}</span>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-wood-50 text-left text-xs uppercase text-wood-500">
+                <tr>
+                  <th className="px-3 py-2">Heure</th>
+                  <th className="px-3 py-2">Motif</th>
+                  <th className="px-3 py-2">Catégorie</th>
+                  <th className="px-3 py-2">Méthode</th>
+                  <th className="px-3 py-2">Fournisseur</th>
+                  <th className="px-3 py-2">Par</th>
+                  <th className="px-3 py-2 text-right">Montant</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-wood-100">
+                {(daily?.expenseDetails || []).map((e: any) => (
+                  <tr key={e.id} className="hover:bg-wood-50/40">
+                    <td className="px-3 py-2 text-wood-500">
+                      {new Date(e.operationDate).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                    </td>
+                    <td className="px-3 py-2 font-medium text-wood-800">{e.reason}</td>
+                    <td className="px-3 py-2 text-wood-600">{e.category}</td>
+                    <td className="px-3 py-2 text-wood-600">{e.method}</td>
+                    <td className="px-3 py-2 text-wood-600">{e.supplier || '—'}</td>
+                    <td className="px-3 py-2 text-wood-600">{e.performer || '—'}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-red-600">
+                      − {formatCurrency(e.amount)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* ═══════════ STOCK ═══════════ */}
       <div className="card-accent p-5">

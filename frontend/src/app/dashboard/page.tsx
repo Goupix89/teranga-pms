@@ -8,7 +8,7 @@ import { PageHeader, StatCard, StatusBadge, LoadingPage, Modal } from '@/compone
 import { useAuthStore } from '@/hooks/useAuthStore';
 import {
   BedDouble, CalendarCheck, Receipt, Package, AlertTriangle, UtensilsCrossed,
-  ChefHat, SprayCan, CheckCircle2, ClipboardList, TrendingUp, DollarSign,
+  ChefHat, SprayCan, CheckCircle2, ClipboardList, TrendingUp, TrendingDown, DollarSign,
   ArrowRightLeft, Clock, LayoutGrid, Users, Eye, Settings2, GripVertical,
   ChevronUp, ChevronDown, Key,
 } from 'lucide-react';
@@ -53,6 +53,8 @@ const ALL_WIDGETS: WidgetDef[] = [
   { id: 'revenue_today', label: 'Encaissements du jour', description: 'Paiements encaissés aujourd\'hui', icon: DollarSign, roles: ['SUPERADMIN', 'OWNER', 'DAF', 'MAITRE_HOTEL'], defaultSize: 'sm', category: 'Finances' },
   { id: 'revenue_week', label: 'Encaissements semaine', description: 'Paiements encaissés cette semaine', icon: TrendingUp, roles: ['SUPERADMIN', 'OWNER', 'DAF', 'MAITRE_HOTEL'], defaultSize: 'sm', category: 'Finances' },
   { id: 'revenue_month', label: 'Encaissements mois', description: 'Paiements encaissés ce mois', icon: TrendingUp, roles: ['SUPERADMIN', 'OWNER', 'DAF', 'MAITRE_HOTEL'], defaultSize: 'sm', category: 'Finances' },
+  { id: 'decaissement_today', label: 'Décaissements du jour', description: 'Dépenses saisies aujourd\'hui', icon: TrendingDown, roles: ['SUPERADMIN', 'OWNER', 'DAF', 'MANAGER'], defaultSize: 'sm', category: 'Finances' },
+  { id: 'net_revenue_today', label: 'CA net du jour', description: 'Encaissé moins décaissé', icon: DollarSign, roles: ['SUPERADMIN', 'OWNER', 'DAF', 'MANAGER'], defaultSize: 'sm', category: 'Finances' },
 
   // — Stock —
   { id: 'stock_alerts', label: 'Alertes stock bas', description: 'Articles sous le seuil minimum', icon: AlertTriangle, roles: ['SUPERADMIN', 'OWNER', 'DAF', 'MANAGER'], defaultSize: 'full', category: 'Stock' },
@@ -406,19 +408,41 @@ function useRevenueSummary(establishmentId: string | null) {
 function WidgetRevenueToday({ establishmentId }: { establishmentId: string | null }) {
   const { data } = useRevenueSummary(establishmentId);
   const d = data?.data?.today;
-  return <StatCard title="Encaissements du jour" value={formatCurrency(d?.total || 0)} subtitle={`${d?.count || 0} paiement(s)`} icon={DollarSign} color="sage" />;
+  const subtitle = (d?.decaisse || 0) > 0
+    ? `Net: ${formatCurrency(d?.net || 0)} — Dec: ${formatCurrency(d?.decaisse || 0)}`
+    : `${d?.count || 0} paiement(s)`;
+  return <StatCard title="Encaissements du jour" value={formatCurrency(d?.total || 0)} subtitle={subtitle} icon={DollarSign} color="sage" />;
 }
 
 function WidgetRevenueWeek({ establishmentId }: { establishmentId: string | null }) {
   const { data } = useRevenueSummary(establishmentId);
   const d = data?.data?.week;
-  return <StatCard title="Encaissements semaine" value={formatCurrency(d?.total || 0)} subtitle={`${d?.count || 0} paiement(s)`} icon={TrendingUp} color="accent" />;
+  const subtitle = (d?.decaisse || 0) > 0
+    ? `Net: ${formatCurrency(d?.net || 0)} — Dec: ${formatCurrency(d?.decaisse || 0)}`
+    : `${d?.count || 0} paiement(s)`;
+  return <StatCard title="Encaissements semaine" value={formatCurrency(d?.total || 0)} subtitle={subtitle} icon={TrendingUp} color="accent" />;
 }
 
 function WidgetRevenueMonth({ establishmentId }: { establishmentId: string | null }) {
   const { data } = useRevenueSummary(establishmentId);
   const d = data?.data?.month;
-  return <StatCard title="Encaissements mois" value={formatCurrency(d?.total || 0)} subtitle={`${d?.count || 0} paiement(s)`} icon={TrendingUp} color="primary" />;
+  const subtitle = (d?.decaisse || 0) > 0
+    ? `Net: ${formatCurrency(d?.net || 0)} — Dec: ${formatCurrency(d?.decaisse || 0)}`
+    : `${d?.count || 0} paiement(s)`;
+  return <StatCard title="Encaissements mois" value={formatCurrency(d?.total || 0)} subtitle={subtitle} icon={TrendingUp} color="primary" />;
+}
+
+function WidgetDecaissementToday({ establishmentId }: { establishmentId: string | null }) {
+  const { data } = useRevenueSummary(establishmentId);
+  const d = data?.data?.today;
+  return <StatCard title="Décaissements du jour" value={formatCurrency(d?.decaisse || 0)} subtitle={`${d?.decaisseCount || 0} décaissement(s)`} icon={TrendingDown} color="red" />;
+}
+
+function WidgetNetRevenueToday({ establishmentId }: { establishmentId: string | null }) {
+  const { data } = useRevenueSummary(establishmentId);
+  const d = data?.data?.today;
+  const net = d?.net ?? 0;
+  return <StatCard title="CA net du jour" value={formatCurrency(net)} subtitle="Encaissé − Décaissé" icon={DollarSign} color={net >= 0 ? 'sage' : 'red'} />;
 }
 
 // --- Stock Alerts Widget ---
@@ -663,6 +687,8 @@ function RenderWidget({ id, establishmentId, userId, role }: { id: string; estab
     case 'revenue_today': return <WidgetRevenueToday establishmentId={establishmentId} />;
     case 'revenue_week': return <WidgetRevenueWeek establishmentId={establishmentId} />;
     case 'revenue_month': return <WidgetRevenueMonth establishmentId={establishmentId} />;
+    case 'decaissement_today': return <WidgetDecaissementToday establishmentId={establishmentId} />;
+    case 'net_revenue_today': return <WidgetNetRevenueToday establishmentId={establishmentId} />;
     case 'stock_alerts': return <WidgetStockAlerts />;
     case 'stock_levels_chart': return <WidgetStockLevelsChart />;
     case 'cleaning_status': return <WidgetCleaningStatus establishmentId={establishmentId} />;

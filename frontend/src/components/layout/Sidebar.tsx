@@ -10,7 +10,7 @@ import {
   Package, Truck, Users, Building2, Settings, LogOut, ChevronLeft,
   BarChart3, UtensilsCrossed, SprayCan, ClipboardCheck, AlertTriangle,
   ChevronDown, UserCircle, Globe2, KeyRound, Crown, ShoppingCart, Armchair,
-  UserRound, Percent,
+  UserRound, Percent, Wallet,
 } from 'lucide-react';
 import { useState } from 'react';
 import { NotificationBell } from './NotificationBell';
@@ -37,6 +37,7 @@ const navigation: NavItem[] = [
   { name: 'Cuisine', href: '/dashboard/kitchen', icon: UtensilsCrossed, estRoles: ['OWNER', 'DAF', 'MANAGER', 'COOK'] },
   { name: 'Factures', href: '/dashboard/invoices', icon: Receipt, estRoles: ['OWNER', 'DAF', 'MANAGER', 'MAITRE_HOTEL', 'SERVER', 'POS'] },
   { name: 'Paiements', href: '/dashboard/payments', icon: CreditCard, estRoles: ['OWNER', 'DAF', 'MANAGER', 'MAITRE_HOTEL', 'SERVER', 'POS'] },
+  { name: 'Décaissements', href: '/dashboard/expenses', icon: Wallet, estRoles: ['OWNER', 'DAF', 'MANAGER'] },
   { name: 'Menu & Articles', href: '/dashboard/stock', icon: Package, estRoles: ['OWNER', 'DAF', 'MANAGER', 'MAITRE_HOTEL', 'POS'] },
   { name: 'Alertes Stock', href: '/dashboard/stock-alerts', icon: AlertTriangle, estRoles: ['OWNER', 'DAF', 'MANAGER', 'MAITRE_HOTEL'] },
   { name: 'Fournisseurs', href: '/dashboard/suppliers', icon: Truck, estRoles: ['OWNER', 'DAF'] },

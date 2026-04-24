@@ -40,6 +40,7 @@ export type OrderStatus = 'PENDING' | 'IN_PROGRESS' | 'READY' | 'SERVED' | 'CANC
 export type ApprovalType = 'EMPLOYEE_CREATION' | 'RESERVATION_MODIFICATION' | 'ROOM_CREATION' | 'STOCK_MOVEMENT' | 'ARTICLE_CREATION';
 export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 export type CleaningStatus = 'IN_PROGRESS' | 'COMPLETED';
+export type ExpenseCategory = 'SUPPLIES' | 'SALARY' | 'UTILITIES' | 'RENT' | 'MAINTENANCE' | 'TRANSPORT' | 'MARKETING' | 'TAXES' | 'OTHER';
 
 // =============================================================================
 // Auth
@@ -394,4 +395,26 @@ export interface ChannelSyncLog {
   errorMessage?: string | null;
   durationMs?: number | null;
   createdAt: string;
+}
+
+// =============================================================================
+// Expense (Décaissement)
+// =============================================================================
+
+export interface Expense {
+  id: string;
+  establishmentId: string;
+  amount: number;
+  reason: string;
+  category: ExpenseCategory;
+  paymentMethod: PaymentMethod;
+  supplierId?: string | null;
+  operationDate: string;
+  notes?: string | null;
+  deletedAt?: string | null;
+  createdAt: string;
+  establishment?: { id: string; name: string };
+  supplier?: { id: string; name: string } | null;
+  performedBy?: { id: string; firstName: string; lastName: string };
+  deletedBy?: { id: string; firstName: string; lastName: string } | null;
 }

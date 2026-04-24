@@ -39,6 +39,7 @@ import { receiptService } from '../services/receipt.service';
 import { registrationService } from '../services/registration.service';
 import { clientService } from '../services/client.service';
 import { discountService } from '../services/discount.service';
+import { expenseService } from '../services/expense.service';
 // QR code and prisma for invoice QR endpoint
 const QRCode = require('qrcode');
 import { PrismaClient } from '@prisma/client';
@@ -1383,6 +1384,106 @@ stockAlertRouter.get('/count/:establishmentId', authenticate, requireDAFOrManage
 );
 
 // =============================================================================
+// EXPENSES (Décaissements)
+// =============================================================================
+export const expenseRouter = Router();
+
+// List — MANAGER+ can read expenses in their establishment
+expenseRouter.get('/', authenticate, requireDAFOrManager,
+  asyncHandler(async (req, res) => {
+    const params = parsePagination(req);
+    const { establishmentId, from, to, category, includeDeleted } = req.query as any;
+    const data = await expenseService.list(req.user!.tenantId, params, {
+      establishmentId,
+      from,
+      to,
+      category,
+      includeDeleted: includeDeleted === 'true',
+    });
+    res.json({ success: true, ...data });
+  })
+);
+
+expenseRouter.get('/summary', authenticate, requireDAFOrManager,
+  asyncHandler(async (req, res) => {
+    const { establishmentId, from, to } = req.query as any;
+    if (!from || !to) {
+      return res.status(400).json({ success: false, error: 'from et to sont requis' });
+    }
+    const data = await expenseService.summary(req.user!.tenantId, {
+      establishmentId,
+      from: new Date(from),
+      to: new Date(to),
+    });
+    res.json({ success: true, data });
+  })
+);
+
+expenseRouter.get('/:id', authenticate, requireDAFOrManager,
+  asyncHandler(async (req, res) => {
+    const data = await expenseService.getById(req.user!.tenantId, req.params.id);
+    res.json({ success: true, data });
+  })
+);
+
+// Create — MANAGER/DAF/OWNER; date can be backdated (same rules as orders)
+expenseRouter.post('/', authenticate, requireDAFOrManager, validate(v.createExpenseSchema),
+  asyncHandler(async (req, res) => {
+    const estId = req.body.establishmentId;
+    const estRole = getEstablishmentRole(req, estId);
+
+    let operationDate: Date | null = null;
+    try {
+      operationDate = validateOperationDate(req.body.operationDate, {
+        userRole: req.user!.role,
+        establishmentRole: estRole,
+        fieldLabel: 'la date du décaissement',
+      });
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+
+    const data = await expenseService.create(req.user!.tenantId, req.user!.id, {
+      ...req.body,
+      ...(operationDate ? { operationDate } : {}),
+    });
+    res.status(201).json({ success: true, data });
+  })
+);
+
+// Update — DAF/OWNER only (financial integrity)
+expenseRouter.put('/:id', authenticate, requireDAF, validate(v.updateExpenseSchema),
+  asyncHandler(async (req, res) => {
+    let operationDate: Date | undefined;
+    if (req.body.operationDate) {
+      try {
+        const d = validateOperationDate(req.body.operationDate, {
+          userRole: req.user!.role,
+          establishmentRole: 'DAF',
+          fieldLabel: 'la date du décaissement',
+        });
+        operationDate = d ?? undefined;
+      } catch (e: any) {
+        return res.status(400).json({ success: false, error: e.message });
+      }
+    }
+    const data = await expenseService.update(req.user!.tenantId, req.params.id, {
+      ...req.body,
+      ...(operationDate ? { operationDate } : {}),
+    });
+    res.json({ success: true, data });
+  })
+);
+
+// Soft-delete — DAF/OWNER only
+expenseRouter.delete('/:id', authenticate, requireDAF,
+  asyncHandler(async (req, res) => {
+    await expenseService.softDelete(req.user!.tenantId, req.params.id, req.user!.id);
+    res.json({ success: true });
+  })
+);
+
+// =============================================================================
 // APPROVAL REQUESTS
 // =============================================================================
 export const approvalRouter = Router();
@@ -2537,7 +2638,13 @@ reportRouter.get('/revenue-summary', authenticate, requireDAFOrManagerOrServer,
       },
     };
 
-    const [today, week, month] = await Promise.all([
+    const expenseScope: any = {
+      tenantId,
+      deletedAt: null,
+      ...(establishmentId && { establishmentId }),
+    };
+
+    const [today, week, month, expToday, expWeek, expMonth] = await Promise.all([
       db.payment.aggregate({
         where: { tenantId, createdAt: { gte: todayStart, lte: todayEnd }, ...voucherExclude },
         _sum: { amount: true },
@@ -2553,14 +2660,41 @@ reportRouter.get('/revenue-summary', authenticate, requireDAFOrManagerOrServer,
         _sum: { amount: true },
         _count: true,
       }),
+      db.expense.aggregate({
+        where: { ...expenseScope, operationDate: { gte: todayStart, lte: todayEnd } },
+        _sum: { amount: true },
+        _count: true,
+      }),
+      db.expense.aggregate({
+        where: { ...expenseScope, operationDate: { gte: weekStart, lte: todayEnd } },
+        _sum: { amount: true },
+        _count: true,
+      }),
+      db.expense.aggregate({
+        where: { ...expenseScope, operationDate: { gte: monthStart, lte: todayEnd } },
+        _sum: { amount: true },
+        _count: true,
+      }),
     ]);
+
+    const bucket = (rev: any, exp: any) => {
+      const income = Number(rev._sum.amount || 0);
+      const decaisse = Number(exp._sum.amount || 0);
+      return {
+        total: income,
+        count: rev._count,
+        decaisse,
+        decaisseCount: exp._count,
+        net: income - decaisse,
+      };
+    };
 
     res.json({
       success: true,
       data: {
-        today: { total: Number(today._sum.amount || 0), count: today._count },
-        week: { total: Number(week._sum.amount || 0), count: week._count },
-        month: { total: Number(month._sum.amount || 0), count: month._count },
+        today: bucket(today, expToday),
+        week: bucket(week, expWeek),
+        month: bucket(month, expMonth),
       },
     });
   })
@@ -2748,9 +2882,55 @@ async function buildDailyReport(tenantId: string, date: string, establishmentId?
     byStatus[o.status] = (byStatus[o.status] || 0) + 1;
   }
 
+  // Expenses (décaissements) — filtered by operationDate so backdated entries
+  // land on the right day. Soft-deleted rows are excluded.
+  const expenses = await db.expense.findMany({
+    where: {
+      tenantId,
+      deletedAt: null,
+      operationDate: { gte: dayStart, lte: dayEnd },
+      ...estFilter,
+    },
+    include: {
+      performedBy: { select: { firstName: true, lastName: true } },
+      supplier: { select: { name: true } },
+    },
+    orderBy: { operationDate: 'asc' },
+  });
+
+  const expenseByMethod: Record<string, { count: number; total: number }> = {};
+  const expenseByCategory: Record<string, { count: number; total: number }> = {};
+  let totalDecaisse = 0;
+  const expenseDetails = expenses.map((e) => {
+    const amount = Number(e.amount);
+    totalDecaisse += amount;
+    const m = e.paymentMethod || 'CASH';
+    if (!expenseByMethod[m]) expenseByMethod[m] = { count: 0, total: 0 };
+    expenseByMethod[m].count++;
+    expenseByMethod[m].total += amount;
+    const c = e.category || 'OTHER';
+    if (!expenseByCategory[c]) expenseByCategory[c] = { count: 0, total: 0 };
+    expenseByCategory[c].count++;
+    expenseByCategory[c].total += amount;
+    return {
+      id: e.id,
+      reason: e.reason,
+      category: e.category,
+      amount,
+      method: e.paymentMethod,
+      supplier: e.supplier?.name || null,
+      performer: e.performedBy ? `${e.performedBy.firstName} ${e.performedBy.lastName}` : null,
+      operationDate: e.operationDate,
+    };
+  });
+
+  const netRevenue = totalEncaisse - totalDecaisse;
+
   return {
     date,
     totalEncaisse,
+    totalDecaisse,
+    netRevenue,
     voucherTotal,
     voucherCount,
     totalOrders: orders.length,
@@ -2762,6 +2942,10 @@ async function buildDailyReport(tenantId: string, date: string, establishmentId?
     byServer: Object.values(byServer).sort((a, b) => b.revenue - a.revenue),
     byStatus,
     paymentDetails,
+    expenseCount: expenses.length,
+    expenseByMethod,
+    expenseByCategory,
+    expenseDetails,
   };
 }
 
@@ -3023,15 +3207,51 @@ async function buildRangeReport(tenantId: string, from: string, to: string, esta
     }
   }
 
+  // Expenses over the same range — bucketed by operationDate
+  const expenses = await db.expense.findMany({
+    where: {
+      tenantId,
+      deletedAt: null,
+      operationDate: { gte: rangeStart, lte: rangeEnd },
+      ...(establishmentId && { establishmentId }),
+    },
+    orderBy: { operationDate: 'asc' },
+  });
+
+  const expensesByDay: Record<string, { total: number; count: number }> = {};
+  let grandDecaisse = 0;
+  for (const e of expenses) {
+    const day = e.operationDate.toISOString().slice(0, 10);
+    if (!expensesByDay[day]) expensesByDay[day] = { total: 0, count: 0 };
+    const amount = Number(e.amount);
+    expensesByDay[day].total += amount;
+    expensesByDay[day].count++;
+    grandDecaisse += amount;
+  }
+
+  const daysWithNet = Object.entries(days).map(([date, d]) => {
+    const exp = expensesByDay[date] ?? { total: 0, count: 0 };
+    return {
+      date,
+      ...d,
+      decaisse: exp.total,
+      decaisseCount: exp.count,
+      net: d.total - exp.total,
+    };
+  });
+
   return {
     from,
     to,
-    days: Object.entries(days).map(([date, d]) => ({ date, ...d })),
+    days: daysWithNet,
     grandTotal,
     grandVoucher,
     grandPayments: payments.length,
     grandByMethod,
     grandByServer: Object.values(grandByServer).sort((a, b) => b.revenue - a.revenue),
+    grandDecaisse,
+    grandDecaisseCount: expenses.length,
+    grandNet: grandTotal - grandDecaisse,
   };
 }
 
