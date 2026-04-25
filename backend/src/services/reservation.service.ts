@@ -687,7 +687,7 @@ export class ReservationService {
           });
 
           // Link the reservation to the client if it wasn't already
-          if (!r.clientId) {
+          if (!r.clientId && client) {
             await tx.reservation.update({
               where: { id: r.id },
               data: { clientId: client.id },
