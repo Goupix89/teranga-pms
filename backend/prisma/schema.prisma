@@ -483,6 +483,7 @@ model Order {
   endTime          DateTime?      @map("end_time")
   readyAt          DateTime?      @map("ready_at")
   servedAt         DateTime?      @map("served_at")
+  operationDate    DateTime       @default(now()) @map("operation_date")
   createdAt        DateTime       @default(now()) @map("created_at")
   updatedAt        DateTime       @updatedAt @map("updated_at")
 
@@ -498,6 +499,7 @@ model Order {
   @@unique([tenantId, orderNumber])
   @@index([tenantId, establishmentId, status])
   @@index([tenantId, createdAt])
+  @@index([tenantId, operationDate])
   @@index([tenantId, serverId])
   @@map("orders")
 }

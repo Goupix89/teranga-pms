@@ -438,7 +438,18 @@ export default function OrdersPage() {
                           order.createdBy ? `${order.createdBy.firstName} ${order.createdBy.lastName}` : '-'
                         )}
                       </td>
-                      <td className="text-gray-400 text-xs">{formatDateTime(order.createdAt)}</td>
+                      <td className="text-gray-500 text-xs">
+                        <div className="text-gray-700">
+                          {formatDateTime((order as any).operationDate || order.createdAt)}
+                        </div>
+                        {(order as any).operationDate &&
+                          new Date((order as any).operationDate).toISOString().slice(0, 10) !==
+                            new Date(order.createdAt).toISOString().slice(0, 10) && (
+                            <div className="text-[10px] italic text-amber-600" title="Saisie rétroactive">
+                              saisi le {formatDateTime(order.createdAt)}
+                            </div>
+                          )}
+                      </td>
                       <td>
                         <div className="flex gap-1 flex-wrap">
                           {order.status !== 'SERVED' && order.status !== 'CANCELLED' && canCreate && (
@@ -540,7 +551,16 @@ export default function OrdersPage() {
                     {order.tableNumber && <span className="bg-gray-100 rounded px-1.5 py-0.5">Table {order.tableNumber}</span>}
                     <span>{order.paymentMethod === 'MOOV_MONEY' ? 'Flooz' : order.paymentMethod === 'MIXX_BY_YAS' ? 'Yas' : order.paymentMethod === 'FEDAPAY' ? 'FedaPay' : order.paymentMethod || '-'}</span>
                   </div>
-                  <span>{formatDateTime(order.createdAt)}</span>
+                  <div className="text-right">
+                    <div>{formatDateTime((order as any).operationDate || order.createdAt)}</div>
+                    {(order as any).operationDate &&
+                      new Date((order as any).operationDate).toISOString().slice(0, 10) !==
+                        new Date(order.createdAt).toISOString().slice(0, 10) && (
+                        <div className="text-[10px] italic text-amber-600">
+                          saisi le {formatDateTime(order.createdAt)}
+                        </div>
+                      )}
+                  </div>
                 </div>
 
                 {order.server && order.server.id !== order.createdBy?.id ? (

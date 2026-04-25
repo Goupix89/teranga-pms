@@ -2798,11 +2798,12 @@ async function buildDailyReport(tenantId: string, date: string, establishmentId?
 
   const estFilter = establishmentId ? { establishmentId } : {};
 
-  // Payments made today (actual money collected)
+  // Payments made today (actual money collected) — bucket by paidAt
+  // (operator-declared moment of payment, defaults to creation time).
   const payments = await db.payment.findMany({
     where: {
       tenantId,
-      createdAt: { gte: dayStart, lte: dayEnd },
+      paidAt: { gte: dayStart, lte: dayEnd },
       // When scoped to an establishment: include payments from orders OR from reservations of that establishment
       invoice: establishmentId
         ? {
@@ -2831,17 +2832,18 @@ async function buildDailyReport(tenantId: string, date: string, establishmentId?
     },
   });
 
-  // Orders created today
+  // Orders for this business day — bucketed by operationDate so backdated
+  // entries land on the day the operator declared, not on today.
   const orders = await db.order.findMany({
     where: {
-      createdAt: { gte: dayStart, lte: dayEnd },
+      operationDate: { gte: dayStart, lte: dayEnd },
       ...estFilter,
     },
     include: {
       createdBy: { select: { id: true, firstName: true, lastName: true } },
       server: { select: { id: true, firstName: true, lastName: true } },
     },
-    orderBy: { createdAt: 'asc' },
+    orderBy: { operationDate: 'asc' },
   });
 
   // Compute encaissements from ORDER amounts (matching the CSV export and the
@@ -3297,25 +3299,26 @@ async function buildRangeReport(tenantId: string, from: string, to: string, esta
     : {};
 
   // Orders in range — used for the encaissement totals (matches CSV).
+  // Bucketed by operationDate (declared business date).
   const orderEstFilter = establishmentId ? { establishmentId } : {};
   const orders = await db.order.findMany({
     where: {
       tenantId,
-      createdAt: { gte: rangeStart, lte: rangeEnd },
+      operationDate: { gte: rangeStart, lte: rangeEnd },
       ...orderEstFilter,
     },
     include: {
       createdBy: { select: { id: true, firstName: true, lastName: true } },
       server: { select: { id: true, firstName: true, lastName: true } },
     },
-    orderBy: { createdAt: 'asc' },
+    orderBy: { operationDate: 'asc' },
   });
 
-  // Reservation payments still come from the Payment table.
+  // Reservation payments still come from the Payment table — bucket by paidAt.
   const payments = await db.payment.findMany({
     where: {
       tenantId,
-      createdAt: { gte: rangeStart, lte: rangeEnd },
+      paidAt: { gte: rangeStart, lte: rangeEnd },
       ...estFilter,
     },
     include: {
@@ -3347,7 +3350,7 @@ async function buildRangeReport(tenantId: string, from: string, to: string, esta
 
   // Walk orders for encaissements + per-server breakdown
   for (const o of orders) {
-    const day = o.createdAt.toISOString().slice(0, 10);
+    const day = ((o as any).operationDate ?? o.createdAt).toISOString().slice(0, 10);
     const amount = Number(o.totalAmount);
 
     if (!days[day]) days[day] = { total: 0, voucherTotal: 0, count: 0, voucherCount: 0, byMethod: {} };
@@ -3381,9 +3384,9 @@ async function buildRangeReport(tenantId: string, from: string, to: string, esta
   }
 
   // Reservation payments add to the totals for the day they were paid.
-  for (const p of payments) {
+  for (const p of payments as any[]) {
     if (!p.invoice?.reservationId || p.invoice?.isVoucher) continue;
-    const day = p.createdAt.toISOString().slice(0, 10);
+    const day = (p.paidAt as Date).toISOString().slice(0, 10);
     const amount = Number(p.amount);
     const method = p.method || 'CASH';
     if (!days[day]) days[day] = { total: 0, voucherTotal: 0, count: 0, voucherCount: 0, byMethod: {} };

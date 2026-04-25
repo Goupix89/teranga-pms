@@ -278,7 +278,9 @@ export class OrderService {
         : 0;
       const orderNumber = `CMD-${dateStr}-${String(lastNum + 1).padStart(4, '0')}`;
 
-      // Create order with items
+      // Create order with items. operationDate is the business date the
+      // operator declared (may be backdated up to 15 days, or further with
+      // supervisor override). createdAt remains the system clock for audit.
       const order = await tx.order.create({
         data: {
           tenantId,
@@ -299,6 +301,7 @@ export class OrderService {
           discountAmount,
           startTime: data.startTime ? new Date(data.startTime) : null,
           endTime: data.endTime ? new Date(data.endTime) : null,
+          ...(data.operationDate ? { operationDate: data.operationDate } : {}),
           items: {
             create: itemsData,
           },
