@@ -38,12 +38,21 @@ export default function ReservationsPage() {
   const [editingDates, setEditingDates] = useState<Reservation | null>(null);
   const [dateForm, setDateForm] = useState({ checkIn: '', checkOut: '' });
 
+  const [editingReservation, setEditingReservation] = useState<Reservation | null>(null);
+  const [editForm, setEditForm] = useState({
+    roomId: '', guestName: '', guestEmail: '', guestPhone: '',
+    checkIn: '', checkOut: '', numberOfGuests: '1', notes: '',
+    discountRuleId: '',
+  });
+
   const [form, setForm] = useState({
     roomId: '', guestName: '', guestEmail: '', guestPhone: '',
     checkIn: '', checkOut: '', numberOfGuests: '1', source: 'DIRECT',
     paymentMethod: 'CASH' as PaymentMethod, notes: '',
     discountRuleId: '',
   });
+
+  const canEditReservation = isSuperAdmin || ['OWNER', 'DAF', 'MANAGER'].includes(currentEstablishmentRole || '');
 
   const [qrModal, setQrModal] = useState<{
     open: boolean; invoiceId?: string; qrCode?: string; invoiceNumber?: string;
@@ -65,9 +74,28 @@ export default function ReservationsPage() {
   const { data: discountRulesData } = useQuery({
     queryKey: ['discount-rules', 'reservation'],
     queryFn: () => apiGet<any>('/discount-rules?appliesTo=RESERVATION&isActive=true'),
-    enabled: showModal,
+    enabled: showModal || !!editingReservation,
   });
   const discountRules: DiscountRule[] = discountRulesData?.data || [];
+
+  // Full rooms list (any status) for the edit modal — the create modal uses available-only.
+  const { data: allRoomsData } = useQuery({
+    queryKey: ['rooms-all'],
+    queryFn: () => apiGet<any>('/rooms?limit=200'),
+    enabled: !!editingReservation,
+  });
+  const allRooms: Array<{ id: string; number: string; type?: string; pricePerNight?: number }> = allRoomsData?.data || [];
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: any }) =>
+      apiPatch(`/reservations/${id}`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['reservations'] });
+      setEditingReservation(null);
+      toast.success('Réservation modifiée — facture mise à jour');
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur lors de la modification'),
+  });
 
   const createMutation = useMutation({
     mutationFn: (body: any) => apiPost<any>('/reservations', body),
@@ -300,11 +328,24 @@ export default function ReservationsPage() {
                             <LogOut className="h-4 w-4" />
                           </button>
                         )}
-                        {currentEstablishmentRole === 'MANAGER' && !['CHECKED_OUT', 'CANCELLED'].includes(res.status) && (
+                        {canEditReservation && !['CHECKED_OUT', 'CANCELLED'].includes(res.status) && (
                           <button
-                            onClick={() => { setEditingDates(res); setDateForm({ checkIn: res.checkIn.slice(0, 10), checkOut: res.checkOut.slice(0, 10) }); }}
+                            onClick={() => {
+                              setEditingReservation(res);
+                              setEditForm({
+                                roomId: res.roomId || (res.room as any)?.id || '',
+                                guestName: res.guestName || '',
+                                guestEmail: res.guestEmail || '',
+                                guestPhone: res.guestPhone || '',
+                                checkIn: res.checkIn.slice(0, 10),
+                                checkOut: res.checkOut.slice(0, 10),
+                                numberOfGuests: String(res.numberOfGuests || 1),
+                                notes: res.notes || '',
+                                discountRuleId: (res as any).discountRuleId || '',
+                              });
+                            }}
                             className="btn-ghost p-1.5 text-amber-600"
-                            title="Modifier dates"
+                            title="Modifier la réservation"
                           >
                             <Calendar className="h-4 w-4" />
                           </button>
@@ -427,6 +468,153 @@ export default function ReservationsPage() {
             <button type="submit" className="btn-primary" disabled={datesMutation.isPending}>
               {datesMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Soumettre la modification
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Full edit modal — OWNER/DAF/MANAGER, refused if invoice PAID */}
+      <Modal open={!!editingReservation} onClose={() => setEditingReservation(null)} title="Modifier la réservation" size="lg">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!editingReservation) return;
+            const body: any = {
+              guestName: editForm.guestName,
+              guestEmail: editForm.guestEmail || null,
+              guestPhone: editForm.guestPhone || null,
+              checkIn: editForm.checkIn,
+              checkOut: editForm.checkOut,
+              roomId: editForm.roomId,
+              numberOfGuests: Number(editForm.numberOfGuests),
+              notes: editForm.notes || null,
+              discountRuleId: editForm.discountRuleId || null,
+            };
+            updateMutation.mutate({ id: editingReservation.id, body });
+          }}
+          className="space-y-4"
+        >
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Chambre</label>
+              <select
+                value={editForm.roomId}
+                onChange={(e) => setEditForm({ ...editForm, roomId: e.target.value })}
+                className="input"
+                required
+              >
+                {allRooms.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.number}{r.type ? ` (${r.type})` : ''}{r.pricePerNight ? ` — ${formatCurrency(r.pricePerNight)}/nuit` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">Nombre d'invités</label>
+              <input
+                type="number"
+                min={1}
+                value={editForm.numberOfGuests}
+                onChange={(e) => setEditForm({ ...editForm, numberOfGuests: e.target.value })}
+                className="input"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Date d'arrivée</label>
+              <input
+                type="date"
+                value={editForm.checkIn}
+                onChange={(e) => setEditForm({ ...editForm, checkIn: e.target.value })}
+                className="input"
+                required
+              />
+            </div>
+            <div>
+              <label className="label">Date de départ</label>
+              <input
+                type="date"
+                value={editForm.checkOut}
+                onChange={(e) => setEditForm({ ...editForm, checkOut: e.target.value })}
+                className="input"
+                required
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="label">Nom de l'invité</label>
+            <input
+              value={editForm.guestName}
+              onChange={(e) => setEditForm({ ...editForm, guestName: e.target.value })}
+              className="input"
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Email</label>
+              <input
+                type="email"
+                value={editForm.guestEmail}
+                onChange={(e) => setEditForm({ ...editForm, guestEmail: e.target.value })}
+                className="input"
+              />
+            </div>
+            <div>
+              <label className="label">Téléphone</label>
+              <input
+                value={editForm.guestPhone}
+                onChange={(e) => setEditForm({ ...editForm, guestPhone: e.target.value })}
+                className="input"
+                placeholder="+22890..."
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="label">Remise (optionnelle)</label>
+            <select
+              value={editForm.discountRuleId}
+              onChange={(e) => setEditForm({ ...editForm, discountRuleId: e.target.value })}
+              className="input"
+            >
+              <option value="">— Aucune remise manuelle —</option>
+              {discountRules.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name} ({r.type === 'PERCENTAGE' ? `-${r.value}%` : `-${formatCurrency(r.value)}`})
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-400 mt-1">
+              Les remises automatiques s'appliquent en plus, selon les règles configurées.
+            </p>
+          </div>
+
+          <div>
+            <label className="label">Notes</label>
+            <textarea
+              value={editForm.notes}
+              onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+              className="input"
+              rows={2}
+            />
+          </div>
+
+          <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+            La modification recalcule automatiquement le total et met à jour la facture liée. Si la facture est déjà payée ou annulée, la modification sera refusée.
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={() => setEditingReservation(null)} className="btn-secondary">Annuler</button>
+            <button type="submit" className="btn-primary" disabled={updateMutation.isPending}>
+              {updateMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Enregistrer
             </button>
           </div>
         </form>

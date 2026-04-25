@@ -131,6 +131,21 @@ export class ClientService {
       });
       if (existing) return existing;
     }
+    // Fallback: when neither email nor phone is provided, try to match an
+    // existing nameless client by exact firstName + lastName to avoid creating
+    // a fresh row for the same anonymous guest on every reservation.
+    if (!data.email && !data.phone && (data.firstName || data.lastName)) {
+      const existing = await prisma.client.findFirst({
+        where: {
+          tenantId,
+          email: null,
+          phone: null,
+          firstName: data.firstName || '',
+          lastName: data.lastName || '',
+        },
+      });
+      if (existing) return existing;
+    }
     return prisma.client.create({
       data: {
         tenantId,

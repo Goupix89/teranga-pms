@@ -397,8 +397,10 @@ reservationRouter.patch('/:id/dates', authenticate, requireEstablishmentRole('MA
   })
 );
 
-// MANAGER modifications require DAF approval → handled in approval flow
-reservationRouter.patch('/:id', authenticate, requireDAF, validate(v.updateReservationSchema),
+// OWNER / DAF / MANAGER can edit a reservation directly. The service refuses
+// when the linked invoice is already PAID/CANCELLED so accounting stays sane.
+reservationRouter.patch('/:id', authenticate, requireEstablishmentRole('OWNER', 'DAF', 'MANAGER'),
+  validate(v.updateReservationSchema),
   asyncHandler(async (req, res) => {
     const data = await reservationService.update(req.user!.tenantId, req.params.id, req.body);
     res.json({ success: true, data });
@@ -2833,62 +2835,80 @@ async function buildDailyReport(tenantId: string, date: string, establishmentId?
     orderBy: { createdAt: 'asc' },
   });
 
-  // Group payments by method + split CA by source (orders vs reservations)
+  // Compute encaissements from ORDER amounts (matching the CSV export and the
+  // dashboard's caisseData logic). Active orders = not CANCELLED, not PENDING,
+  // not vouchers. This way the PDF, the CSV and the dashboard cards all agree.
   const byMethod: Record<string, { count: number; total: number }> = {};
   let totalEncaisse = 0;
   let voucherTotal = 0;
   let voucherCount = 0;
-  let reservationRevenue = 0;
-  let reservationCount = 0;
   let orderRevenue = 0;
   let orderPaymentCount = 0;
 
-  for (const p of payments) {
-    const amount = Number(p.amount);
-    const isVoucher = p.invoice?.isVoucher || p.invoice?.orders?.some((o: any) => o.isVoucher);
-    if (isVoucher) {
+  for (const o of orders) {
+    const amount = Number(o.totalAmount);
+    if ((o as any).isVoucher) {
       voucherTotal += amount;
       voucherCount++;
       continue;
     }
+    if (o.status === 'CANCELLED' || o.status === 'PENDING') continue;
+    totalEncaisse += amount;
+    orderRevenue += amount;
+    orderPaymentCount++;
+    const method = o.paymentMethod || 'NON_DEFINI';
+    if (!byMethod[method]) byMethod[method] = { count: 0, total: 0 };
+    byMethod[method].count++;
+    byMethod[method].total += amount;
+  }
+
+  // Reservations don't have an Order row, so we still source them from payments.
+  let reservationRevenue = 0;
+  let reservationCount = 0;
+  for (const p of payments) {
+    if (!p.invoice?.reservationId || p.invoice?.isVoucher) continue;
+    const amount = Number(p.amount);
+    reservationRevenue += amount;
+    reservationCount++;
     totalEncaisse += amount;
     const method = p.method || 'CASH';
     if (!byMethod[method]) byMethod[method] = { count: 0, total: 0 };
     byMethod[method].count++;
     byMethod[method].total += amount;
-
-    // Classify source: reservation invoice vs order invoice
-    if (p.invoice?.reservationId) {
-      reservationRevenue += amount;
-      reservationCount++;
-    } else {
-      orderRevenue += amount;
-      orderPaymentCount++;
-    }
   }
 
-  // Payment details for PDF
-  const paymentDetails = payments
-    .filter((p: any) => !p.invoice?.isVoucher && !p.invoice?.orders?.some((o: any) => o.isVoucher))
-    .map((p: any) => {
-      const order = p.invoice?.orders?.[0];
-      const reservation = p.invoice?.reservation;
-      return {
-        invoiceNumber: p.invoice?.invoiceNumber || '-',
-        orderNumber: order?.orderNumber || (reservation ? `Réservation ch. ${reservation.room?.number || '?'}` : '-'),
-        server: (order as any)?.server
-          ? `${(order as any).server.firstName} ${(order as any).server.lastName}`
-          : order?.createdBy
-            ? `${order.createdBy.firstName} ${order.createdBy.lastName}`
-            : reservation
-              ? (reservation.guestName || reservation.source || '-')
-              : '-',
-        method: p.method,
-        amount: Number(p.amount),
-        time: p.createdAt,
-        kind: p.invoice?.reservationId ? 'RESERVATION' : 'ORDER',
-      };
-    });
+  // Transaction details = orders (matches CSV) + reservation payments, sorted chronologically.
+  const paymentDetails = [
+    ...orders
+      .filter((o: any) => !o.isVoucher && !['CANCELLED', 'PENDING'].includes(o.status) && o.paymentMethod)
+      .map((o: any) => ({
+        invoiceNumber: '-',
+        orderNumber: o.orderNumber,
+        server: o.server
+          ? `${o.server.firstName} ${o.server.lastName}`
+          : o.createdBy
+            ? `${o.createdBy.firstName} ${o.createdBy.lastName}`
+            : '-',
+        method: o.paymentMethod,
+        amount: Number(o.totalAmount),
+        time: o.createdAt,
+        kind: 'ORDER' as const,
+      })),
+    ...payments
+      .filter((p: any) => p.invoice?.reservationId && !p.invoice?.isVoucher)
+      .map((p: any) => {
+        const reservation = p.invoice?.reservation;
+        return {
+          invoiceNumber: p.invoice?.invoiceNumber || '-',
+          orderNumber: reservation ? `Réservation ch. ${reservation.room?.number || '?'}` : '-',
+          server: reservation ? (reservation.guestName || reservation.source || '-') : '-',
+          method: p.method,
+          amount: Number(p.amount),
+          time: p.createdAt,
+          kind: 'RESERVATION' as const,
+        };
+      }),
+  ].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
 
   // Orders by server — attribution priority: server (if POS entered on someone's behalf) else createdBy
   const byServer: Record<string, { name: string; count: number; revenue: number }> = {};
@@ -3155,11 +3175,11 @@ async function generateDailyReportPdf(tenantId: string, report: any, date: strin
     const solde = report.totalEncaisse - totalDecaisse;
     const soldeColor = solde >= 0 ? '#065F46' : '#991B1B';
     doc.fontSize(13).font('Helvetica-Bold').fillColor('#000000').text('Solde du jour', 40, doc.y, { continued: true });
-    doc.fontSize(10).font('Helvetica').fillColor('#6B7280').text('  (encaissements − décaissements)');
+    doc.fontSize(10).font('Helvetica').fillColor('#6B7280').text('  (encaissements - décaissements)');
     doc.fillColor('#000000').moveDown(0.2);
     doc.fontSize(11).font('Helvetica').fillColor('#374151');
     drawTableRow(['Total encaissé', '', fmtCurrency(report.totalEncaisse)]);
-    drawTableRow(['Total décaissé', '', `− ${fmtCurrency(totalDecaisse)}`]);
+    drawTableRow(['Total décaissé', '', `- ${fmtCurrency(totalDecaisse)}`]);
     doc.moveTo(40, doc.y).lineTo(500, doc.y).stroke('#E5E7EB');
     doc.moveDown(0.1);
     doc.fontSize(13).font('Helvetica-Bold').fillColor(soldeColor);
@@ -3267,7 +3287,22 @@ async function buildRangeReport(tenantId: string, from: string, to: string, esta
       }
     : {};
 
-  // All payments in range
+  // Orders in range — used for the encaissement totals (matches CSV).
+  const orderEstFilter = establishmentId ? { establishmentId } : {};
+  const orders = await db.order.findMany({
+    where: {
+      tenantId,
+      createdAt: { gte: rangeStart, lte: rangeEnd },
+      ...orderEstFilter,
+    },
+    include: {
+      createdBy: { select: { id: true, firstName: true, lastName: true } },
+      server: { select: { id: true, firstName: true, lastName: true } },
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  // Reservation payments still come from the Payment table.
   const payments = await db.payment.findMany({
     where: {
       tenantId,
@@ -3278,14 +3313,7 @@ async function buildRangeReport(tenantId: string, from: string, to: string, esta
       invoice: {
         select: {
           isVoucher: true,
-          orders: {
-            select: {
-              isVoucher: true,
-              paymentMethod: true,
-              createdBy: { select: { id: true, firstName: true, lastName: true } },
-              server: { select: { id: true, firstName: true, lastName: true } },
-            },
-          },
+          reservationId: true,
         },
       },
     },
@@ -3308,38 +3336,55 @@ async function buildRangeReport(tenantId: string, from: string, to: string, esta
   const grandByMethod: Record<string, { count: number; total: number }> = {};
   const grandByServer: Record<string, { name: string; count: number; revenue: number }> = {};
 
-  for (const p of payments) {
-    const day = p.createdAt.toISOString().slice(0, 10);
-    const amount = Number(p.amount);
-    const isVoucher = p.invoice?.isVoucher || p.invoice?.orders?.some((o: any) => o.isVoucher);
-    const method = p.method || 'CASH';
-    const order = p.invoice?.orders?.[0];
+  // Walk orders for encaissements + per-server breakdown
+  for (const o of orders) {
+    const day = o.createdAt.toISOString().slice(0, 10);
+    const amount = Number(o.totalAmount);
 
     if (!days[day]) days[day] = { total: 0, voucherTotal: 0, count: 0, voucherCount: 0, byMethod: {} };
 
-    if (isVoucher) {
+    if ((o as any).isVoucher) {
       days[day].voucherTotal += amount;
       days[day].voucherCount++;
       grandVoucher += amount;
-    } else {
-      days[day].total += amount;
-      days[day].count++;
-      days[day].byMethod[method] = (days[day].byMethod[method] || 0) + amount;
-      grandTotal += amount;
-
-      if (!grandByMethod[method]) grandByMethod[method] = { count: 0, total: 0 };
-      grandByMethod[method].count++;
-      grandByMethod[method].total += amount;
-
-      const attributed = (order as any)?.server || order?.createdBy;
-      if (attributed) {
-        const key = (attributed as any).id;
-        const name = `${(attributed as any).firstName} ${(attributed as any).lastName}`;
-        if (!grandByServer[key]) grandByServer[key] = { name, count: 0, revenue: 0 };
-        grandByServer[key].count++;
-        grandByServer[key].revenue += amount;
-      }
+      continue;
     }
+    if (o.status === 'CANCELLED' || o.status === 'PENDING') continue;
+
+    const method = o.paymentMethod || 'NON_DEFINI';
+    days[day].total += amount;
+    days[day].count++;
+    days[day].byMethod[method] = (days[day].byMethod[method] || 0) + amount;
+    grandTotal += amount;
+
+    if (!grandByMethod[method]) grandByMethod[method] = { count: 0, total: 0 };
+    grandByMethod[method].count++;
+    grandByMethod[method].total += amount;
+
+    const attributed = (o as any).server || (o as any).createdBy;
+    if (attributed) {
+      const key = (attributed as any).id;
+      const name = `${(attributed as any).firstName} ${(attributed as any).lastName}`;
+      if (!grandByServer[key]) grandByServer[key] = { name, count: 0, revenue: 0 };
+      grandByServer[key].count++;
+      grandByServer[key].revenue += amount;
+    }
+  }
+
+  // Reservation payments add to the totals for the day they were paid.
+  for (const p of payments) {
+    if (!p.invoice?.reservationId || p.invoice?.isVoucher) continue;
+    const day = p.createdAt.toISOString().slice(0, 10);
+    const amount = Number(p.amount);
+    const method = p.method || 'CASH';
+    if (!days[day]) days[day] = { total: 0, voucherTotal: 0, count: 0, voucherCount: 0, byMethod: {} };
+    days[day].total += amount;
+    days[day].count++;
+    days[day].byMethod[method] = (days[day].byMethod[method] || 0) + amount;
+    grandTotal += amount;
+    if (!grandByMethod[method]) grandByMethod[method] = { count: 0, total: 0 };
+    grandByMethod[method].count++;
+    grandByMethod[method].total += amount;
   }
 
   // Expenses over the same range — bucketed by operationDate
@@ -3381,7 +3426,7 @@ async function buildRangeReport(tenantId: string, from: string, to: string, esta
     days: daysWithNet,
     grandTotal,
     grandVoucher,
-    grandPayments: payments.length,
+    grandPayments: orders.filter((o: any) => !o.isVoucher && !['CANCELLED', 'PENDING'].includes(o.status)).length + payments.filter((p: any) => p.invoice?.reservationId && !p.invoice?.isVoucher).length,
     grandByMethod,
     grandByServer: Object.values(grandByServer).sort((a, b) => b.revenue - a.revenue),
     grandDecaisse,
@@ -3464,7 +3509,7 @@ async function generateRangeReportPdf(tenantId: string, report: any, from: strin
           fmtDateShort(day.date),
           String(day.count),
           fmtCurrency(day.total),
-          day.decaisse > 0 ? `− ${fmtCurrency(day.decaisse)}` : '-',
+          day.decaisse > 0 ? `- ${fmtCurrency(day.decaisse)}` : '-',
           fmtCurrency(day.net),
         ]);
       }
@@ -3475,7 +3520,7 @@ async function generateRangeReportPdf(tenantId: string, report: any, from: strin
       'TOTAL',
       '',
       fmtCurrency(report.grandTotal),
-      `− ${fmtCurrency(report.grandDecaisse || 0)}`,
+      `- ${fmtCurrency(report.grandDecaisse || 0)}`,
       fmtCurrency(report.grandNet ?? report.grandTotal),
     ], true);
     doc.moveDown(0.8);
@@ -3500,7 +3545,7 @@ async function generateRangeReportPdf(tenantId: string, report: any, from: strin
       doc.moveDown(0.1);
     };
     drawBilanRow(['Total encaissé', '', fmtCurrency(report.grandTotal)]);
-    drawBilanRow(['Total décaissé', '', `− ${fmtCurrency(report.grandDecaisse || 0)}`]);
+    drawBilanRow(['Total décaissé', '', `- ${fmtCurrency(report.grandDecaisse || 0)}`]);
     if (report.grandVoucher > 0) {
       drawBilanRow(['Bons propriétaire (info)', '', fmtCurrency(report.grandVoucher)], false, '#92400E');
     }

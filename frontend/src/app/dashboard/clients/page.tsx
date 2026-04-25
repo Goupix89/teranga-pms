@@ -71,9 +71,13 @@ export default function ClientsPage() {
               <thead>
                 <tr>
                   <th>Nom</th>
-                  <th>Contact</th>
-                  <th>Séjours</th>
+                  <th>Email</th>
+                  <th>Téléphone</th>
+                  <th>Source</th>
+                  <th>Réservations</th>
+                  <th>Factures</th>
                   <th>Revenus</th>
+                  <th>Inscrit le</th>
                   <th>Fidélité</th>
                   <th className="w-0"></th>
                 </tr>
@@ -82,16 +86,23 @@ export default function ClientsPage() {
                 {clients.map((c: any) => {
                   const totalStays = c.reservationCount || 0;
                   const tier = totalStays >= 10 ? 'GOLD' : totalStays >= 5 ? 'SILVER' : totalStays >= 2 ? 'BRONZE' : 'NEW';
+                  const sourceLabel = (c.source || 'DIRECT').replace(/_/g, ' ');
                   return (
                     <tr key={c.id}>
                       <td className="font-medium text-gray-900">{c.firstName} {c.lastName}</td>
-                      <td className="text-sm text-gray-500">
-                        {c.email && <div>{c.email}</div>}
-                        {c.phone && <div>{c.phone}</div>}
-                        {!c.email && !c.phone && '-'}
+                      <td className="text-sm text-gray-600">{c.email || '-'}</td>
+                      <td className="text-sm text-gray-600">{c.phone || '-'}</td>
+                      <td>
+                        <span className="inline-flex rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+                          {sourceLabel}
+                        </span>
                       </td>
                       <td>{totalStays}</td>
+                      <td>{c.invoiceCount || 0}</td>
                       <td className="font-medium">{Math.round(c.totalRevenue || 0).toLocaleString('fr-FR')} FCFA</td>
+                      <td className="text-xs text-gray-500">
+                        {c.createdAt ? new Date(c.createdAt).toLocaleDateString('fr-FR') : '-'}
+                      </td>
                       <td>
                         <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${tierColors[tier]}`}>
                           {tierLabels[tier]}

@@ -65,7 +65,7 @@ export default function ClientDetailPage() {
 
       <PageHeader
         title={`${client.firstName} ${client.lastName}`}
-        subtitle={[client.email, client.phone].filter(Boolean).join(' • ')}
+        subtitle={[client.email, client.phone].filter(Boolean).join(' • ') || 'Coordonnées non renseignées'}
         action={
           <button onClick={downloadPdf} disabled={downloading} className="btn-primary">
             {downloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
@@ -73,6 +73,37 @@ export default function ClientDetailPage() {
           </button>
         }
       />
+
+      {/* Coordonnées */}
+      <div className="card p-4">
+        <h3 className="mb-3 text-sm font-semibold uppercase text-gray-500">Coordonnées</h3>
+        <dl className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <dt className="text-xs uppercase text-gray-400">Email</dt>
+            <dd className="text-gray-900">{client.email || <span className="text-gray-400">—</span>}</dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase text-gray-400">Téléphone</dt>
+            <dd className="text-gray-900">{client.phone || <span className="text-gray-400">—</span>}</dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase text-gray-400">Source</dt>
+            <dd className="text-gray-900">{(client.source || 'DIRECT').replace(/_/g, ' ')}</dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase text-gray-400">Inscrit le</dt>
+            <dd className="text-gray-900">
+              {client.createdAt ? new Date(client.createdAt).toLocaleDateString('fr-FR') : '—'}
+            </dd>
+          </div>
+          {client.notes && (
+            <div className="md:col-span-2 lg:col-span-4">
+              <dt className="text-xs uppercase text-gray-400">Notes</dt>
+              <dd className="text-gray-700 italic">{client.notes}</dd>
+            </div>
+          )}
+        </dl>
+      </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
         <div className="card p-4">

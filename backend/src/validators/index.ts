@@ -179,9 +179,14 @@ export const updateReservationSchema = z.object({
   guestPhone: z.string().regex(/^\+?[0-9]{8,15}$/).optional().nullable(),
   checkIn: z.string().date().optional(),
   checkOut: z.string().date().optional(),
+  roomId: z.string().uuid().optional(),
   numberOfGuests: z.number().int().min(1).max(20).optional(),
+  discountRuleId: z.string().uuid().optional().nullable(),
   notes: z.string().max(1000).optional().nullable(),
-});
+}).refine(
+  (d) => !d.checkIn || !d.checkOut || new Date(d.checkOut) > new Date(d.checkIn),
+  { message: 'La date de départ doit être après la date d\'arrivée', path: ['checkOut'] }
+);
 
 // =============================================================================
 // Invoice

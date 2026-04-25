@@ -240,7 +240,16 @@ export class ReceiptService {
             items: { include: { article: { select: { name: true } } } },
           },
         },
-        reservation: { select: { guestName: true, checkIn: true, checkOut: true, room: { select: { number: true, type: true } } } },
+        reservation: {
+          select: {
+            guestName: true, guestEmail: true, guestPhone: true,
+            checkIn: true, checkOut: true,
+            numberOfGuests: true,
+            source: true, externalRef: true,
+            room: { select: { number: true, type: true, pricePerNight: true } },
+          },
+        },
+        client: { select: { firstName: true, lastName: true, email: true, phone: true } },
         createdBy: { select: { firstName: true, lastName: true } },
         discountRule: { select: { name: true, type: true, value: true } },
         autoDiscountRule: { select: { name: true, type: true, value: true } },
@@ -319,7 +328,24 @@ export class ReceiptService {
       doc.text(`Date: ${formatDate(invoice.createdAt)}`);
       doc.text(`Statut: ${invoice.status}`);
       if (invoice.reservation) {
-        doc.text(`Client: ${invoice.reservation.guestName}`);
+        // Customer block — name + contact + stay details
+        const r = invoice.reservation;
+        doc.font('Helvetica-Bold').fontSize(10).text('Client', { underline: true });
+        doc.font('Helvetica').fontSize(9);
+        doc.text(`Nom : ${r.guestName}`);
+        if (r.guestEmail) doc.text(`Email : ${r.guestEmail}`);
+        if (r.guestPhone) doc.text(`Téléphone : ${r.guestPhone}`);
+        doc.moveDown(0.3);
+        doc.font('Helvetica-Bold').fontSize(10).text('Séjour', { underline: true });
+        doc.font('Helvetica').fontSize(9);
+        doc.text(`Chambre : ${r.room?.number || '-'}${r.room?.type ? ` (${r.room.type})` : ''}`);
+        doc.text(`Arrivée : ${formatDate(r.checkIn)}`);
+        doc.text(`Départ : ${formatDate(r.checkOut)}`);
+        if (r.numberOfGuests) doc.text(`Nombre d'invités : ${r.numberOfGuests}`);
+        if (r.source && r.source !== 'DIRECT') {
+          doc.text(`Source : ${r.source.replace('_', ' ')}${r.externalRef ? ` (réf ${r.externalRef})` : ''}`);
+        }
+        doc.moveDown(0.3);
       }
       if (invoice.orders.length > 0) {
         const orderNumbers = invoice.orders.map((o: any) => o.orderNumber).join(', ');

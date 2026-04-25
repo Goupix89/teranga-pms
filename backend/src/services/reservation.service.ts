@@ -161,9 +161,11 @@ export class ReservationService {
       }
       const totalPrice = Math.max(0, subtotal - discountAmount);
 
-      // 4c. Create/find Client from guest info (source = channel or direct)
+      // 4c. Create/find Client from guest info — always create so every guest
+      // is searchable in the Clients menu, even when email/phone is missing
+      // (the channel sometimes hides them).
       let clientId: string | null = null;
-      if (data.guestEmail || data.guestPhone) {
+      {
         const { clientService } = await import('./client.service');
         const [firstName, ...rest] = data.guestName.trim().split(/\s+/);
         const client = await clientService.findOrCreate(tenantId, {
@@ -311,13 +313,18 @@ export class ReservationService {
     guestPhone?: string | null;
     checkIn?: string;
     checkOut?: string;
+    roomId?: string;
     numberOfGuests?: number;
     notes?: string | null;
+    discountRuleId?: string | null;
   }) {
     return prisma.$transaction(async (tx) => {
       const existing = await tx.reservation.findFirst({
         where: { id, tenantId },
-        include: { room: true },
+        include: {
+          room: true,
+          invoices: { select: { id: true, status: true, paidAt: true } },
+        },
       });
 
       if (!existing) throw new NotFoundError('Réservation');
@@ -326,44 +333,142 @@ export class ReservationService {
         throw new ValidationError('Impossible de modifier une réservation terminée ou annulée');
       }
 
+      // Refuse if any linked invoice is already paid or cancelled — modifying
+      // the totals would leave accounting inconsistent.
+      const blockedInvoice = existing.invoices.find((i: any) => ['PAID', 'CANCELLED'].includes(i.status));
+      if (blockedInvoice) {
+        throw new ValidationError(
+          `Facture ${blockedInvoice.status === 'PAID' ? 'déjà payée' : 'annulée'} — modification de la réservation refusée`
+        );
+      }
+
       const checkInDate = data.checkIn ? new Date(data.checkIn) : existing.checkIn;
       const checkOutDate = data.checkOut ? new Date(data.checkOut) : existing.checkOut;
+      const newRoomId = data.roomId ?? existing.roomId;
+      const datesChanged = !!data.checkIn || !!data.checkOut;
+      const roomChanged = data.roomId && data.roomId !== existing.roomId;
 
-      // Re-check availability if dates changed
-      if (data.checkIn || data.checkOut) {
+      // Resolve target room (may be unchanged)
+      const room = roomChanged
+        ? await tx.room.findFirst({ where: { id: newRoomId, tenantId, isActive: true } })
+        : existing.room;
+      if (!room) throw new NotFoundError('Chambre');
+
+      // Validate guest count vs new room capacity
+      const numberOfGuests = data.numberOfGuests ?? existing.numberOfGuests;
+      if (numberOfGuests > room.maxOccupancy) {
+        throw new ValidationError(`Cette chambre accepte maximum ${room.maxOccupancy} personnes`);
+      }
+
+      // Re-check availability if dates or room changed
+      if (datesChanged || roomChanged) {
         const conflict = await tx.reservation.findFirst({
           where: {
             tenantId,
-            roomId: existing.roomId,
+            roomId: newRoomId,
             id: { not: id },
             status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN'] },
             checkIn: { lt: checkOutDate },
             checkOut: { gt: checkInDate },
           },
         });
-
         if (conflict) {
-          throw new ConflictError('Les nouvelles dates chevauchent une autre réservation');
+          throw new ConflictError('Les nouvelles dates / chambre chevauchent une autre réservation');
         }
       }
 
-      // Recalculate price if dates changed
+      // Recalculate subtotal + discount
       const nights = calculateNights(checkInDate, checkOutDate);
-      const totalPrice = existing.room.pricePerNight.mul(nights);
+      const subtotal = Number(room.pricePerNight.mul(nights));
 
-      return tx.reservation.update({
+      // Re-resolve discount: auto + manual (manual id only changes if explicitly passed)
+      const { discountService } = await import('./discount.service');
+      const auto = await discountService.findAutoReservationDiscount(tenantId, { nights, subtotal });
+      const autoDiscountRuleId: string | null = auto?.rule.id ?? null;
+      const autoDiscountAmount = auto?.amount ?? 0;
+
+      const baseAfterAuto = Math.max(0, subtotal - autoDiscountAmount);
+      let manualRuleId: string | null = data.discountRuleId === undefined
+        ? existing.discountRuleId
+        : data.discountRuleId;
+      let manualAmount = 0;
+      if (manualRuleId) {
+        try {
+          const applied = await discountService.apply(tenantId, manualRuleId, {
+            nights, subtotal: baseAfterAuto, appliesTo: 'RESERVATION',
+          });
+          manualAmount = applied.amount;
+          manualRuleId = applied.rule.id;
+        } catch {
+          // Stale rule (deactivated since) — drop it silently
+          manualRuleId = null;
+          manualAmount = 0;
+        }
+      }
+      const discountAmount = Math.min(autoDiscountAmount + manualAmount, subtotal);
+      const totalPrice = Math.max(0, subtotal - discountAmount);
+
+      // Update the reservation
+      const updated = await tx.reservation.update({
         where: { id },
         data: {
-          ...data,
+          ...(data.guestName !== undefined && { guestName: data.guestName }),
+          ...(data.guestEmail !== undefined && { guestEmail: data.guestEmail }),
+          ...(data.guestPhone !== undefined && { guestPhone: data.guestPhone }),
           ...(data.checkIn && { checkIn: checkInDate }),
           ...(data.checkOut && { checkOut: checkOutDate }),
+          ...(roomChanged && { roomId: newRoomId }),
+          ...(data.numberOfGuests !== undefined && { numberOfGuests }),
+          ...(data.notes !== undefined && { notes: data.notes }),
           totalPrice,
+          discountRuleId: manualRuleId,
+          discountAmount,
+          autoDiscountRuleId,
+          autoDiscountAmount,
         },
         include: {
-          room: { select: { number: true, type: true } },
+          room: { select: { id: true, number: true, type: true } },
         },
       });
-    });
+
+      // Cascade to the linked invoice (open invoices only)
+      const openInvoice = existing.invoices.find((i: any) => !['PAID', 'CANCELLED'].includes(i.status));
+      if (openInvoice) {
+        // Replace invoice items with a single re-priced line, mirror discount
+        await tx.invoiceItem.deleteMany({ where: { invoiceId: openInvoice.id } });
+        await tx.invoiceItem.create({
+          data: {
+            invoiceId: openInvoice.id,
+            description: `Chambre ${updated.room.number} (${updated.room.type}) — ${nights} nuit${nights > 1 ? 's' : ''}`,
+            quantity: nights,
+            unitPrice: Number(room.pricePerNight),
+            totalPrice: subtotal,
+          },
+        });
+        await tx.invoice.update({
+          where: { id: openInvoice.id },
+          data: {
+            subtotal,
+            taxAmount: 0,
+            taxRate: 0,
+            totalAmount: totalPrice,
+            discountRuleId: manualRuleId,
+            discountAmount,
+            autoDiscountRuleId,
+            autoDiscountAmount,
+            notes: `Hébergement ${updated.guestName} — Chambre ${updated.room.number} (${nights} nuit${nights > 1 ? 's' : ''})`,
+          },
+        });
+      }
+
+      logger.info('Reservation updated', {
+        tenantId, id,
+        datesChanged, roomChanged,
+        nights, subtotal, discountAmount, totalPrice,
+      });
+
+      return updated;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   /**

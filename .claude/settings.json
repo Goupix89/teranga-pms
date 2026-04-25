@@ -66,7 +66,9 @@
       "Bash(./gradlew :app:compileDebugKotlin --no-daemon --stacktrace)",
       "Bash(java -version)",
       "Bash(update-java-alternatives --list)",
-      "Bash(echo \"Exit: $?\")"
+      "Bash(echo \"Exit: $?\")",
+      "Bash(grep -n \"− \\\\${fmtCurrency\\\\|− \\\\${fmt\" /home/user/hotel-pms/backend/src/routes/resource.routes.ts)",
+      "Bash(echo \"Frontend exit: $?\")"
     ],
     "additionalDirectories": [
       "/home/user/hotel-pms/frontend/src/app/dashboard/clients",
