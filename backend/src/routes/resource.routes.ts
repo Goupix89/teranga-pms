@@ -407,6 +407,15 @@ reservationRouter.patch('/:id', authenticate, requireEstablishmentRole('OWNER', 
   })
 );
 
+// Admin: backfill invoices/payments for older channel reservations that were
+// created before the channel-sync fix landed. Idempotent and safe to re-run.
+reservationRouter.post('/admin/backfill-channel-invoices', authenticate, requireOwner,
+  asyncHandler(async (req, res) => {
+    const result = await reservationService.backfillChannelInvoices(req.user!.tenantId);
+    res.json({ success: true, data: result });
+  })
+);
+
 reservationRouter.post('/:id/check-in', authenticate, requireDAFOrManagerOrServer,
   asyncHandler(async (req, res) => {
     const data = await reservationService.checkIn(req.user!.tenantId, req.params.id);

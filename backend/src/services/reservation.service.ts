@@ -558,6 +558,152 @@ export class ReservationService {
   }
 
   /**
+   * Backfill invoices + payments for channel-imported reservations that were
+   * created before the channel-sync fix landed. Idempotent — only processes
+   * reservations where no invoice exists yet. Per-reservation errors are
+   * collected and returned without aborting the whole run.
+   */
+  async backfillChannelInvoices(tenantId: string): Promise<{
+    scanned: number;
+    invoicesCreated: number;
+    paymentsCreated: number;
+    skipped: number;
+    errors: Array<{ reservationId: string; error: string }>;
+  }> {
+    const errors: Array<{ reservationId: string; error: string }> = [];
+    let invoicesCreated = 0;
+    let paymentsCreated = 0;
+    let skipped = 0;
+
+    // Find channel reservations without an invoice
+    const candidates = await prisma.reservation.findMany({
+      where: {
+        tenantId,
+        source: { in: ['BOOKING_COM', 'EXPEDIA', 'AIRBNB', 'CHANNEL_MANAGER'] },
+        status: { not: 'CANCELLED' },
+        invoices: { none: {} },
+      },
+      include: {
+        room: { select: { id: true, number: true, type: true, pricePerNight: true, establishmentId: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const scanned = candidates.length;
+
+    // Pick a system user once
+    const systemUser = await prisma.user.findFirst({
+      where: { tenantId, status: 'ACTIVE' },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    if (!systemUser) {
+      throw new ValidationError('Aucun utilisateur système actif pour émettre les factures');
+    }
+
+    for (const r of candidates) {
+      try {
+        const nights = calculateNights(r.checkIn, r.checkOut);
+        const subtotal = Number(r.room.pricePerNight.mul(nights));
+        const totalAmount = Number(r.totalPrice) || subtotal;
+        const paymentMethod = r.source === 'CHANNEL_MANAGER' ? 'FEDAPAY' : 'OTHER';
+
+        // Find or create the client from guest info
+        const { clientService } = await import('./client.service');
+        const [firstName, ...rest] = (r.guestName || 'Client').trim().split(/\s+/);
+        const client = await clientService.findOrCreate(tenantId, {
+          firstName: firstName || r.guestName || 'Client',
+          lastName: rest.join(' '),
+          email: r.guestEmail ?? undefined,
+          phone: r.guestPhone ?? undefined,
+          source: r.source,
+        });
+
+        await prisma.$transaction(async (tx) => {
+          // Generate a unique invoice number based on the reservation creation day
+          const day = r.createdAt.toISOString().slice(0, 10).replace(/-/g, '');
+          const todayStart = new Date(r.createdAt.toISOString().slice(0, 10));
+          const tomorrowStart = new Date(todayStart);
+          tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+          const lastInvoice = await tx.invoice.findFirst({
+            where: { tenantId, createdAt: { gte: todayStart, lt: tomorrowStart } },
+            orderBy: { invoiceNumber: 'desc' },
+            select: { invoiceNumber: true },
+          });
+          const lastNum = lastInvoice
+            ? parseInt(lastInvoice.invoiceNumber.split('-').pop() || '0', 10)
+            : 0;
+          const invoiceNumber = `FAC-${day}-${String(lastNum + 1).padStart(4, '0')}`;
+
+          const invoice = await tx.invoice.create({
+            data: {
+              tenantId,
+              reservationId: r.id,
+              clientId: client.id,
+              createdById: systemUser.id,
+              invoiceNumber,
+              subtotal,
+              taxAmount: 0,
+              taxRate: 0,
+              totalAmount,
+              paymentMethod,
+              notes: `Hébergement ${r.guestName} — Chambre ${r.room.number} (${nights} nuit${nights > 1 ? 's' : ''}) [${r.source}] (rattrapage)`,
+              status: 'ISSUED',
+              createdAt: r.createdAt,
+              items: {
+                create: [{
+                  description: `Chambre ${r.room.number} (${r.room.type}) — ${nights} nuit${nights > 1 ? 's' : ''}`,
+                  quantity: nights,
+                  unitPrice: Number(r.room.pricePerNight),
+                  totalPrice: subtotal,
+                }],
+              },
+            },
+          });
+          invoicesCreated++;
+
+          // Record the payment at the reservation's createdAt — the CA lands
+          // on the day the reservation was originally confirmed.
+          await tx.payment.create({
+            data: {
+              tenantId,
+              invoiceId: invoice.id,
+              amount: totalAmount,
+              method: paymentMethod,
+              reference: r.externalRef || `channel:${r.source}`,
+              paidAt: r.createdAt,
+              createdAt: r.createdAt,
+            },
+          });
+          paymentsCreated++;
+
+          await tx.invoice.update({
+            where: { id: invoice.id },
+            data: { status: 'PAID', paidAt: r.createdAt },
+          });
+
+          // Link the reservation to the client if it wasn't already
+          if (!r.clientId) {
+            await tx.reservation.update({
+              where: { id: r.id },
+              data: { clientId: client.id },
+            });
+          }
+        });
+      } catch (e: any) {
+        errors.push({ reservationId: r.id, error: e?.message || 'Erreur inconnue' });
+        skipped++;
+      }
+    }
+
+    logger.info('Channel invoice backfill complete', {
+      tenantId, scanned, invoicesCreated, paymentsCreated, skipped, errorCount: errors.length,
+    });
+
+    return { scanned, invoicesCreated, paymentsCreated, skipped, errors };
+  }
+
+  /**
    * Get room availability as JSON (occupied periods).
    */
   async getAvailability(tenantId: string, from?: string, to?: string, establishmentId?: string) {

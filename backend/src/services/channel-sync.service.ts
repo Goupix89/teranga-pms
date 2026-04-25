@@ -393,20 +393,51 @@ export class ChannelSyncService {
           ? event.summary
           : `${conn.channel.replace('_', ' ')} Guest`;
 
-        await prisma.reservation.create({
-          data: {
-            tenantId: conn.tenantId,
+        // Route via reservationService.create() so the reservation also produces:
+        // - a Client row (visible in the Clients menu)
+        // - an Invoice row (visible in the Invoices menu, included in reports)
+        // - a Payment row marking the invoice PAID at the moment of the channel
+        //   confirmation (channel paid in full → CA is recognized today)
+        const { reservationService } = await import('./reservation.service');
+        const totalPrice = nights * pricePerNight;
+        // FedaPay only for CHANNEL_MANAGER (the hotel's own website paid via FedaPay).
+        // Booking / Expedia / Airbnb collect payment outside the system → 'OTHER'.
+        const paymentMethod = conn.channel === 'CHANNEL_MANAGER' ? 'FEDAPAY' : 'OTHER';
+        try {
+          await reservationService.create(conn.tenantId, {
             roomId: conn.roomId,
             guestName,
-            checkIn: event.dtstart,
-            checkOut: event.dtend,
-            totalPrice: nights * pricePerNight,
-            status: 'CONFIRMED',
+            checkIn: event.dtstart.toISOString().slice(0, 10),
+            checkOut: event.dtend.toISOString().slice(0, 10),
+            numberOfGuests: 1,
             source: conn.channel,
             externalRef: event.uid,
-          },
-        });
-        result.eventsCreated++;
+            paymentMethod,
+            paidAmount: totalPrice,
+          });
+          result.eventsCreated++;
+        } catch (e: any) {
+          // If serializable retry fails or any other unexpected issue, fall
+          // back to the minimal direct insert so the reservation is at least
+          // visible on the calendar.
+          logger.warn('reservationService.create failed during channel sync; fallback to direct insert', {
+            uid: event.uid, channel: conn.channel, error: e?.message,
+          });
+          await prisma.reservation.create({
+            data: {
+              tenantId: conn.tenantId,
+              roomId: conn.roomId,
+              guestName,
+              checkIn: event.dtstart,
+              checkOut: event.dtend,
+              totalPrice,
+              status: 'CONFIRMED',
+              source: conn.channel,
+              externalRef: event.uid,
+            },
+          });
+          result.eventsCreated++;
+        }
       }
     }
 
