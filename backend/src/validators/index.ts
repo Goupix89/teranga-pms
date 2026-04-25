@@ -441,6 +441,12 @@ export const createOrderSchema = z.object({
   operationDate: z.string().datetime().optional(),
 });
 
+export const updateOrderVoucherSchema = z.object({
+  isVoucher: z.boolean(),
+  voucherOwnerId: z.string().uuid().nullable().optional(),
+  voucherOwnerName: z.string().max(200).nullable().optional(),
+});
+
 export const updateOrderStatusSchema = z.object({
   status: z.enum(['PENDING', 'IN_PROGRESS', 'READY', 'SERVED', 'CANCELLED']),
 });

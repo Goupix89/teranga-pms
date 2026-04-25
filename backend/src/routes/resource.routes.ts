@@ -585,6 +585,17 @@ orderRouter.post('/:id/items', authenticate, requireOrderCreator,
   })
 );
 
+// Toggle the "bon propriétaire" flag on an existing order.
+// Only OWNER/DAF/MANAGER can change voucher status — servers and POS cannot
+// retroactively turn a regular order into a voucher (or vice versa).
+orderRouter.patch('/:id/voucher', authenticate, requireEstablishmentRole('OWNER', 'DAF', 'MANAGER'),
+  validate(v.updateOrderVoucherSchema),
+  asyncHandler(async (req, res) => {
+    const data = await orderService.setVoucherFlag(req.user!.tenantId, req.params.id, req.user!.id, req.body);
+    res.json({ success: true, data });
+  })
+);
+
 // Cooks mark IN_PROGRESS/READY, servers mark SERVED, DAF/MANAGER can cancel
 orderRouter.patch('/:id/status', authenticate, requireEstablishmentRole('DAF', 'MANAGER', 'SERVER', 'COOK'),
   validate(v.updateOrderStatusSchema),
@@ -3049,6 +3060,113 @@ async function generateDailyReportPdf(tenantId: string, report: any, date: strin
     drawTableRow(['TOTAL', '', fmtCurrency(report.totalEncaisse)], true);
     doc.moveDown(0.8);
 
+    // --- Décaissements du jour ---
+    const totalDecaisse = Number(report.totalDecaisse || 0);
+    const expenseDetails: any[] = report.expenseDetails || [];
+    const expenseByMethod: Record<string, { count: number; total: number }> = report.expenseByMethod || {};
+    const expenseByCategory: Record<string, { count: number; total: number }> = report.expenseByCategory || {};
+
+    if (doc.y > 680) doc.addPage();
+    doc.fontSize(13).font('Helvetica-Bold').fillColor('#B85042').text('Décaissements du jour');
+    doc.fillColor('#000000');
+    doc.moveDown(0.3);
+
+    if (expenseDetails.length === 0) {
+      doc.fontSize(10).font('Helvetica').fillColor('#6B7280').text('Aucun décaissement enregistré.');
+      doc.fillColor('#000000');
+      doc.moveDown(0.8);
+    } else {
+      doc.fontSize(22).font('Helvetica-Bold').fillColor('#B85042').text(fmtCurrency(totalDecaisse));
+      doc.fillColor('#000000');
+      doc.fontSize(10).font('Helvetica').text(`${expenseDetails.length} décaissement(s) au total`);
+      doc.moveDown(0.5);
+
+      // Par mode
+      doc.fontSize(11).font('Helvetica-Bold').text('Par mode de paiement');
+      doc.moveDown(0.2);
+      drawTableRow(['Mode', 'Transactions', 'Montant'], true);
+      doc.moveTo(40, doc.y).lineTo(500, doc.y).stroke('#E5E7EB');
+      doc.moveDown(0.2);
+      for (const [method, info] of Object.entries(expenseByMethod)) {
+        drawTableRow([PAYMENT_LABELS[method] || method, String(info.count), fmtCurrency(info.total)]);
+      }
+      doc.moveTo(40, doc.y).lineTo(500, doc.y).stroke('#E5E7EB');
+      doc.moveDown(0.1);
+      drawTableRow(['TOTAL', '', fmtCurrency(totalDecaisse)], true);
+      doc.moveDown(0.5);
+
+      // Par catégorie
+      const CATEGORY_LABELS: Record<string, string> = {
+        SUPPLIES: 'Fournitures', SALARY: 'Salaires', UTILITIES: 'Électricité/Eau',
+        RENT: 'Loyer', MAINTENANCE: 'Entretien', TRANSPORT: 'Transport',
+        MARKETING: 'Marketing', OTHER: 'Autre',
+      };
+      if (Object.keys(expenseByCategory).length > 0) {
+        doc.fontSize(11).font('Helvetica-Bold').text('Par catégorie');
+        doc.moveDown(0.2);
+        drawTableRow(['Catégorie', 'Transactions', 'Montant'], true);
+        doc.moveTo(40, doc.y).lineTo(500, doc.y).stroke('#E5E7EB');
+        doc.moveDown(0.2);
+        for (const [cat, info] of Object.entries(expenseByCategory)) {
+          drawTableRow([CATEGORY_LABELS[cat] || cat, String(info.count), fmtCurrency(info.total)]);
+        }
+        doc.moveDown(0.5);
+      }
+
+      // Détail
+      if (doc.y > 680) doc.addPage();
+      doc.fontSize(11).font('Helvetica-Bold').text('Détail des décaissements');
+      doc.moveDown(0.2);
+      const expW = [60, 200, 70, 80, 70];
+      const drawExpRow = (cells: string[], bold = false) => {
+        const startY = doc.y;
+        doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(8);
+        let x = 40;
+        let maxH = 0;
+        cells.forEach((cell, i) => {
+          const opts = { width: expW[i], align: (i === 3 ? 'right' : 'left') as 'right' | 'left' };
+          const h = doc.heightOfString(cell, opts);
+          doc.text(cell, x, startY, opts);
+          if (h > maxH) maxH = h;
+          x += expW[i] + 5;
+        });
+        doc.y = startY + maxH + 2;
+      };
+      drawExpRow(['Catégorie', 'Motif', 'Mode', 'Montant', 'Saisi par'], true);
+      doc.moveTo(40, doc.y).lineTo(535, doc.y).stroke('#E5E7EB');
+      doc.moveDown(0.15);
+      for (const e of expenseDetails) {
+        if (doc.y > 750) doc.addPage();
+        drawExpRow([
+          CATEGORY_LABELS[e.category] || e.category || '-',
+          e.reason || '-',
+          PAYMENT_LABELS[e.method] || e.method || '-',
+          fmtCurrency(e.amount),
+          e.performer || '-',
+        ]);
+      }
+      doc.moveDown(0.8);
+    }
+
+    // --- Solde du jour (encaissements - décaissements) ---
+    if (doc.y > 700) doc.addPage();
+    doc.moveTo(40, doc.y).lineTo(555, doc.y).stroke('#B85042');
+    doc.moveDown(0.4);
+    const solde = report.totalEncaisse - totalDecaisse;
+    const soldeColor = solde >= 0 ? '#065F46' : '#991B1B';
+    doc.fontSize(13).font('Helvetica-Bold').fillColor('#000000').text('Solde du jour', 40, doc.y, { continued: true });
+    doc.fontSize(10).font('Helvetica').fillColor('#6B7280').text('  (encaissements − décaissements)');
+    doc.fillColor('#000000').moveDown(0.2);
+    doc.fontSize(11).font('Helvetica').fillColor('#374151');
+    drawTableRow(['Total encaissé', '', fmtCurrency(report.totalEncaisse)]);
+    drawTableRow(['Total décaissé', '', `− ${fmtCurrency(totalDecaisse)}`]);
+    doc.moveTo(40, doc.y).lineTo(500, doc.y).stroke('#E5E7EB');
+    doc.moveDown(0.1);
+    doc.fontSize(13).font('Helvetica-Bold').fillColor(soldeColor);
+    drawTableRow(['SOLDE', '', fmtCurrency(solde)], true);
+    doc.fillColor('#000000');
+    doc.moveDown(0.8);
+
     // --- Par serveur ---
     if (report.byServer.length > 0) {
       doc.fontSize(12).font('Helvetica-Bold').fillColor('#B85042').text('Performance par serveur');
@@ -3334,26 +3452,61 @@ async function generateRangeReportPdf(tenantId: string, report: any, from: strin
       doc.moveDown(0.1);
     };
 
-    drawRow(['Date', 'Paiements', 'Encaissements', 'Bons', 'Net'], true);
+    drawRow(['Date', 'Paiements', 'Encaissé', 'Décaissé', 'Solde'], true);
     doc.moveTo(40, doc.y).lineTo(530, doc.y).stroke('#E5E7EB');
     doc.moveDown(0.15);
 
     for (const day of report.days) {
       if (doc.y > 720) doc.addPage();
-      const hasData = day.count > 0 || day.voucherCount > 0;
+      const hasData = day.count > 0 || day.voucherCount > 0 || day.decaisseCount > 0;
       if (hasData) {
         drawRow([
           fmtDateShort(day.date),
           String(day.count),
           fmtCurrency(day.total),
-          day.voucherCount > 0 ? fmtCurrency(day.voucherTotal) : '-',
-          fmtCurrency(day.total),
+          day.decaisse > 0 ? `− ${fmtCurrency(day.decaisse)}` : '-',
+          fmtCurrency(day.net),
         ]);
       }
     }
     doc.moveTo(40, doc.y).lineTo(530, doc.y).stroke('#E5E7EB');
     doc.moveDown(0.1);
-    drawRow(['TOTAL', '', fmtCurrency(report.grandTotal), fmtCurrency(report.grandVoucher), fmtCurrency(report.grandTotal)], true);
+    drawRow([
+      'TOTAL',
+      '',
+      fmtCurrency(report.grandTotal),
+      `− ${fmtCurrency(report.grandDecaisse || 0)}`,
+      fmtCurrency(report.grandNet ?? report.grandTotal),
+    ], true);
+    doc.moveDown(0.8);
+
+    // Bilan global avec ligne Solde
+    if (doc.y > 680) doc.addPage();
+    doc.fontSize(12).font('Helvetica-Bold').fillColor('#B85042').text('Solde de la période');
+    doc.fillColor('#000000');
+    doc.moveDown(0.3);
+    const soldeRange = (report.grandTotal || 0) - (report.grandDecaisse || 0);
+    const soldeRangeColor = soldeRange >= 0 ? '#065F46' : '#991B1B';
+    const sColW = [200, 100, 150];
+    const drawBilanRow = (cells: string[], bold = false, color = '#000000') => {
+      const y = doc.y;
+      doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(10).fillColor(color);
+      let x = 40;
+      cells.forEach((cell, i) => {
+        doc.text(cell, x, y, { width: sColW[i], align: i === 0 ? 'left' : 'right' });
+        x += sColW[i] + 10;
+      });
+      doc.fillColor('#000000');
+      doc.moveDown(0.1);
+    };
+    drawBilanRow(['Total encaissé', '', fmtCurrency(report.grandTotal)]);
+    drawBilanRow(['Total décaissé', '', `− ${fmtCurrency(report.grandDecaisse || 0)}`]);
+    if (report.grandVoucher > 0) {
+      drawBilanRow(['Bons propriétaire (info)', '', fmtCurrency(report.grandVoucher)], false, '#92400E');
+    }
+    doc.moveTo(40, doc.y).lineTo(500, doc.y).stroke('#E5E7EB');
+    doc.moveDown(0.1);
+    drawBilanRow(['SOLDE', '', fmtCurrency(soldeRange)], true, soldeRangeColor);
     doc.moveDown(0.8);
 
     // By payment method

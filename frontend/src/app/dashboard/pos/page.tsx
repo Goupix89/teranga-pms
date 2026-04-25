@@ -127,26 +127,35 @@ export default function PosPage() {
   const discountRules: any[] = discountRulesData?.data || [];
 
   const onlineArticles: Article[] = articlesData?.data || [];
-  // Merge: prefer fresh server data, fall back to cached articles when offline
-  const articles: Article[] = onlineArticles.length > 0 ? onlineArticles : offlineArticles;
+  // When offline, always trust the cache. When online, prefer fresh data and
+  // fall back to cache while react-query is still loading.
+  const articles: Article[] = offline
+    ? offlineArticles
+    : (onlineArticles.length > 0 ? onlineArticles : offlineArticles);
   const categories = categoriesData?.data || [];
 
-  // Cache articles to IndexedDB whenever they arrive (so the POS can survive a
-  // network outage with the menu it last saw).
+  // Cache articles to IndexedDB only when the article set actually changes
+  // (id-stable hash) — avoids rewriting the table on every render.
+  const articlesHash = useMemo(
+    () => onlineArticles.map((a) => a.id).sort().join('|'),
+    [onlineArticles]
+  );
   useEffect(() => {
     if (onlineArticles.length > 0 && currentEstId && currentTenantId) {
       cacheArticles(currentTenantId, currentEstId, onlineArticles as unknown as Array<{ id: string }>)
         .catch(() => { /* cache write failure is non-fatal */ });
     }
-  }, [onlineArticles, currentEstId, currentTenantId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [articlesHash, currentEstId, currentTenantId]);
 
-  // Read from cache when offline on mount
+  // Read from cache on mount AND whenever connectivity flips, so offlineArticles
+  // is always populated as a true fallback (not lazily after a render).
   useEffect(() => {
     if (!currentEstId) return;
     readCachedArticles(currentEstId)
       .then((rows) => setOfflineArticles(rows as Article[]))
       .catch(() => setOfflineArticles([]));
-  }, [currentEstId, offline]);
+  }, [currentEstId, offline, articlesHash]);
 
   // Filter articles
   const filteredArticles = useMemo(() => {
@@ -376,12 +385,22 @@ export default function PosPage() {
     }
   };
 
-  if (isLoading) return <LoadingPage />;
+  // Don't block the whole page on the article fetch when offline — we have
+  // the cache. Only show the spinner when there's literally nothing to draw.
+  if (isLoading && articles.length === 0 && !offline) return <LoadingPage />;
 
   return (
     <div className="flex h-[calc(100vh-4rem)] gap-4 -m-6 lg:-m-8 p-4">
       {/* Left: Article grid */}
       <div className="flex flex-1 flex-col overflow-hidden">
+        {offline && (
+          <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <WifiOff className="h-4 w-4 shrink-0" />
+            <span>
+              Mode hors-ligne — {offlineArticles.length} article{offlineArticles.length > 1 ? 's' : ''} en cache local. Les commandes seront envoyées au retour du réseau.
+            </span>
+          </div>
+        )}
         {/* Search & filters */}
         <div className="flex items-center gap-3 mb-4">
           <div className="relative flex-1">

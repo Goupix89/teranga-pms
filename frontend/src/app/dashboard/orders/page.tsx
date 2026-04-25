@@ -169,6 +169,36 @@ export default function OrdersPage() {
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
   });
 
+  const [voucherModal, setVoucherModal] = useState<{
+    open: boolean;
+    orderId?: string;
+    orderNumber?: string;
+    isVoucher: boolean;
+    voucherOwnerId: string;
+    voucherOwnerName: string;
+  }>({ open: false, isVoucher: false, voucherOwnerId: '', voucherOwnerName: '' });
+
+  const updateVoucherMutation = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: { isVoucher: boolean; voucherOwnerId?: string | null; voucherOwnerName?: string | null } }) =>
+      apiPatch(`/orders/${id}/voucher`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['order-stats'] });
+      setVoucherModal({ open: false, isVoucher: false, voucherOwnerId: '', voucherOwnerName: '' });
+      toast.success('Statut bon propriétaire mis à jour');
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur'),
+  });
+
+  const canEditVoucher = isSuperAdmin || ['OWNER', 'DAF', 'MANAGER'].includes(currentEstRole || '');
+
+  const { data: voucherOwnersData } = useQuery({
+    queryKey: ['voucher-owners'],
+    queryFn: () => apiGet<any>('/users/owners'),
+    enabled: canEditVoucher && voucherModal.open,
+  });
+  const owners: Array<{ id: string; firstName?: string; lastName?: string; name: string }> = voucherOwnersData?.data || ownersData?.data || [];
+
   const downloadReceipt = async (orderId: string, orderNumber: string) => {
     try {
       const res = await api.get(`/orders/${orderId}/receipt`, { responseType: 'blob' });
@@ -427,6 +457,22 @@ export default function OrdersPage() {
                               title="Enregistrer le paiement et marquer Servie"
                             >
                               <Wallet className="h-3.5 w-3.5 mr-1 inline" /> Encaisser
+                            </button>
+                          )}
+                          {canEditVoucher && order.status !== 'CANCELLED' && (
+                            <button
+                              onClick={() => setVoucherModal({
+                                open: true,
+                                orderId: order.id,
+                                orderNumber: order.orderNumber,
+                                isVoucher: !!(order as any).isVoucher,
+                                voucherOwnerId: (order as any).voucherOwnerId || '',
+                                voucherOwnerName: (order as any).voucherOwnerName || '',
+                              })}
+                              className="btn-ghost text-xs px-2 py-1 text-amber-700 font-medium"
+                              title="Modifier le statut bon propriétaire"
+                            >
+                              {(order as any).isVoucher ? 'Retirer bon' : 'Bon ?'}
                             </button>
                           )}
                           {getNextStatuses(order.status).filter((action) => {
@@ -1042,6 +1088,107 @@ export default function OrdersPage() {
             >
               {cashInMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Confirmer l&apos;encaissement
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Voucher (bon propriétaire) edit modal */}
+      <Modal
+        open={voucherModal.open}
+        onClose={() => setVoucherModal({ open: false, isVoucher: false, voucherOwnerId: '', voucherOwnerName: '' })}
+        title="Bon propriétaire"
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Commande <strong>{voucherModal.orderNumber}</strong>
+          </p>
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={voucherModal.isVoucher}
+              onChange={(e) => setVoucherModal((prev) => ({
+                ...prev,
+                isVoucher: e.target.checked,
+                voucherOwnerId: e.target.checked ? prev.voucherOwnerId : '',
+                voucherOwnerName: e.target.checked ? prev.voucherOwnerName : '',
+              }))}
+              className="mt-0.5 h-4 w-4"
+            />
+            <div>
+              <div className="text-sm font-medium text-gray-900">Cette commande est un bon propriétaire</div>
+              <div className="text-xs text-gray-500">
+                Activée → la commande nécessite l&apos;approbation d&apos;un OWNER. Désactivée → toute approbation pendante est rejetée.
+              </div>
+            </div>
+          </label>
+
+          {voucherModal.isVoucher && (
+            <>
+              <div>
+                <label className="text-xs font-medium text-gray-500">Propriétaire</label>
+                <select
+                  value={voucherModal.voucherOwnerId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    const owner = owners.find((o) => o.id === id);
+                    setVoucherModal((prev) => ({
+                      ...prev,
+                      voucherOwnerId: id,
+                      voucherOwnerName: owner ? `${owner.firstName || ''} ${owner.lastName || ''}`.trim() || owner.name : '',
+                    }));
+                  }}
+                  className="input mt-1 w-full"
+                >
+                  <option value="">— Sélectionner —</option>
+                  {owners.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {`${o.firstName || ''} ${o.lastName || ''}`.trim() || o.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500">Nom affiché (optionnel)</label>
+                <input
+                  type="text"
+                  value={voucherModal.voucherOwnerName}
+                  onChange={(e) => setVoucherModal((prev) => ({ ...prev, voucherOwnerName: e.target.value }))}
+                  className="input mt-1 w-full"
+                  placeholder="Nom du propriétaire bénéficiaire"
+                />
+              </div>
+            </>
+          )}
+
+          <div className="flex gap-2 justify-end pt-2">
+            <button
+              onClick={() => setVoucherModal({ open: false, isVoucher: false, voucherOwnerId: '', voucherOwnerName: '' })}
+              className="btn-secondary"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={() => {
+                if (!voucherModal.orderId) return;
+                if (voucherModal.isVoucher && !voucherModal.voucherOwnerId) {
+                  toast.error('Sélectionnez un propriétaire');
+                  return;
+                }
+                updateVoucherMutation.mutate({
+                  id: voucherModal.orderId,
+                  body: {
+                    isVoucher: voucherModal.isVoucher,
+                    voucherOwnerId: voucherModal.isVoucher ? voucherModal.voucherOwnerId : null,
+                    voucherOwnerName: voucherModal.isVoucher ? (voucherModal.voucherOwnerName || null) : null,
+                  },
+                });
+              }}
+              disabled={updateVoucherMutation.isPending}
+              className="btn-primary"
+            >
+              Enregistrer
             </button>
           </div>
         </div>

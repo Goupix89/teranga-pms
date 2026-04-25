@@ -491,6 +491,138 @@ export class OrderService {
   }
 
   /**
+   * Toggle the "bon propriétaire" (owner voucher) flag on an existing order.
+   * When promoting to a voucher, the linked invoice is mirrored and an Owner
+   * approval is requested if a voucherOwnerId is provided. When clearing the
+   * flag, the voucher metadata is wiped from both order and invoice; any
+   * pending OWNER approval that targeted this order is rejected.
+   *
+   * Refuses if the invoice is already PAID or CANCELLED.
+   */
+  async setVoucherFlag(
+    tenantId: string,
+    id: string,
+    userId: string,
+    data: { isVoucher: boolean; voucherOwnerId?: string | null; voucherOwnerName?: string | null }
+  ) {
+    return prisma.$transaction(async (tx) => {
+      const order = await tx.order.findFirst({
+        where: { id, tenantId },
+        include: { invoice: true },
+      });
+      if (!order) throw new NotFoundError('Commande');
+
+      if (order.status === 'CANCELLED') {
+        throw new ValidationError('Commande annulée — modification impossible');
+      }
+      if (order.invoice && (order.invoice.status === 'PAID' || order.invoice.status === 'CANCELLED')) {
+        throw new ValidationError(
+          `Facture ${order.invoice.status === 'PAID' ? 'payée' : 'annulée'} — flag bon propriétaire non modifiable`
+        );
+      }
+
+      // Validate owner when promoting to voucher.
+      if (data.isVoucher && data.voucherOwnerId) {
+        const owner = await tx.user.findFirst({
+          where: {
+            id: data.voucherOwnerId,
+            tenantId,
+            memberships: { some: { establishmentId: order.establishmentId, role: 'OWNER' } },
+          },
+        });
+        if (!owner) throw new ValidationError('Propriétaire invalide pour cet établissement');
+      }
+
+      const ownerName = data.isVoucher
+        ? (data.voucherOwnerName ?? null)
+        : null;
+      const ownerId = data.isVoucher ? (data.voucherOwnerId ?? null) : null;
+
+      // Update order
+      await tx.order.update({
+        where: { id },
+        data: {
+          isVoucher: data.isVoucher,
+          voucherOwnerId: ownerId,
+          voucherOwnerName: ownerName,
+        },
+      });
+
+      // Update invoice notes/flags if linked
+      if (order.invoiceId) {
+        const baseNote = `Commande ${order.orderNumber}${order.tableNumber ? ` - Table ${order.tableNumber}` : ''}`;
+        await tx.invoice.update({
+          where: { id: order.invoiceId },
+          data: {
+            isVoucher: data.isVoucher,
+            voucherOwnerName: ownerName,
+            notes: `${data.isVoucher ? `[BON PROPRIÉTAIRE${ownerName ? ` — ${ownerName}` : ''}] ` : ''}${baseNote}`,
+          },
+        });
+      }
+
+      // Approval workflow side-effects
+      if (data.isVoucher && ownerId) {
+        // Create a fresh approval request if none pending for this order
+        const existing = await tx.approvalRequest.findFirst({
+          where: {
+            tenantId,
+            type: 'RESERVATION_MODIFICATION',
+            targetId: order.id,
+            status: 'PENDING',
+          },
+        });
+        if (!existing) {
+          await tx.approvalRequest.create({
+            data: {
+              tenantId,
+              establishmentId: order.establishmentId,
+              type: 'RESERVATION_MODIFICATION',
+              status: 'PENDING',
+              requestedById: userId,
+              targetId: order.id,
+              reason: 'Bon propriétaire — validation requise',
+              payload: {
+                kind: 'voucher_promotion',
+                orderId: order.id,
+                orderNumber: order.orderNumber,
+                totalAmount: Number(order.totalAmount),
+                voucherOwnerId: ownerId,
+                voucherOwnerName: ownerName,
+              },
+            },
+          });
+        }
+      } else if (!data.isVoucher) {
+        // Auto-reject any pending voucher approval since the flag is cleared
+        await tx.approvalRequest.updateMany({
+          where: {
+            tenantId,
+            targetId: order.id,
+            status: 'PENDING',
+          },
+          data: {
+            status: 'REJECTED',
+            reviewedById: userId,
+            reviewedAt: new Date(),
+          },
+        });
+      }
+
+      const refreshed = await tx.order.findUnique({
+        where: { id },
+        include: {
+          items: { include: { article: { select: { id: true, name: true } } } },
+          createdBy: { select: { id: true, firstName: true, lastName: true } },
+          server: { select: { id: true, firstName: true, lastName: true } },
+          invoice: { select: { id: true, isVoucher: true, status: true } },
+        },
+      });
+      return { ...refreshed!, totalAmount: Number(refreshed!.totalAmount) };
+    });
+  }
+
+  /**
    * Append items to an existing open order. The order stays open; items are added
    * to both the order and its invoice; totals are recomputed. Throws if the order
    * is SERVED/CANCELLED or the invoice is already PAID.

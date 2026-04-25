@@ -122,10 +122,12 @@ function useCleaningActive(establishmentId: string | null) {
   return useQuery({ queryKey: ['cleaning-active', establishmentId], queryFn: () => apiGet<any>(`/cleaning/active/${establishmentId}`), enabled: !!establishmentId });
 }
 
-function useAllOrders(establishmentId: string | null) {
+function useAllOrders(establishmentId: string | null, forUserId?: string) {
   return useQuery({
-    queryKey: ['all-orders-dashboard', establishmentId],
-    queryFn: () => apiGet<any>(`/orders?limit=500${establishmentId ? `&establishmentId=${establishmentId}` : ''}`),
+    queryKey: ['all-orders-dashboard', establishmentId, forUserId],
+    queryFn: () => apiGet<any>(
+      `/orders?limit=500${establishmentId ? `&establishmentId=${establishmentId}` : ''}${forUserId ? `&forUserId=${forUserId}` : ''}`
+    ),
     enabled: !!establishmentId,
     refetchInterval: 30000,
   });
@@ -276,8 +278,8 @@ function WidgetMyOrders({ establishmentId, userId }: { establishmentId: string |
 }
 
 // --- Orders Pending Widget ---
-function WidgetOrdersPending({ establishmentId }: { establishmentId: string | null }) {
-  const { data: allOrdersData } = useAllOrders(establishmentId);
+function WidgetOrdersPending({ establishmentId, forUserId }: { establishmentId: string | null; forUserId?: string }) {
+  const { data: allOrdersData } = useAllOrders(establishmentId, forUserId);
   const allOrders = allOrdersData?.data || [];
   const pending = allOrders.filter((o: any) => o.status === 'PENDING').length;
   const preparing = allOrders.filter((o: any) => o.status === 'IN_PROGRESS').length;
@@ -299,9 +301,13 @@ function WidgetServerPerformance({ establishmentId }: { establishmentId: string 
 
   const byServer: Record<string, { name: string; orders: any[] }> = {};
   allOrders.forEach((order: any) => {
-    const serverId = order.createdBy?.id || 'unknown';
+    // Attribute to the server when present (POS-entered orders), otherwise
+    // fall back to the creator. This way a POS user's voucher is counted
+    // under the server it was attributed to, not the cashier.
+    const attributed = order.server || order.createdBy;
+    const serverId = attributed?.id || 'unknown';
     if (!byServer[serverId]) {
-      const name = order.createdBy ? `${order.createdBy.firstName || ''} ${order.createdBy.lastName || ''}`.trim() : 'Inconnu';
+      const name = attributed ? `${attributed.firstName || ''} ${attributed.lastName || ''}`.trim() : 'Inconnu';
       byServer[serverId] = { name, orders: [] };
     }
     byServer[serverId].orders.push(order);
@@ -617,8 +623,9 @@ function WidgetChartServers() {
 
   const byServer: Record<string, { name: string; count: number }> = {};
   allOrders.forEach((o: any) => {
-    const id = o.createdBy?.id || 'unknown';
-    if (!byServer[id]) byServer[id] = { name: o.createdBy ? `${o.createdBy.firstName || ''} ${o.createdBy.lastName || ''}`.trim() : 'Inconnu', count: 0 };
+    const attributed = o.server || o.createdBy;
+    const id = attributed?.id || 'unknown';
+    if (!byServer[id]) byServer[id] = { name: attributed ? `${attributed.firstName || ''} ${attributed.lastName || ''}`.trim() : 'Inconnu', count: 0 };
     byServer[id].count++;
   });
   const chartData = Object.values(byServer).sort((a, b) => b.count - a.count).slice(0, 8);
@@ -680,7 +687,7 @@ function RenderWidget({ id, establishmentId, userId, role }: { id: string; estab
     case 'recent_reservations': return <WidgetRecentReservations />;
     case 'orders_today': return <WidgetOrdersToday establishmentId={establishmentId} />;
     case 'my_orders': return <WidgetMyOrders establishmentId={establishmentId} userId={userId} />;
-    case 'orders_pending': return <WidgetOrdersPending establishmentId={establishmentId} />;
+    case 'orders_pending': return <WidgetOrdersPending establishmentId={establishmentId} forUserId={role === 'SERVER' || role === 'POS' ? userId : undefined} />;
     case 'server_performance': return <WidgetServerPerformance establishmentId={establishmentId} />;
     case 'recent_invoices': return <WidgetRecentInvoices />;
     case 'invoices_pending': return <WidgetInvoicesPending />;
