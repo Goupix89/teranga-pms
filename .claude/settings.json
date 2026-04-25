@@ -68,7 +68,9 @@
       "Bash(update-java-alternatives --list)",
       "Bash(echo \"Exit: $?\")",
       "Bash(grep -n \"− \\\\${fmtCurrency\\\\|− \\\\${fmt\" /home/user/hotel-pms/backend/src/routes/resource.routes.ts)",
-      "Bash(echo \"Frontend exit: $?\")"
+      "Bash(echo \"Frontend exit: $?\")",
+      "Bash(DATABASE_URL=\"postgresql://teranga_user:8ff5fe96875ac4f1e8ae4907eb58166a1c1f263754be3820@127.0.0.1:5432/teranga_prod?sslmode=disable\" npx tsx scripts/backfill-channel-invoices.ts --dry-run)",
+      "Bash(docker cp *)"
     ],
     "additionalDirectories": [
       "/home/user/hotel-pms/frontend/src/app/dashboard/clients",

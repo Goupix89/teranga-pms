@@ -608,10 +608,15 @@ export class ReservationService {
         const totalAmount = Number(r.totalPrice) || subtotal;
         const paymentMethod = r.source === 'CHANNEL_MANAGER' ? 'FEDAPAY' : 'OTHER';
 
-        // Find or create the client from guest info
+        // Find or create client — skip if the guest name looks like a room/property name
+        // (iCal summaries from some OTAs contain the room description, not the guest name)
         const { clientService } = await import('./client.service');
+        const isRoomName = !r.guestEmail && !r.guestPhone && (
+          /suite|chambre|room|villa|chalet|appartement/i.test(r.guestName || '') ||
+          r.guestName === r.room.number
+        );
         const [firstName, ...rest] = (r.guestName || 'Client').trim().split(/\s+/);
-        const client = await clientService.findOrCreate(tenantId, {
+        const client = isRoomName ? null : await clientService.findOrCreate(tenantId, {
           firstName: firstName || r.guestName || 'Client',
           lastName: rest.join(' '),
           email: r.guestEmail ?? undefined,
@@ -620,26 +625,25 @@ export class ReservationService {
         });
 
         await prisma.$transaction(async (tx) => {
-          // Generate a unique invoice number based on the reservation creation day
+          // Generate a unique invoice number: find the highest FAC-YYYYMMDD-XXXX for this day
           const day = r.createdAt.toISOString().slice(0, 10).replace(/-/g, '');
-          const todayStart = new Date(r.createdAt.toISOString().slice(0, 10));
-          const tomorrowStart = new Date(todayStart);
-          tomorrowStart.setDate(tomorrowStart.getDate() + 1);
-          const lastInvoice = await tx.invoice.findFirst({
-            where: { tenantId, createdAt: { gte: todayStart, lt: tomorrowStart } },
+          const prefix = `FAC-${day}-`;
+          const lastFacInvoice = await tx.invoice.findFirst({
+            where: { tenantId, invoiceNumber: { startsWith: prefix } },
             orderBy: { invoiceNumber: 'desc' },
             select: { invoiceNumber: true },
           });
-          const lastNum = lastInvoice
-            ? parseInt(lastInvoice.invoiceNumber.split('-').pop() || '0', 10)
+          const lastNum = lastFacInvoice
+            ? parseInt(lastFacInvoice.invoiceNumber.split('-').pop() || '0', 10)
             : 0;
-          const invoiceNumber = `FAC-${day}-${String(lastNum + 1).padStart(4, '0')}`;
+          const invoiceNumber = `${prefix}${String(lastNum + 1).padStart(4, '0')}`;
+
 
           const invoice = await tx.invoice.create({
             data: {
               tenantId,
               reservationId: r.id,
-              clientId: client.id,
+              clientId: client?.id ?? null,
               createdById: systemUser.id,
               invoiceNumber,
               subtotal,
