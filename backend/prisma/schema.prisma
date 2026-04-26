@@ -194,7 +194,8 @@ model Tenant {
   restaurantTables   RestaurantTable[]
   clients            Client[]
   discountRules      DiscountRule[]
-  expenses           Expense[]
+  expenses                Expense[]
+  expenseCustomCategories ExpenseCustomCategory[]
 
   @@map("tenants")
 }
