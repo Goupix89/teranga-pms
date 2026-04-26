@@ -22,6 +22,11 @@ Ce document liste **tous les scenarios de tests** a executer avant la mise en pr
 14. [API et integrations externes](#14-api-et-integrations-externes)
 15. [Performance et charge](#15-performance-et-charge)
 16. [Securite](#16-securite)
+17. [Mode hors ligne (PWA + Android)](#17-mode-hors-ligne-pwa--android)
+18. [Depenses et decaissements](#18-depenses-et-decaissements)
+19. [Flag bon proprietaire (isVoucher)](#19-flag-bon-proprietaire-isvoucher)
+20. [Modification de reservation](#20-modification-de-reservation)
+21. [Factures channel manager](#21-factures-channel-manager)
 
 ---
 
@@ -112,6 +117,10 @@ Ce document liste **tous les scenarios de tests** a executer avant la mise en pr
 | 4.2.2 | Check-out | POST /api/reservations/:id/check-out | Statut CHECKED_OUT, chambre AVAILABLE |
 | 4.2.3 | Annulation | POST /api/reservations/:id/cancel | Statut CANCELLED |
 | 4.2.4 | Modifier dates | PATCH /api/reservations/:id/dates | Nouvelles dates, prix recalcule |
+| 4.2.5 | Modifier reservation (DAF direct) | PATCH /api/reservations/:id avec {roomId, checkIn, checkOut, discountRuleId} en tant que DAF | Reservation mise a jour, facture recalculee, Invoice.amount = nouveau montant |
+| 4.2.6 | Modifier reservation chambre plus chere | Changer chambre 50k/nuit → 80k/nuit, 2 nuits | Invoice.amount = 160000 (ou 160000 - remise) |
+| 4.2.7 | Modifier reservation facture payee | Tenter PATCH sur reservation avec facture PAID | Erreur 409 "Facture deja payee" |
+| 4.2.8 | Modifier reservation (Manager via approbation) | PATCH /api/reservations/:id en tant que MANAGER | ApprovalRequest creee, reservation non modifiee immediatement |
 
 ---
 
@@ -186,6 +195,12 @@ Ce document liste **tous les scenarios de tests** a executer avant la mise en pr
 | 8.3 | Stock insuffisant | Sortie > stock disponible | Erreur ou alerte |
 | 8.4 | Alerte stock bas | Stock < seuil configure | Alerte de stock creee |
 | 8.5 | Approbation requise | MANAGER cree un mouvement important | ApprovalRequest creee pour le DAF |
+| 8.6 | Decrement auto a la vente | Article trackStock=true, currentStock=5, creer commande avec quantite=2 | Stock passe a 3, mouvement SALE cree avec orderId |
+| 8.7 | Blocage stock zero | Article trackStock=true, currentStock=0, tenter commande | Erreur 409 "Stock insuffisant pour [article]" |
+| 8.8 | Blocage stock insuffisant | Article trackStock=true, currentStock=1, commander quantite=2 | Erreur 409 |
+| 8.9 | Pas de blocage sans trackStock | Article trackStock=false, currentStock=0, tenter commande | Commande creee normalement |
+| 8.10 | Restauration stock sur annulation | Annuler la commande du test 8.6 | Stock revient a 5, mouvement RETURN cree |
+| 8.11 | Multi-articles atomique | Commande avec 3 articles trackStock, l'un a stock=0 | Toute la commande refusee (atomique) |
 
 ---
 
@@ -198,6 +213,12 @@ Ce document liste **tous les scenarios de tests** a executer avant la mise en pr
 | 9.3 | Sync auto 1min | Configurer syncIntervalMin=1 | Synchronisation chaque minute |
 | 9.4 | Logs de sync | Verifier les channel_sync_logs | Logs avec eventsFound, eventsCreated, etc. |
 | 9.5 | Conflit de dates | Reservation importee chevauche une existante | Gere sans doublon |
+| 9.6 | Facture auto iCal | Importer une reservation depuis iCal | Reservation creee + facture FAC-* PAID + paiement OTHER |
+| 9.7 | Facture auto external-bookings | POST /api/external-bookings avec X-Api-Key | Reservation + facture FEDAPAY PAID + client cree si email present |
+| 9.8 | CA impacte par channel | Apres 9.6 et 9.7, consulter le rapport du jour | Les montants apparaissent dans l'encaissement et le CA total |
+| 9.9 | Backfill CLI | npx tsx scripts/backfill-channel-invoices.ts --dry-run --slug hotel-test | Liste des reservations sans facture, aucune modification |
+| 9.10 | Backfill execution | npx tsx scripts/backfill-channel-invoices.ts --slug hotel-test | Factures et paiements crees pour les reservations manquantes |
+| 9.11 | Backfill idempotent | Relancer le backfill apres 9.10 | Aucune facture en double creee |
 
 ---
 
@@ -377,3 +398,86 @@ Importer la collection Postman disponible dans `docs/postman/` (a creer) avec le
 
 ### Tests automatises (CI/CD)
 Les tests unitaires et d'integration sont executes automatiquement dans GitHub Actions a chaque push/PR. Voir `.github/workflows/deploy.yml`.
+
+---
+
+## 17. Mode hors ligne (PWA + Android)
+
+### 17.1 Web — detection et badge
+| # | Scenario | Etapes | Resultat attendu |
+|---|----------|--------|------------------|
+| 17.1.1 | Perte connexion | Couper le Wi-Fi ou bloquer l'API (DevTools) | Badge rouge "Hors ligne" apparait dans la barre de navigation |
+| 17.1.2 | Articles caches | Aller sur le POS en mode hors ligne | Les articles du dernier chargement sont affiches depuis le cache |
+| 17.1.3 | Mobile Money desactive | Etre hors ligne sur le POS | Option Flooz/Yas grisee et non selectionnable |
+| 17.1.4 | Commande mise en file | Creer une commande hors ligne | Commande ajoutee dans IndexedDB, compteur du badge incremente |
+
+### 17.2 Web — synchronisation
+| # | Scenario | Etapes | Resultat attendu |
+|---|----------|--------|------------------|
+| 17.2.1 | Drain auto a la reconnexion | Retablir la connexion apres 17.1.4 | La commande est envoyee au backend, badge disparait |
+| 17.2.2 | Idempotence | Soumettre la meme commande deux fois (uuid identique) | Une seule commande creee dans le backend |
+| 17.2.3 | Page file hors ligne | Aller sur /dashboard/offline-queue | Liste des operations en attente visible |
+| 17.2.4 | Sync manuelle | Cliquer sur "Synchroniser maintenant" depuis la page file | Drain force, operations envoyees |
+| 17.2.5 | Suppression operation | Cliquer sur corbeille sur une operation | Operation supprimee de la file locale |
+
+### 17.3 Android
+| # | Scenario | Etapes | Resultat attendu |
+|---|----------|--------|------------------|
+| 17.3.1 | Commande hors ligne | Activer mode avion, creer une commande | Commande stockee en Room DB |
+| 17.3.2 | Ecran file hors ligne | Ouvrir l'ecran "File hors ligne" | Operations en attente affichees |
+| 17.3.3 | Sync au retablissement | Desactiver mode avion | WorkManager envoie les operations, ecran mis a jour |
+
+---
+
+## 18. Depenses et decaissements
+
+| # | Scenario | Etapes | Resultat attendu |
+|---|----------|--------|------------------|
+| 18.1 | Creer depense | POST /api/expenses {label, category, amount, date} | Depense enregistree |
+| 18.2 | Lister depenses | GET /api/expenses?startDate=X&endDate=Y | Liste des depenses sur la periode |
+| 18.3 | Filtrer par categorie | GET /api/expenses?category=MATIERES_PREMIERES | Seules les depenses de cette categorie |
+| 18.4 | Depenses dans le rapport PDF | Generer le rapport PDF du jour apres 18.1 | Section "Decaissements" presente avec le montant de la depense |
+| 18.5 | Ligne Solde | Rapport PDF avec encaissements=50000, decaissements=20000 | Solde = 30 000 FCFA affiche |
+| 18.6 | Solde negatif | Decaissements > encaissements | Solde affiche en rouge ou avec signe negatif |
+| 18.7 | Depenses dans CSV | Export CSV du rapport | Colonne ou section decaissements presente |
+| 18.8 | Acces role SERVER | Tenter GET /api/expenses en tant que SERVER | Erreur 403 |
+
+---
+
+## 19. Flag bon proprietaire (isVoucher)
+
+| # | Scenario | Etapes | Resultat attendu |
+|---|----------|--------|------------------|
+| 19.1 | Activer flag | PATCH /api/orders/:id/voucher {isVoucher: true} en tant que DAF | Order.isVoucher = true, ApprovalRequest de type VOUCHER_FLAG creee |
+| 19.2 | Desactiver flag | PATCH /api/orders/:id/voucher {isVoucher: false} | Order.isVoucher = false |
+| 19.3 | Acces SERVER refuse | Meme PATCH en tant que SERVER | Erreur 403 |
+| 19.4 | UI — modal confirmation | Cliquer sur l'icone flag dans /dashboard/orders | Modal s'ouvre avec confirmation |
+| 19.5 | Affichage dans la liste | Commande avec isVoucher=true dans la liste | Badge ou indicateur visible sur la ligne |
+
+---
+
+## 20. Modification de reservation
+
+| # | Scenario | Etapes | Resultat attendu |
+|---|----------|--------|------------------|
+| 20.1 | Modifier chambre (DAF) | PATCH /api/reservations/:id {roomId: newRoomId} | Reservation mise a jour, facture.amount recalcule |
+| 20.2 | Modifier dates (DAF) | PATCH /api/reservations/:id {checkIn, checkOut} | Nuits recalculees, totalPrice et facture mis a jour |
+| 20.3 | Modifier avec remise | PATCH {checkIn, checkOut, discountRuleId} | Remise appliquee au nouveau montant |
+| 20.4 | Facture deja payee | PATCH sur reservation avec Invoice.status=PAID | Erreur 409 |
+| 20.5 | Modifier (Manager) | PATCH en tant que MANAGER | ApprovalRequest cree, reservation inchangee jusqu'a approbation DAF |
+| 20.6 | Approbation DAF → modification effective | DAF approuve la demande 20.5 | Reservation modifiee, facture recalculee |
+| 20.7 | Calcul correct | Chambre 25000/nuit, 4 nuits, remise 10% | totalPrice = 90000, Invoice.amount = 90000 |
+
+---
+
+## 21. Factures channel manager
+
+| # | Scenario | Etapes | Resultat attendu |
+|---|----------|--------|------------------|
+| 21.1 | Reservation iCal → facture | Trigger sync iCal avec une nouvelle reservation | Reservation + Invoice PAID + Payment OTHER crees |
+| 21.2 | Reservation external-bookings → facture | POST /api/external-bookings | Reservation + Invoice PAID + Payment FEDAPAY crees |
+| 21.3 | Client cree si email | external-bookings avec guestEmail | Client cree ou trouve (findOrCreate) |
+| 21.4 | Rapport inclut channel | Rapport quotidien apres 21.1 et 21.2 | Montants des reservations canal inclus dans les encaissements |
+| 21.5 | Backfill via endpoint | POST /api/reservations/admin/backfill-channel-invoices | Rapport JSON avec nb de factures creees |
+| 21.6 | Backfill idempotent | Rappeler l'endpoint | created=0, aucun doublon |
+| 21.7 | Backfill acces restreint | Meme endpoint en tant que SERVER | Erreur 403 |

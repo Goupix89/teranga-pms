@@ -44,22 +44,24 @@ hotel-pms/
 3. **Utilisateurs** — CRUD, approbation par DAF, archivage automatique des comptes inactifs, rôles par établissement
 4. **Établissements** — Multi-établissement par tenant, rôles dédiés (DAF, Manager, Serveur, POS, Cuisinier, Ménage)
 5. **Chambres** — CRUD, gestion des statuts, filtres avancés
-6. **Réservations** — CRUD, check-in/check-out, anti-double-booking transactionnel, paiement par QR code ou espèces, auto-génération facture et reçu PDF
+6. **Réservations** — CRUD, check-in/check-out, anti-double-booking transactionnel, paiement par QR code ou espèces, auto-génération facture et reçu PDF. **Modification complète** par le DAF/Owner (chambre, dates, remise, nombre d'invités) avec recalcul automatique du montant et mise à jour de la facture en cascade. La modification par un Manager passe par approbation DAF.
 7. **Factures** — Lifecycle complet (brouillon → émise → payée), numérotation auto `FAC-YYYYMMDD-NNNN`
 8. **Paiements** — Multi-méthodes (Espèces, Carte, Mobile Money, Flooz, Yas, FedaPay, Virement), idempotence POS via UUID, intégration FedaPay par tenant (chaque propriétaire connecte son compte FedaPay)
-9. **Commandes** — Création avec moyen de paiement, auto-génération facture, QR code pour paiement client
+9. **Commandes** — Création avec moyen de paiement, auto-génération facture, QR code pour paiement client. Flag **Bon propriétaire** (`isVoucher`) modifiable après création pour indiquer qu'une consommation est offerte par le propriétaire (endpoint `PATCH /orders/:id/voucher`).
 10. **Menu & Articles** — Catégories dynamiques créées par l'utilisateur (Restaurant, Boissons, Loisirs, Location, ou toute catégorie personnalisée), upload d'images, workflow d'approbation DAF, stock optionnel pour plats préparés. Les catégories créées en ligne lors de la création d'un article apparaissent immédiatement dans le POS web/mobile et dans les tabs de l'app Android.
 11. **Cuisine** — Vue temps réel des commandes pour les cuisiniers, notification serveur quand prêt
-12. **Stock & Inventaire** — Mouvements, alertes stock bas, approbation DAF pour écarts
+12. **Stock & Inventaire** — Mouvements, alertes stock bas, approbation DAF pour écarts. Flag `trackStock` par article : quand activé, le stock est **décrémenté automatiquement à chaque vente** (mouvement SALE) et **la vente est bloquée si le stock atteint zéro** (web + Android). Retour en stock en cas d'annulation.
 13. **Fournisseurs** — CRUD complet
 14. **Ménage** — Pointage début/fin (clock-in/clock-out), chambre indisponible pendant nettoyage, démarrage direct depuis notification
-15. **Rapports** — Taux d'occupation, revenus, performance par serveur, export CSV, graphiques
-16. **Intégrations** — API disponibilité (JSON/iCal), Channel Manager, POS Android, WordPress + FedaPay
+15. **Rapports** — Taux d'occupation, revenus, performance par serveur, export CSV, graphiques. Rapport PDF quotidien : section **Décaissements** (dépenses du jour par catégorie), ligne **Solde** (encaissements − décaissements), CA unifié commandes + réservations.
+16. **Dépenses & Décaissements** — Enregistrement des dépenses opérationnelles (matières premières, charges, divers) avec catégorie, montant, date et justificatif. Visibles dans les rapports PDF/CSV. Approbation DAF pour les montants importants.
+17. **Mode hors ligne (PWA + Android)** — Lorsque la connexion réseau est perdue, le POS web met en file d'attente les commandes dans IndexedDB (Dexie). Un badge **Hors ligne** s'affiche dans la barre de navigation avec le nombre d'opérations en attente. Dès que la connexion revient, la file est drainée automatiquement (FIFO, backoff exponentiel, idempotence par UUID). L'application mobile Android dispose d'un écran **File hors ligne** équivalent avec Room DB.
+18. **Intégrations** — API disponibilité (JSON/iCal), Channel Manager, POS Android, WordPress + FedaPay. Les réservations importées via iCal ou l'endpoint `/external-bookings` génèrent désormais **automatiquement une facture et un paiement** dans le PMS (sources de revenus comptabilisées dans les rapports). Script de backfill disponible pour les réservations canal historiques sans facture.
 17. **Inscription & Abonnements** — Inscription self-service avec essai gratuit (14 jours) et paiement FedaPay, plans Basic/Pro/Enterprise, cycle de vie complet (essai → actif → retard → suspendu → annulé), activation manuelle par le SUPERADMIN pour paiements en espèces, limites de plan (chambres, utilisateurs, établissements)
 18. **Notifications temps réel** — SSE + polling, alertes par rôle (checkout, ménage, commandes, approbations, stock), navigation contextuelle (clic → page concernée)
 19. **Synchronisation calendrier (iCal)** — Sync bidirectionnelle des disponibilités avec Airbnb, Booking.com, Expedia via iCal (intervalle configurable : 1 min à 24h)
 20. **Profil utilisateur** — Modification des informations personnelles, changement de mot de passe
-21. **Reçus & Factures PDF** — Génération de reçus (format ticket 80mm) et factures (A4) en PDF avec QR code, téléchargement depuis les pages Commandes et Factures
+21. **Reçus & Factures PDF** — Génération de reçus (format ticket 80mm) et factures (A4) en PDF avec QR code, téléchargement depuis les pages Commandes et Factures. Les factures de réservation incluent un **bloc client** (nom, email, téléphone) et un **bloc séjour** (chambre, dates, nombre d'invités, source). Les rapports PDF incluent la section décaissements et la ligne Solde.
 22. **Configuration FedaPay par tenant** — Chaque propriétaire peut connecter son propre compte FedaPay via l'interface Paramètres (clés chiffrées AES-256-GCM)
 23. **Clients & Fidélité** — Fiche client unifiée (orders + réservations), tier `FIDELE` après 5 réservations payées, sinon `NEW`. Liaison automatique des paiements FedaPay et des paiements en ligne (WordPress/channel manager) via le webhook. Carte de fidélité PDF téléchargeable depuis la fiche client.
 24. **Remises (Discounts)** — Remises automatiques sur les réservations selon la durée du séjour : 3-5 nuits = 10 %, 6 nuits = 20 %, > 6 nuits = 25 %. Remises manuelles applicables aux commandes restaurant via des règles définies par le OWNER (montant fixe ou pourcentage, condition de panier minimum). Interface OWNER : `/dashboard/discounts`.
@@ -240,10 +242,15 @@ Le système utilise un **RBAC à 2 niveaux** :
 | Reçus & Factures PDF | X | X | X | X | X | | | |
 | Commandes + QR code | X | X | X | X | X | X ^3 | | |
 | POS — attribuer la commande à un serveur | X | X | X | X | | X | | |
+| Flag bon propriétaire (isVoucher) | X | X | X | X | | | | |
 | Voir ses commandes (inclut celles saisies par POS) | X | X | X | X | X | | | |
 | Date d'opération rétroactive (≤ 15 jours) | X | X | X | X | X | X | | |
 | Date d'opération > 15 jours | X | X | X | X | | | | |
 | Filtrer commandes par serveur | X | X | X | X | | | | |
+| Modifier réservation (direct) | X | X | X | | | | | |
+| Modifier réservation (via approbation) | X | X | X | X | | | | |
+| Dépenses & Décaissements | X | X | X | X | | | | |
+| Backfill factures channel manager | X | X | X | | | | | |
 | Cuisine (temps réel) | X | X | X | X | | | X | |
 | Chambres | X | X | X | X | | | | X |
 | Réservations | X | X | X | X | | | | |
@@ -272,10 +279,14 @@ Le système utilise un **RBAC à 2 niveaux** :
 
 ### Réservations & Commandes
 - `/api/reservations` — Réservations (+ check-in, check-out, cancel), auto-génération facture à la création
+- `PATCH /api/reservations/:id` — Modification complète (chambre, dates, remise, invités) avec recalcul facture — DAF/Owner direct, Manager via approbation
 - `GET /api/reservations/:id/receipt` — Télécharger le reçu PDF de réservation (format ticket 80mm)
+- `POST /api/reservations/admin/backfill-channel-invoices` — Rétro-génération des factures manquantes pour les réservations channel manager (SUPERADMIN, OWNER, DAF)
 - `/api/orders` — Commandes (+ `GET /kitchen/:estId`, `GET /stats/:estId`, filtre `?forUserId=` qui inclut les commandes *saisies par* OU *attribuées à* l'utilisateur)
   - `POST /api/orders` accepte `serverId` (attribution, POS uniquement) et `operationDate` (ISO, ≤ 15 jours dans le passé sauf supervisor)
+  - `PATCH /api/orders/:id/voucher` — Basculer le flag bon propriétaire (`isVoucher`) sur une commande existante (OWNER, DAF, MANAGER)
 - `GET /api/orders/:id/receipt` — Télécharger le reçu PDF (format ticket 80mm)
+- `/api/expenses` — Dépenses & Décaissements (CRUD, filtres par catégorie/date, approbation DAF)
 
 ### Facturation & Paiements
 - `/api/invoices` — Factures (+ issue, cancel)
@@ -487,7 +498,7 @@ Application native pour les rôles de terrain (Serveur, Cuisinier, POS, Ménage,
 - **Commandes** : sélection directe sur le menu, QR code de paiement automatique
 - **Cuisine** : vue temps réel des commandes en cours
 - **Ménage** : pointage clock-in/clock-out
-- **Offline-first** : transactions stockées en Room DB puis synchronisées
+- **Offline-first** : transactions stockées en Room DB puis synchronisées. Écran **File hors ligne** (`OfflineQueueScreen`) : liste des opérations en attente avec statut, bouton "Synchroniser maintenant", indicateur de connexion
 - **Sécurité** : tokens chiffrés avec EncryptedSharedPreferences
 - **Sync automatique** : WorkManager toutes les 15 min
 - **Thème Bénin** : Rouge Dahomey, Or Béninois, Vert Béninois, Bronze Abomey

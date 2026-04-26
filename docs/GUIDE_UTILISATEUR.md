@@ -29,6 +29,11 @@ Ce guide vous accompagne dans l'utilisation quotidienne de la plateforme Teranga
 21. [Fonctionnalités à venir](#21-fonctionnalités-à-venir)
 22. [Questions fréquentes](#22-questions-fréquentes)
 23. [Point de vente (POS) — attribution au serveur & date d'opération](#23-point-de-vente-pos--attribution-au-serveur--date-dopération)
+24. [Mode hors ligne](#24-mode-hors-ligne)
+25. [Dépenses & Décaissements](#25-dépenses--décaissements)
+26. [Bon propriétaire (flag isVoucher)](#26-bon-propriétaire-flag-isvoucher)
+27. [Modification d'une réservation](#27-modification-dune-réservation)
+28. [Channel Manager — factures automatiques](#28-channel-manager--factures-automatiques)
 
 ---
 
@@ -307,6 +312,27 @@ La colonne **Paiement** dans la liste des réservations affiche :
 - Un bouton **QR code** pour afficher ou réafficher le QR code de paiement
 - Un bouton **téléchargement** pour obtenir le reçu PDF
 
+### Modifier une réservation (DAF, Owner — direct)
+
+Un DAF ou un Owner peut modifier directement une réservation existante :
+
+1. Dans la liste des réservations, cliquez sur l'icône **Modifier**
+2. Le modal de modification s'ouvre avec les champs modifiables :
+   - **Chambre** (avec prix par nuit mis à jour)
+   - **Dates** (arrivée / départ)
+   - **Nombre de personnes**
+   - **Source** (DIRECT, AIRBNB, BOOKING, etc.)
+   - **Règle de remise** (optionnel — les remises automatiques sont recalculées)
+3. Cliquez sur **Enregistrer**
+
+Le montant de la réservation est **recalculé automatiquement** (nuits × prix/nuit − remise). La facture associée est mise à jour immédiatement.
+
+> Si la facture est déjà **Payée**, la modification est bloquée — annulez d'abord la réservation ou créez-en une nouvelle.
+
+### Modifier une réservation (Manager — via approbation)
+
+Un Manager peut soumettre une modification de dates : la demande est envoyée au DAF pour approbation. Les autres champs (chambre, remise) ne sont modifiables que par le DAF ou l'Owner.
+
 ### Check-in / Check-out
 
 - **Check-in** : confirmez l'arrivée du client. La chambre passe en statut "Occupée"
@@ -386,7 +412,8 @@ Le reçu contient :
 La facture contient :
 - En-tête de l'établissement
 - Numéro de facture, date, statut
-- Informations client (si réservation liée)
+- **Bloc Client** : nom, email, téléphone (si réservation liée)
+- **Bloc Séjour** : chambre, dates d'arrivée/départ, nombre d'invités, source (si réservation liée)
 - Numéro de commande, table, serveur, moyen de paiement
 - Tableau détaillé des articles (description, quantité, prix unitaire, total)
 - Sous-total, taxe et total en FCFA
@@ -707,10 +734,23 @@ Un tableau détaillé affiche pour chaque serveur :
 
 > **Attribution des commandes POS** : quand une commande est saisie par le POS pour le compte d'un serveur, c'est le **serveur attribué** qui apparaît dans les graphiques, le tableau et les exports CSV — pas le compte POS qui a tapé la commande en caisse.
 
+### Rapport PDF — Rapport de caisse
+
+Le bouton **Télécharger PDF** génère un rapport de caisse journalier ou sur une période. Il contient :
+
+| Section | Description |
+|---------|-------------|
+| **Encaissements** | Total des ventes par serveur, ventilé par moyen de paiement |
+| **Décaissements** | Dépenses enregistrées sur la période, par catégorie |
+| **Solde** | Encaissements − Décaissements = trésorerie nette de la période |
+| **Détail des transactions** | Liste de chaque commande avec date d'opération, serveur, montant |
+
+> **Date d'opération** : les commandes sont classées selon la **date d'opération** déclarée (pas la date de saisie système). Une commande saisie aujourd'hui mais datée d'hier apparaît dans le rapport d'hier.
+
 ### Exporter les données
 
 Trois boutons d'export CSV sont disponibles en haut de la page :
-- **Commandes** : toutes les commandes avec numéro, date, serveur, total, statut, paiement
+- **Commandes** : toutes les commandes avec numéro, date d'opération, serveur, total, statut, paiement
 - **Chambres** : toutes les chambres avec numéro, statut, type, étage
 - **Serveurs** (DAF uniquement) : performance par serveur
 
@@ -1039,7 +1079,156 @@ Une opération datée au-delà de la limite retourne une erreur de validation c�
 
 ---
 
-*Document mis à jour le 21 avril 2026 — Teranga PMS v2.7*
+---
+
+## 24. Mode hors ligne
+
+Teranga PMS fonctionne en **mode hors ligne** lorsque la connexion internet est coupée ou instable. Le comportement diffère légèrement entre le web (PWA) et l'application mobile Android.
+
+### Sur le web (PWA)
+
+Un **badge rouge « Hors ligne »** s'affiche dans la barre de navigation dès que la connexion est perdue. Ce badge indique le nombre d'opérations en attente de synchronisation.
+
+**Ce qui fonctionne hors ligne :**
+- Saisie de commandes depuis le **POS** (`/dashboard/pos`) — les commandes sont mises en file d'attente
+- Affichage des articles depuis le **cache local** (les articles sont mis en cache au dernier chargement réussi)
+
+**Ce qui nécessite une connexion :**
+- Paiements Mobile Money (Flooz/Yas) — désactivés automatiquement hors ligne
+- Réservations, rapports, paramètres
+
+**Page File hors ligne** (`/dashboard/offline-queue`) :
+1. Allez dans **File hors ligne** dans la barre de navigation (visible uniquement hors ligne ou si des opérations sont en attente)
+2. La page liste toutes les commandes en attente avec leur statut (en attente, en cours, échoué)
+3. Cliquez sur **Synchroniser maintenant** pour forcer la synchronisation dès la reconnexion
+4. Cliquez sur la corbeille pour supprimer une opération de la file
+
+**Synchronisation automatique :**
+Dès que la connexion revient, la file est drainée automatiquement dans l'ordre FIFO. En cas d'erreur temporaire, le système réessaie avec un délai exponentiel (1s, 2s, 4s…). Chaque opération a un identifiant unique (UUID) pour éviter les doublons si la même commande est soumise deux fois.
+
+### Sur l'application mobile Android
+
+L'application utilise Room DB pour stocker les commandes hors ligne. Un écran **File hors ligne** (accessible depuis le menu principal) affiche :
+- Les opérations en attente avec leur montant et statut
+- Un bouton **Synchroniser** pour forcer l'envoi
+- Un indicateur de connexion (en ligne / hors ligne)
+
+La synchronisation automatique s'exécute toutes les 15 minutes via WorkManager, même si l'application est fermée.
+
+---
+
+## 25. Dépenses & Décaissements
+
+Le module **Dépenses** permet d'enregistrer les charges opérationnelles de l'établissement (achats de matières premières, frais divers, salaires, etc.) pour obtenir un solde de trésorerie réel dans les rapports.
+
+### Accès
+
+Page **Dépenses** (OWNER, DAF, MANAGER) — barre latérale.
+
+### Enregistrer une dépense
+
+1. Allez dans **Dépenses**
+2. Cliquez sur **+ Nouvelle dépense**
+3. Remplissez le formulaire :
+
+| Champ | Obligatoire | Description |
+|-------|:-----------:|-------------|
+| **Libellé** | Oui | Description de la dépense (ex: "Achat légumes marché") |
+| **Catégorie** | Oui | Matières premières, Charges fixes, Personnel, Divers, etc. |
+| **Montant** | Oui | Montant en FCFA |
+| **Date** | Oui | Date de la dépense (peut être rétroactive) |
+| **Note** | Non | Détails supplémentaires, numéro de facture fournisseur |
+
+4. Cliquez sur **Enregistrer**
+
+### Impact sur les rapports
+
+Les dépenses sont visibles dans les rapports PDF sous la section **Décaissements** :
+- Total des décaissements par catégorie pour la période
+- **Ligne Solde** = Total encaissements − Total décaissements
+
+> Un solde négatif indique que les dépenses ont dépassé les encaissements sur la période.
+
+### Filtres
+
+- Par catégorie
+- Par période (dates de début et de fin)
+- Par établissement (SUPERADMIN et OWNER multi-établissement)
+
+---
+
+## 26. Bon propriétaire (flag isVoucher)
+
+Le flag **Bon propriétaire** (`isVoucher`) permet d'indiquer qu'une commande est offerte par le propriétaire de l'établissement (repas d'équipe, offre commerciale, etc.).
+
+### Modifier le flag sur une commande existante
+
+1. Allez dans **Commandes**
+2. Trouvez la commande concernée dans la liste
+3. Cliquez sur l'icône **Bon propriétaire** (drapeau) dans la colonne Actions
+4. Un modal de confirmation s'affiche : **Activer** ou **Désactiver** le flag
+5. Confirmez
+
+**Rôles autorisés :** OWNER, DAF, MANAGER.
+
+**Effets :**
+- La commande est identifiée comme "bon propriétaire" dans les exports et rapports
+- Une demande d'approbation (`ApprovalRequest`) est créée pour traçabilité
+
+---
+
+## 27. Modification d'une réservation
+
+Voir la section [7. Chambres et réservations → Modifier une réservation](#7-chambres-et-réservations) pour les étapes détaillées.
+
+**Résumé des droits :**
+
+| Champ modifiable | Owner / DAF | Manager |
+|-----------------|:-----------:|:-------:|
+| Chambre | Oui (direct) | Via approbation |
+| Dates | Oui (direct) | Via approbation |
+| Nombre de personnes | Oui (direct) | Via approbation |
+| Source | Oui (direct) | Non |
+| Règle de remise | Oui (direct) | Non |
+
+La facture est recalculée et mise à jour automatiquement lors de toute modification directe.
+
+---
+
+## 28. Channel Manager — factures automatiques
+
+Depuis la correction du moteur de synchronisation, **toutes les réservations importées via les canaux** (Airbnb, Booking.com, Expedia, site WordPress) génèrent automatiquement :
+
+- Une **facture** (`FAC-YYYYMMDD-NNNN`, statut `PAID`)
+- Un **paiement** avec la méthode appropriée (`FEDAPAY` pour les réservations en ligne, `OTHER` pour les réservations iCal)
+- Une **fiche client** si l'email du voyageur est disponible
+
+Ces montants sont donc comptabilisés dans le **chiffre d'affaires** de l'établissement et apparaissent dans les rapports PDF/CSV.
+
+### Backfill des réservations historiques
+
+Si des réservations channel manager antérieures n'ont pas de facture, un outil de backfill permet de les régénérer.
+
+**Via l'interface :** OWNER, DAF, SUPERADMIN — bouton **Régénérer les factures manquantes** dans la page Canaux.
+
+**Via la ligne de commande (sur le serveur) :**
+
+```bash
+# Voir les réservations sans facture (dry-run, sans modification)
+npx tsx backend/scripts/backfill-channel-invoices.ts --dry-run --slug mon-hotel
+
+# Générer les factures manquantes
+npx tsx backend/scripts/backfill-channel-invoices.ts --slug mon-hotel
+
+# Via Docker
+docker compose exec backend npx tsx scripts/backfill-channel-invoices.ts --slug mon-hotel
+```
+
+---
+
+*Document mis à jour le 25 avril 2026 — Teranga PMS v2.8*
+
+**v2.8** : Mode hors ligne PWA + Android (file IndexedDB/Room DB, badge, sync auto), Dépenses & Décaissements (module complet + rapport PDF Solde), flag Bon propriétaire modifiable après création, modification complète de réservation avec recalcul facture, factures automatiques pour les réservations channel manager, script de backfill, informations client/séjour dans les factures PDF réservation.
 
 **v2.7** : Point de vente avec attribution au serveur (POS → serveur), date d'opération rétroactive web + mobile (15 j + override superviseur), rapports corrigés pour afficher le serveur attribué plutôt que le compte POS.
 

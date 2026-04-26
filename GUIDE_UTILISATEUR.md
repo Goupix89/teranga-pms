@@ -40,10 +40,14 @@ Hotel PMS est une plateforme de gestion hôtelière multi-établissements. Elle 
 - Paiement mobile via QR code (Moov Money, Mixx by Yas)
 - Suivi des réservations et du calendrier d'occupation
 - Facturation avec calcul automatique des taxes
-- Gestion des stocks avec alertes de pénurie
+- Gestion des stocks avec alertes de pénurie et **décrémentation automatique à la vente**
 - Système de pointage pour le service de ménage
 - Workflow d'approbation (création employés, modification réservations)
 - Tableau de bord avec indicateurs clés en temps réel
+- **Mode hors ligne** : POS web (IndexedDB) + Android (Room DB) avec synchronisation automatique
+- **Dépenses & Décaissements** : suivi des charges avec impact sur le rapport de caisse (Solde)
+- **Date d'opération rétroactive** : saisie aujourd'hui d'une opération d'hier (web + mobile)
+- **Channel Manager** : factures et revenus auto-générés pour les réservations Airbnb/Booking/Expedia
 
 ---
 
@@ -282,6 +286,13 @@ Les nouvelles catégories apparaissent **immédiatement** :
 - Dans le filtre du POS web (`/dashboard/pos`)
 - Comme `<optgroup>` dans le sélecteur d'articles de la page Commandes (`/dashboard/orders`)
 - Comme onglet dans l'application mobile Android (les onglets sont chargés depuis l'API, plus aucune valeur n'est codée en dur)
+
+### Décrémentation automatique à la vente
+
+Lorsqu'un article a le flag **Suivre le stock** activé (`trackStock = true`) :
+- Le stock est décrémenté automatiquement à chaque vente
+- La vente est **bloquée** si le stock atteint zéro (web + Android)
+- Le stock est restauré si la commande est annulée
 
 ### Mouvements de stock
 
@@ -587,12 +598,42 @@ R : Le serveur génère un QR code depuis l'application. Le client scanne le QR 
 
 ---
 
-*Document mis à jour le 21 avril 2026 — Teranga PMS v2.7*
+---
 
-**Nouveautés v2.7** : Point de vente (POS) avec attribution au serveur, date d'opération rétroactive (web + mobile, 15 j + override superviseur), rapports corrigés pour afficher le serveur attribué.
+## 25. Nouveautés v2.8
+
+### Mode hors ligne (PWA + Android)
+
+Le POS web fonctionne sans connexion : les commandes sont mises en file d'attente (IndexedDB), un badge **Hors ligne** s'affiche, et la sync est automatique à la reconnexion. L'app Android dispose d'un écran dédié **File hors ligne**.
+
+### Dépenses & Décaissements
+
+Nouvelle page **Dépenses** pour enregistrer les charges (matières premières, personnel, charges fixes). Les dépenses apparaissent dans le rapport PDF sous **Décaissements** avec une ligne **Solde** = encaissements − décaissements.
+
+### Modification complète de réservation
+
+Le DAF/Owner peut modifier chambre, dates, remise et nombre d'invités directement. La facture est recalculée automatiquement.
+
+### Flag Bon propriétaire
+
+Icône drapeau sur chaque commande dans la liste : permet de marquer/démarquer une consommation offerte par le propriétaire (OWNER, DAF, MANAGER).
+
+### Factures Channel Manager
+
+Les réservations importées via Airbnb, Booking.com, Expedia ou le site WordPress génèrent désormais automatiquement une facture et un paiement. Ces revenus s'affichent dans les rapports.
+
+### Informations client dans les factures PDF
+
+Les factures de réservation incluent maintenant un bloc client (nom, email, téléphone) et un bloc séjour (chambre, dates, nombre d'invités, source).
+
+---
+
+*Document mis à jour le 25 avril 2026 — Teranga PMS v2.8*
+
+**v2.8** : Mode hors ligne PWA + Android, Dépenses & Décaissements (rapport Solde), modification complète de réservation, flag bon propriétaire, factures channel manager auto, infos client dans les PDF.
+
+**v2.7** : Point de vente (POS) avec attribution au serveur, date d'opération rétroactive (web + mobile, 15 j + override superviseur), rapports corrigés pour afficher le serveur attribué.
 
 **v2.6** : Fiche client avec tier FIDELE, remises automatiques + manuelles, CA consolidé (commandes + réservations), correctifs PDF.
-
-**v2.5** : Module Clients & Fidélité, remises automatiques sur réservations longues, remises manuelles sur commandes, catégories d'articles dynamiques (web + Android), CA consolidé incluant les revenus de réservations.
 
 > **Note** : Le guide utilisateur complet et à jour se trouve dans [`docs/GUIDE_UTILISATEUR.md`](docs/GUIDE_UTILISATEUR.md).

@@ -39,6 +39,7 @@ Le propriétaire a les mêmes permissions que le DAF, plus la gestion des canaux
 | **Abonnement** | Voir / renouveler via FedaPay | Oui |
 | **Remises (Discount Rules)** | Créer / modifier / activer (hébergements et commandes) | Oui |
 | **Clients** | Voir liste, fiche, télécharger carte de fidélité PDF | Oui |
+| **Backfill factures channel** | `POST /api/reservations/admin/backfill-channel-invoices` | Oui |
 
 ---
 
@@ -59,6 +60,9 @@ Le DAF est l'administrateur de l'établissement. Il valide les actions sensibles
 | **Commandes** | Changer statut cuisine (EN_COURS / PRET) | Non |
 | **Commandes** | Marquer comme servie | Non |
 | **Commandes** | Annuler une commande | Oui |
+| **Commandes** | Basculer flag bon propriétaire (`isVoucher`) | Oui |
+| **Réservations** | Modifier tous les champs (direct, sans approbation) | Oui |
+| **Dépenses** | CRUD complet | Oui |
 | **Approbations** | Voir toutes les demandes | Oui |
 | **Approbations** | Approuver / rejeter | Oui |
 | **Cuisine** | Voir le tableau cuisine | Oui (lecture seule) |
@@ -92,8 +96,7 @@ Le Manager gère l'établissement au quotidien. Certaines actions sensibles néc
 | **Chambres** | Créer une chambre | Oui | Requise |
 | **Chambres** | Modifier / supprimer | Oui | - |
 | **Réservations** | Créer | Oui | - |
-| **Réservations** | Modifier les dates uniquement | Oui | Requise |
-| **Réservations** | Modifier autres champs | Non | - |
+| **Réservations** | Modifier les dates, chambre, remise, invités | Oui | Requise (via approbation DAF) |
 | **Réservations** | Check-in / Check-out | Oui | - |
 | **Articles** | Créer (avec image et description) | Oui | - |
 | **Articles** | Modifier / supprimer | Oui | - |
@@ -139,6 +142,7 @@ Le serveur gère les commandes en salle.
 | **Commandes** | Marquer comme servie (`SERVED`) | Oui |
 | **Commandes** | Changer statut cuisine (EN_COURS / PRET) | Non |
 | **Commandes** | Annuler une commande | Non |
+| **Commandes** | Basculer flag bon propriétaire (`isVoucher`) | Non |
 | **Commandes** | Voir ses commandes (créées par lui OU attribuées par le POS) | Oui |
 | **Commandes** | Saisir une commande avec date d'opération rétroactive (≤ 15 jours) | Oui |
 | **Chambres** | Créer / modifier | Non |
@@ -164,6 +168,8 @@ Le POS saisit les commandes en caisse pour le compte des serveurs.
 | **Commandes** | Créer une commande | Oui |
 | **Commandes** | **Attribuer une commande à un serveur** (sélecteur Serveur attribué) | Oui |
 | **Commandes** | Saisir avec date d'opération rétroactive (≤ 15 jours) | Oui |
+| **Commandes** | Saisir en mode hors ligne (file IndexedDB/Room DB) | Oui |
+| **Commandes** | Basculer flag bon propriétaire (`isVoucher`) | Non |
 | **Paiements** | Encaisser une commande (espèces, carte, mobile money) | Oui |
 | **Factures** | Voir les factures générées | Oui |
 | **Commandes** | Changer statut cuisine / annuler | Non |
@@ -280,13 +286,54 @@ Lorsqu'un check-out est effectué sur une réservation :
 
 ---
 
+## Workflows automatiques (suite)
+
+### Décrémentation automatique du stock à la vente
+
+Lorsqu'un article a `trackStock = true` et qu'une commande est créée ou qu'un article est ajouté :
+
+- Le stock est décrémenté atomiquement (transaction Serializable)
+- Un mouvement `SALE` est enregistré dans `stock_movements` avec le `orderId`
+- Si `currentStock <= 0` : la vente est **bloquée** avec une erreur 409 (web + Android)
+- En cas d'annulation de la commande : le stock est restauré (mouvement `RETURN`)
+
+### Synchronisation channel manager → Facture automatique
+
+Lorsqu'une réservation est importée via iCal ou `/api/external-bookings` :
+
+1. La réservation est créée via `reservationService.create()` (pas d'insertion directe)
+2. Une facture `FAC-YYYYMMDD-NNNN` est générée automatiquement (statut `PAID`)
+3. Un paiement est enregistré (`FEDAPAY` pour les réservations en ligne, `OTHER` pour iCal)
+4. Une fiche client est créée ou mise à jour si l'email est disponible
+5. Ces revenus sont inclus dans les rapports quotidiens et le tableau de bord
+
+### Flag bon propriétaire (`isVoucher`)
+
+`PATCH /api/orders/:id/voucher` (OWNER, DAF, MANAGER) :
+
+- Bascule `isVoucher` sur l'`Order`
+- Met à jour la note sur la facture associée
+- Crée un `ApprovalRequest` de type `VOUCHER_FLAG` pour traçabilité DAF
+
+### Mode hors ligne — file de synchronisation
+
+Le POS web utilise IndexedDB (Dexie) pour mettre en file d'attente les opérations hors ligne :
+
+- Chaque opération est stockée avec un UUID idempotent avant envoi
+- Le drain FIFO commence automatiquement à la reconnexion
+- En cas d'erreur 4xx (client) : l'opération est marquée `FAILED` (pas de retry infini)
+- En cas d'erreur 5xx (serveur) : backoff exponentiel avec max 5 tentatives
+
+---
+
 ## Types d'approbation
 
 | Type | Déclencheur | Action à l'approbation |
 |------|-------------|----------------------|
 | `ROOM_CREATION` | Manager crée une chambre | Chambre créée à partir du payload |
 | `STOCK_MOVEMENT` | Manager crée un mouvement de stock | Mouvement exécuté, stock article mis à jour |
-| `RESERVATION_MODIFICATION` | Manager modifie les dates d'une réservation | Dates de la réservation mises à jour |
+| `RESERVATION_MODIFICATION` | Manager modifie une réservation | Modification appliquée, facture recalculée |
+| `VOUCHER_FLAG` | Owner/DAF/Manager bascule `isVoucher` sur une commande | Enregistrement pour audit (pas d'action supplémentaire) |
 
 ---
 
