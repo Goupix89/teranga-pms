@@ -152,7 +152,7 @@ export function canEditOrder(
   if (order.createdById && order.createdById === req.user.id) return true;
   if (order.serverId && order.serverId === req.user.id) return true;
   const role = req.user.memberships?.find((m) => m.establishmentId === order.establishmentId)?.role;
-  return role === 'OWNER' || role === 'DAF' || role === 'MANAGER' || role === 'MAITRE_HOTEL';
+  return role === 'OWNER' || role === 'DAF' || role === 'MANAGER' || role === 'MAITRE_HOTEL' || role === 'POS';
 }
 
 /**

@@ -2847,13 +2847,13 @@ async function buildDailyReport(tenantId: string, date: string, establishmentId?
     include: {
       createdBy: { select: { id: true, firstName: true, lastName: true } },
       server: { select: { id: true, firstName: true, lastName: true } },
+      invoice: { select: { status: true } },
     },
     orderBy: { operationDate: 'asc' },
   });
 
-  // Compute encaissements from ORDER amounts (matching the CSV export and the
-  // dashboard's caisseData logic). Active orders = not CANCELLED, not PENDING,
-  // not vouchers. This way the PDF, the CSV and the dashboard cards all agree.
+  // Only encaissed orders count toward revenue — invoice must be PAID.
+  // This covers all payment paths: cashin (sync), QR/FedaPay (async), simulate-payment.
   const byMethod: Record<string, { count: number; total: number }> = {};
   let totalEncaisse = 0;
   let voucherTotal = 0;
@@ -2868,7 +2868,7 @@ async function buildDailyReport(tenantId: string, date: string, establishmentId?
       voucherCount++;
       continue;
     }
-    if (o.status === 'CANCELLED' || o.status === 'PENDING') continue;
+    if ((o as any).invoice?.status !== 'PAID') continue;
     totalEncaisse += amount;
     orderRevenue += amount;
     orderPaymentCount++;
@@ -2896,7 +2896,7 @@ async function buildDailyReport(tenantId: string, date: string, establishmentId?
   // Transaction details = orders (matches CSV) + reservation payments, sorted chronologically.
   const paymentDetails = [
     ...orders
-      .filter((o: any) => !o.isVoucher && !['CANCELLED', 'PENDING'].includes(o.status) && o.paymentMethod)
+      .filter((o: any) => !o.isVoucher && o.invoice?.status === 'PAID')
       .map((o: any) => ({
         invoiceNumber: '-',
         orderNumber: o.orderNumber,
@@ -3315,6 +3315,7 @@ async function buildRangeReport(tenantId: string, from: string, to: string, esta
     include: {
       createdBy: { select: { id: true, firstName: true, lastName: true } },
       server: { select: { id: true, firstName: true, lastName: true } },
+      invoice: { select: { status: true } },
     },
     orderBy: { operationDate: 'asc' },
   });
@@ -3366,7 +3367,7 @@ async function buildRangeReport(tenantId: string, from: string, to: string, esta
       grandVoucher += amount;
       continue;
     }
-    if (o.status === 'CANCELLED' || o.status === 'PENDING') continue;
+    if ((o as any).invoice?.status !== 'PAID') continue;
 
     const method = o.paymentMethod || 'NON_DEFINI';
     days[day].total += amount;

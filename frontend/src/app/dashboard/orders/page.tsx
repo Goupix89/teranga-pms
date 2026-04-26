@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch } from '@/lib/api';
 import { PageHeader, StatusBadge, Pagination, Modal, SearchInput, EmptyState, LoadingPage } from '@/components/ui';
-import { UtensilsCrossed, Plus, Loader2, BarChart3, QrCode, X, CheckCircle2, FileDown, AlertTriangle, Copy, Wallet, PlusCircle } from 'lucide-react';
+import { UtensilsCrossed, Plus, Loader2, BarChart3, X, CheckCircle2, FileDown, AlertTriangle, Copy, Wallet, PlusCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDateTime, formatCurrency, statusLabels } from '@/lib/utils';
 import { useAuthStore } from '@/hooks/useAuthStore';
@@ -46,7 +46,6 @@ export default function OrdersPage() {
 
   const [form, setForm] = useState({ establishmentId: '', tableNumber: '', orderType: 'RESTAURANT' as 'RESTAURANT' | 'LEISURE' | 'LOCATION', items: [{ articleId: '', quantity: 1 }] as Array<{ articleId: string; quantity: number }>, notes: '', startTime: '', endTime: '', isVoucher: false, voucherOwnerId: '', voucherOwnerName: '', discountRuleId: '', serverId: '', operationDate: '' });
   const isPOS = currentEstRole === 'POS';
-  const [qrModal, setQrModal] = useState<{ open: boolean; invoiceId?: string; qrCode?: string; invoiceNumber?: string; totalAmount?: number; paymentLabel?: string; currency?: string; paid?: boolean; fedapayCheckoutUrl?: string }>({ open: false });
   const [cashInModal, setCashInModal] = useState<{ open: boolean; order?: Order; method: PaymentMethod; paidAt: string }>({ open: false, method: 'CASH', paidAt: '' });
   const canBackdateBeyondCap = isSuperAdmin || ['OWNER', 'DAF', 'MANAGER'].includes(currentEstRole || '');
   const [addItemsModal, setAddItemsModal] = useState<{ open: boolean; order?: Order; items: Array<{ articleId: string; quantity: number }> }>({ open: false, items: [{ articleId: '', quantity: 1 }] });
@@ -139,27 +138,6 @@ export default function OrdersPage() {
     onError: (err: any) => toast.error(err.response?.data?.error || 'Erreur encaissement'),
   });
 
-  // Poll invoice payment status when QR modal is open (FedaPay confirmation)
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  useEffect(() => {
-    if (qrModal.open && qrModal.invoiceId && !qrModal.paid) {
-      pollingRef.current = setInterval(async () => {
-        try {
-          const res = await apiGet<any>(`/invoices/${qrModal.invoiceId}/payment-status`);
-          if (res?.data?.paid) {
-            setQrModal((prev) => ({ ...prev, paid: true }));
-            toast.success('Paiement reçu !');
-            queryClient.invalidateQueries({ queryKey: ['orders'] });
-            queryClient.invalidateQueries({ queryKey: ['order-stats'] });
-            if (pollingRef.current) clearInterval(pollingRef.current);
-          }
-        } catch {}
-      }, 3000);
-    }
-    return () => {
-      if (pollingRef.current) clearInterval(pollingRef.current);
-    };
-  }, [qrModal.open, qrModal.invoiceId, qrModal.paid]);
 
   const updateStatusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: OrderStatus }) => apiPatch(`/orders/${id}/status`, { status }),
@@ -418,33 +396,6 @@ export default function OrdersPage() {
                           <span className="text-gray-600">
                             {order.paymentMethod === 'MOOV_MONEY' ? 'Flooz' : order.paymentMethod === 'MIXX_BY_YAS' ? 'Yas' : order.paymentMethod === 'FEDAPAY' ? 'FedaPay' : order.paymentMethod || '-'}
                           </span>
-                          {order.invoiceId && (
-                            <button
-                              onClick={async () => {
-                                try {
-                                  const qrRes = await apiGet<any>(`/invoices/${order.invoiceId}/qrcode`);
-                                  if (qrRes?.data) {
-                                    setQrModal({
-                                      open: true,
-                                      invoiceId: order.invoiceId!,
-                                      qrCode: qrRes.data.qrCode,
-                                      invoiceNumber: qrRes.data.invoice?.invoiceNumber,
-                                      totalAmount: qrRes.data.invoice?.totalAmount,
-                                      paymentLabel: qrRes.data.paymentLabel,
-                                      currency: qrRes.data.invoice?.currency || 'XOF',
-                                      fedapayCheckoutUrl: qrRes.data.fedapayCheckoutUrl,
-                                    });
-                                  }
-                                } catch {
-                                  toast.error('QR code indisponible');
-                                }
-                              }}
-                              className="btn-ghost p-1 text-primary-600 hover:text-primary-700"
-                              title="Afficher QR code de paiement"
-                            >
-                              <QrCode className="h-4 w-4" />
-                            </button>
-                          )}
                           {canDownloadReceipt && (
                             <button
                               onClick={() => downloadReceipt(order.id, order.orderNumber)}
@@ -618,32 +569,6 @@ export default function OrdersPage() {
                       <Wallet className="h-3.5 w-3.5 mr-1 inline" /> Encaisser
                     </button>
                   )}
-                  {order.invoiceId && (
-                    <button
-                      onClick={async () => {
-                        try {
-                          const qrRes = await apiGet<any>(`/invoices/${order.invoiceId}/qrcode`);
-                          if (qrRes?.data) {
-                            setQrModal({
-                              open: true,
-                              invoiceId: order.invoiceId!,
-                              qrCode: qrRes.data.qrCode,
-                              invoiceNumber: qrRes.data.invoice?.invoiceNumber,
-                              totalAmount: qrRes.data.invoice?.totalAmount,
-                              paymentLabel: qrRes.data.paymentLabel,
-                              currency: qrRes.data.invoice?.currency || 'XOF',
-                              fedapayCheckoutUrl: qrRes.data.fedapayCheckoutUrl,
-                            });
-                          }
-                        } catch {
-                          toast.error('QR code indisponible');
-                        }
-                      }}
-                      className="btn-ghost text-xs px-2 py-1 text-primary-600"
-                    >
-                      <QrCode className="h-3.5 w-3.5 mr-1 inline" /> QR
-                    </button>
-                  )}
                   {canDownloadReceipt && (
                     <button
                       onClick={() => downloadReceipt(order.id, order.orderNumber)}
@@ -675,88 +600,6 @@ export default function OrdersPage() {
           </div>
         </>
       )}
-
-      {/* QR Code payment modal */}
-      <Modal open={qrModal.open} onClose={() => setQrModal({ open: false })} title="QR Code de paiement" size="md">
-        <div className="flex flex-col items-center space-y-4 py-4">
-          <div className="text-center space-y-1">
-            <p className="text-lg font-semibold text-gray-900">Facture {qrModal.invoiceNumber}</p>
-            <p className="text-2xl font-bold text-primary-700">{formatCurrency(qrModal.totalAmount || 0)} {qrModal.currency}</p>
-            <p className="text-sm text-gray-500">Paiement par <span className="font-medium text-gray-700">{qrModal.paymentLabel}</span></p>
-          </div>
-          {qrModal.qrCode && (
-            <div className="bg-white p-4 rounded-xl shadow-lg border-2 border-primary-100">
-              <img src={qrModal.qrCode} alt="QR Code de paiement" className="w-64 h-64" />
-            </div>
-          )}
-          {qrModal.fedapayCheckoutUrl ? (
-            <p className="text-xs text-gray-400 text-center max-w-xs">
-              Scannez le QR code ou cliquez sur le bouton ci-dessous pour payer via FedaPay.
-            </p>
-          ) : (
-            <p className="text-xs text-gray-400 text-center max-w-xs">
-              Le client doit scanner ce QR code avec son application {qrModal.paymentLabel} pour effectuer le paiement.
-            </p>
-          )}
-          {qrModal.paid ? (
-            <div className="flex flex-col items-center gap-2 w-full max-w-xs">
-              <div className="flex items-center gap-2 text-green-600 bg-green-50 border border-green-200 rounded-lg px-4 py-3 w-full justify-center">
-                <CheckCircle2 className="h-5 w-5" />
-                <span className="font-semibold">Paiement reçu !</span>
-              </div>
-              <button onClick={() => { setQrModal({ open: false }); queryClient.invalidateQueries({ queryKey: ['orders'] }); queryClient.invalidateQueries({ queryKey: ['invoices'] }); }} className="btn-primary w-full">
-                Fermer
-              </button>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2 w-full max-w-xs">
-              {qrModal.fedapayCheckoutUrl && (
-                <>
-                  <a
-                    href={qrModal.fedapayCheckoutUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn-primary bg-blue-600 hover:bg-blue-700 w-full text-center flex items-center justify-center gap-2"
-                  >
-                    💳 Payer avec FedaPay
-                  </a>
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-2 w-full">
-                    <p className="text-xs text-gray-500 mb-1 text-center">Lien de paiement :</p>
-                    <a
-                      href={qrModal.fedapayCheckoutUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-blue-600 hover:text-blue-800 underline break-all block text-center"
-                    >
-                      {qrModal.fedapayCheckoutUrl}
-                    </a>
-                  </div>
-                </>
-              )}
-              <button
-                onClick={async () => {
-                  try {
-                    await apiPost(`/invoices/${qrModal.invoiceId}/simulate-payment`, {});
-                    setQrModal((prev) => ({ ...prev, paid: true }));
-                    queryClient.invalidateQueries({ queryKey: ['orders'] });
-                    queryClient.invalidateQueries({ queryKey: ['invoices'] });
-                    queryClient.invalidateQueries({ queryKey: ['order-stats'] });
-                    toast.success('Paiement simulé avec succès !');
-                  } catch (err: any) {
-                    toast.error(err.response?.data?.error || 'Erreur simulation paiement');
-                  }
-                }}
-                className="btn-primary bg-green-600 hover:bg-green-700 w-full"
-              >
-                Simuler le paiement client
-              </button>
-              <button onClick={() => setQrModal({ open: false })} className="btn-secondary w-full">
-                Fermer
-              </button>
-            </div>
-          )}
-        </div>
-      </Modal>
 
       {/* Create order modal */}
       <Modal open={showModal} onClose={() => setShowModal(false)} title="Nouvelle commande" size="lg">
