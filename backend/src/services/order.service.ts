@@ -69,9 +69,9 @@ export class OrderService {
           { serverId: filters.forUserId },
         ],
       }),
-      ...(filters.from && { createdAt: { gte: new Date(filters.from) } }),
+      ...(filters.from && { operationDate: { gte: new Date(filters.from) } }),
       ...(filters.to && {
-        createdAt: {
+        operationDate: {
           ...((filters.from && { gte: new Date(filters.from) }) || {}),
           lte: new Date(filters.to),
         },
@@ -317,8 +317,9 @@ export class OrderService {
         },
       });
 
-      // Auto-generate invoice for the order — use global invoice counter
-      const invoiceDateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+      // Auto-generate invoice for the order — use operationDate for FAC prefix when backdating
+      const opDate = data.operationDate || now;
+      const invoiceDateStr = `${opDate.getFullYear()}${String(opDate.getMonth() + 1).padStart(2, '0')}${String(opDate.getDate()).padStart(2, '0')}`;
       const lastInvoice = await tx.invoice.findFirst({
         where: { tenantId, invoiceNumber: { startsWith: `FAC-${invoiceDateStr}` } },
         orderBy: { invoiceNumber: 'desc' },

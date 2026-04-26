@@ -656,7 +656,7 @@ orderRouter.post('/:id/cashin', authenticate, requirePaymentRole,
 
     const order = await prisma.order.findFirst({
       where: { id: req.params.id, tenantId },
-      select: { id: true, invoiceId: true, status: true, createdById: true, serverId: true, establishmentId: true },
+      select: { id: true, invoiceId: true, status: true, createdById: true, serverId: true, establishmentId: true, operationDate: true },
     });
     if (!order) return res.status(404).json({ success: false, error: 'Commande introuvable' });
     if (!canEditOrder(req, order)) {
@@ -669,14 +669,19 @@ orderRouter.post('/:id/cashin', authenticate, requirePaymentRole,
       return res.status(400).json({ success: false, error: 'Aucune facture liée à cette commande' });
     }
 
-    // Optional backdated payment date (accountants catching up on previous day's ops)
+    // Optional backdated payment date. Falls back to the order's operationDate so
+    // that encaissing a backdated order automatically books the payment on the right day.
     let paidAt: Date | null = null;
     try {
-      paidAt = validateOperationDate(req.body.paidAt, {
-        userRole: req.user!.role,
-        establishmentRole: getEstablishmentRole(req, order.establishmentId),
-        fieldLabel: 'la date de paiement',
-      });
+      if (req.body.paidAt) {
+        paidAt = validateOperationDate(req.body.paidAt, {
+          userRole: req.user!.role,
+          establishmentRole: getEstablishmentRole(req, order.establishmentId),
+          fieldLabel: 'la date de paiement',
+        });
+      } else if (order.operationDate) {
+        paidAt = order.operationDate as Date;
+      }
     } catch (e: any) {
       return res.status(400).json({ success: false, error: e.message });
     }
@@ -2685,17 +2690,17 @@ reportRouter.get('/revenue-summary', authenticate, requireDAFOrManagerOrServer,
 
     const [today, week, month, expToday, expWeek, expMonth] = await Promise.all([
       db.payment.aggregate({
-        where: { tenantId, createdAt: { gte: todayStart, lte: todayEnd }, ...voucherExclude },
+        where: { tenantId, paidAt: { gte: todayStart, lte: todayEnd }, ...voucherExclude },
         _sum: { amount: true },
         _count: true,
       }),
       db.payment.aggregate({
-        where: { tenantId, createdAt: { gte: weekStart, lte: todayEnd }, ...voucherExclude },
+        where: { tenantId, paidAt: { gte: weekStart, lte: todayEnd }, ...voucherExclude },
         _sum: { amount: true },
         _count: true,
       }),
       db.payment.aggregate({
-        where: { tenantId, createdAt: { gte: monthStart, lte: todayEnd }, ...voucherExclude },
+        where: { tenantId, paidAt: { gte: monthStart, lte: todayEnd }, ...voucherExclude },
         _sum: { amount: true },
         _count: true,
       }),

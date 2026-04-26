@@ -228,6 +228,7 @@ export default function PosPage() {
       clearCart();
       setTableNumber('');
       setNotes('');
+      setOperationDate('');
 
       if (order?.id && order?.invoiceId) {
         setCashInModal({
