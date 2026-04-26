@@ -35,6 +35,8 @@ export default function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [serverFilter, setServerFilter] = useState('');
   const [myOrdersOnly, setMyOrdersOnly] = useState(false);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [showDuplicates, setShowDuplicates] = useState(false);
@@ -59,8 +61,8 @@ export default function OrdersPage() {
   // forUserId matches createdById OR serverId so servers see POS-entered orders attributed to them.
   const effectiveForUserId = myOrdersOnly ? currentUser?.id : serverFilter;
   const { data, isLoading } = useQuery({
-    queryKey: ['orders', page, statusFilter, effectiveForUserId, currentEstId],
-    queryFn: () => apiGet<any>(`/orders?page=${page}&limit=20${statusFilter ? `&status=${statusFilter}` : ''}${effectiveForUserId ? `&forUserId=${effectiveForUserId}` : ''}${currentEstId ? `&establishmentId=${currentEstId}` : ''}`),
+    queryKey: ['orders', page, statusFilter, effectiveForUserId, currentEstId, dateFrom, dateTo],
+    queryFn: () => apiGet<any>(`/orders?page=${page}&limit=20${statusFilter ? `&status=${statusFilter}` : ''}${effectiveForUserId ? `&forUserId=${effectiveForUserId}` : ''}${currentEstId ? `&establishmentId=${currentEstId}` : ''}${dateFrom ? `&from=${dateFrom}` : ''}${dateTo ? `&to=${dateTo}T23:59:59` : ''}`),
     refetchInterval: 15000,
   });
 
@@ -320,6 +322,32 @@ export default function OrdersPage() {
           <option value="SERVED">Servie</option>
           <option value="CANCELLED">Annulée</option>
         </select>
+        <div className="flex items-center gap-1">
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
+            className="input w-36 text-sm"
+            placeholder="Du"
+          />
+          <span className="text-gray-400 text-sm">→</span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
+            className="input w-36 text-sm"
+            placeholder="Au"
+          />
+          {(dateFrom || dateTo) && (
+            <button
+              onClick={() => { setDateFrom(''); setDateTo(''); setPage(1); }}
+              className="ml-1 text-gray-400 hover:text-gray-600"
+              title="Effacer les dates"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
         <button
           onClick={() => { setMyOrdersOnly(!myOrdersOnly); setServerFilter(''); setPage(1); }}
           className={`px-3 py-2 text-sm rounded-lg border transition-colors ${myOrdersOnly ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
