@@ -1,41 +1,32 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { X, Star } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Star } from 'lucide-react';
 
 const TOGO_GREEN  = '#006A4E';
 const TOGO_YELLOW = '#FFCE00';
 const TOGO_RED    = '#D21034';
 
-const DISMISS_KEY = 'togo_independence_dismissed_2026';
-
 function isTodayApril27(): boolean {
   const now = new Date();
-  return now.getMonth() === 3 && now.getDate() === 27; // 0-indexed month
+  return now.getMonth() === 3 && now.getDate() === 27;
 }
 
 export function TogoIndependenceBanner() {
-  const [visible, setVisible] = useState(false);
+  const [show, setShow] = useState(false);
 
   useEffect(() => {
-    if (!isTodayApril27()) return;
-    const dismissed = sessionStorage.getItem(DISMISS_KEY);
-    if (!dismissed) setVisible(true);
+    setShow(isTodayApril27());
   }, []);
 
-  if (!visible) return null;
-
-  const dismiss = () => {
-    sessionStorage.setItem(DISMISS_KEY, '1');
-    setVisible(false);
-  };
+  if (!show) return null;
 
   return (
     <div
       className="relative overflow-hidden"
-      style={{ background: `linear-gradient(135deg, ${TOGO_GREEN} 0%, ${TOGO_GREEN} 33%, ${TOGO_YELLOW} 33%, ${TOGO_YELLOW} 66%, ${TOGO_RED} 66%)` }}
+      style={{ background: `linear-gradient(90deg, ${TOGO_GREEN} 0%, ${TOGO_GREEN} 33%, ${TOGO_YELLOW} 33%, ${TOGO_YELLOW} 66%, ${TOGO_RED} 66%)` }}
     >
-      {/* Subtle shimmer overlay */}
+      {/* Shimmer overlay */}
       <div
         className="absolute inset-0 opacity-10"
         style={{
@@ -43,20 +34,19 @@ export function TogoIndependenceBanner() {
         }}
       />
 
-      <div className="relative flex items-center justify-between gap-4 px-6 py-3">
-        {/* Left stars decoration */}
-        <div className="flex shrink-0 items-center gap-1 text-white opacity-80">
+      <div className="relative flex items-center justify-center gap-4 px-6 py-3">
+        {/* Left stars */}
+        <div className="flex shrink-0 items-center gap-1">
           {[0, 1, 2].map((i) => (
-            <Star key={i} className="h-3 w-3 fill-white" style={{ opacity: 0.6 + i * 0.2 }} />
+            <Star key={i} className="h-3 w-3 fill-white text-white" style={{ opacity: 0.6 + i * 0.2 }} />
           ))}
         </div>
 
-        {/* Main message */}
-        <div className="flex flex-1 flex-wrap items-center justify-center gap-2 text-center">
-          {/* Flag stripe badge */}
-          <span className="shrink-0 overflow-hidden rounded text-xl leading-none" title="Drapeau togolais">🇹🇬</span>
+        {/* Message */}
+        <div className="flex flex-wrap items-center justify-center gap-2 text-center">
+          <span className="text-xl leading-none">🇹🇬</span>
 
-          <span className="font-bold text-white drop-shadow" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.4)', fontSize: '1rem' }}>
+          <span className="font-bold text-white" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.4)', fontSize: '1rem' }}>
             Bonne fête de l&apos;Indépendance du Togo !
           </span>
 
@@ -72,21 +62,12 @@ export function TogoIndependenceBanner() {
           </span>
         </div>
 
-        {/* Right stars decoration */}
-        <div className="flex shrink-0 items-center gap-1 text-white opacity-80">
+        {/* Right stars */}
+        <div className="flex shrink-0 items-center gap-1">
           {[2, 1, 0].map((i) => (
-            <Star key={i} className="h-3 w-3 fill-white" style={{ opacity: 0.6 + i * 0.2 }} />
+            <Star key={i} className="h-3 w-3 fill-white text-white" style={{ opacity: 0.6 + i * 0.2 }} />
           ))}
         </div>
-
-        {/* Dismiss */}
-        <button
-          onClick={dismiss}
-          className="ml-2 shrink-0 rounded-full p-1 text-white opacity-70 transition hover:opacity-100 hover:bg-white/20"
-          aria-label="Fermer"
-        >
-          <X className="h-4 w-4" />
-        </button>
       </div>
     </div>
   );
