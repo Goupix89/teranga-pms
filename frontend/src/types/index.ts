@@ -402,12 +402,19 @@ export interface ChannelSyncLog {
 // Expense (Décaissement)
 // =============================================================================
 
+export interface ExpenseCustomCategory {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
 export interface Expense {
   id: string;
   establishmentId: string;
   amount: number;
   reason: string;
   category: ExpenseCategory;
+  customCategoryId?: string | null;
   paymentMethod: PaymentMethod;
   supplierId?: string | null;
   operationDate: string;
@@ -416,6 +423,7 @@ export interface Expense {
   createdAt: string;
   establishment?: { id: string; name: string };
   supplier?: { id: string; name: string } | null;
+  customCategory?: { id: string; name: string } | null;
   performedBy?: { id: string; firstName: string; lastName: string };
   deletedBy?: { id: string; firstName: string; lastName: string } | null;
 }

@@ -354,6 +354,7 @@ export const createExpenseSchema = z.object({
   category: z
     .enum(['SUPPLIES', 'SALARY', 'UTILITIES', 'RENT', 'MAINTENANCE', 'TRANSPORT', 'MARKETING', 'TAXES', 'OTHER'])
     .default('OTHER'),
+  customCategoryId: z.string().uuid().optional().nullable(),
   paymentMethod: z
     .enum(['CASH', 'CARD', 'BANK_TRANSFER', 'MOBILE_MONEY', 'MOOV_MONEY', 'MIXX_BY_YAS', 'FEDAPAY', 'OTHER'])
     .default('CASH'),

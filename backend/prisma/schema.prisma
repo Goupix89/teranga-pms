@@ -752,25 +752,41 @@ model Expense {
   reason          String
   category        ExpenseCategory @default(OTHER)
   paymentMethod   PaymentMethod   @default(CASH) @map("payment_method")
-  supplierId      String?         @map("supplier_id")
-  operationDate   DateTime        @map("operation_date")
-  notes           String?
-  performedById   String          @map("performed_by_id")
-  deletedAt       DateTime?       @map("deleted_at")
-  deletedById     String?         @map("deleted_by_id")
-  createdAt       DateTime        @default(now()) @map("created_at")
-  updatedAt       DateTime        @updatedAt @map("updated_at")
+  supplierId        String?         @map("supplier_id")
+  customCategoryId  String?         @map("custom_category_id")
+  operationDate     DateTime        @map("operation_date")
+  notes             String?
+  performedById     String          @map("performed_by_id")
+  deletedAt         DateTime?       @map("deleted_at")
+  deletedById       String?         @map("deleted_by_id")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
 
-  tenant        Tenant        @relation(fields: [tenantId], references: [id])
-  establishment Establishment @relation(fields: [establishmentId], references: [id])
-  supplier      Supplier?     @relation(fields: [supplierId], references: [id])
-  performedBy   User          @relation("ExpenseCreator", fields: [performedById], references: [id])
-  deletedBy     User?         @relation("ExpenseDeleter", fields: [deletedById], references: [id])
+  tenant         Tenant                 @relation(fields: [tenantId], references: [id])
+  establishment  Establishment          @relation(fields: [establishmentId], references: [id])
+  supplier       Supplier?              @relation(fields: [supplierId], references: [id])
+  customCategory ExpenseCustomCategory? @relation(fields: [customCategoryId], references: [id], onDelete: SetNull)
+  performedBy    User                   @relation("ExpenseCreator", fields: [performedById], references: [id])
+  deletedBy      User?                  @relation("ExpenseDeleter", fields: [deletedById], references: [id])
 
   @@index([tenantId])
   @@index([tenantId, establishmentId, operationDate])
   @@index([tenantId, establishmentId, deletedAt])
   @@map("expenses")
+}
+
+model ExpenseCustomCategory {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  expenses Expense[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("expense_custom_categories")
 }
 
 model StockAlert {

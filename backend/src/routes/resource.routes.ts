@@ -1527,6 +1527,50 @@ expenseRouter.delete('/:id', authenticate, requireDAF,
   })
 );
 
+// PDF voucher (bon de décaissement)
+expenseRouter.get('/:id/voucher', authenticate, requireDAFOrManager,
+  asyncHandler(async (req, res) => {
+    const pdfBuffer = await expenseService.generateVoucherPDF(req.user!.tenantId, req.params.id);
+    const safeId = req.params.id.slice(0, 8).toUpperCase();
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="bon-decaissement-${safeId}.pdf"`);
+    res.send(pdfBuffer);
+  })
+);
+
+// =============================================================================
+// EXPENSE CUSTOM CATEGORIES
+// =============================================================================
+export const expenseCategoryRouter = Router();
+
+// List — MANAGER+ can read
+expenseCategoryRouter.get('/', authenticate, requireDAFOrManager,
+  asyncHandler(async (req, res) => {
+    const data = await expenseService.listCategories(req.user!.tenantId);
+    res.json({ success: true, data });
+  })
+);
+
+// Create — MANAGER/DAF/OWNER
+expenseCategoryRouter.post('/', authenticate, requireDAFOrManager,
+  asyncHandler(async (req, res) => {
+    const { name } = req.body;
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ success: false, error: 'Le nom de la catégorie est requis' });
+    }
+    const data = await expenseService.createCategory(req.user!.tenantId, name);
+    res.status(201).json({ success: true, data });
+  })
+);
+
+// Delete — DAF/OWNER only (blocks if still in use)
+expenseCategoryRouter.delete('/:id', authenticate, requireDAF,
+  asyncHandler(async (req, res) => {
+    await expenseService.deleteCategory(req.user!.tenantId, req.params.id);
+    res.json({ success: true });
+  })
+);
+
 // =============================================================================
 // APPROVAL REQUESTS
 // =============================================================================

@@ -37,6 +37,7 @@ import {
   stockAlertRouter,
   supplierRouter,
   expenseRouter,
+  expenseCategoryRouter,
   approvalRouter,
   cleaningRouter,
   restaurantTableRouter,
@@ -412,6 +413,7 @@ app.use('/api/restaurant-tables', restaurantTableRouter);
 app.use('/api/dashboard-config', dashboardConfigRouter);
 app.use('/api/stock-alerts', stockAlertRouter);
 app.use('/api/expenses', expenseRouter);
+app.use('/api/expense-categories', expenseCategoryRouter);
 app.use('/api/notifications', notificationRouter);
 
 // Establishment members (nested under /api/establishments/:establishmentId/members)
