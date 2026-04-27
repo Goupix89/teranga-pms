@@ -6,6 +6,7 @@ import { useAuthStore } from '@/hooks/useAuthStore';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { OfflineBadge } from '@/components/layout/OfflineBadge';
 import { ServiceWorkerRegistrar } from '@/components/layout/ServiceWorkerRegistrar';
+import { TogoIndependenceBanner } from '@/components/layout/TogoIndependenceBanner';
 import { LoadingPage } from '@/components/ui';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -50,9 +51,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <Sidebar />
       <OfflineBadge />
       <ServiceWorkerRegistrar />
-      <main className="ml-64 flex-1 bg-wood-50 p-6 lg:p-8">
-        {children}
-      </main>
+      <div className="ml-64 flex flex-1 flex-col">
+        <TogoIndependenceBanner />
+        <main className="flex-1 bg-wood-50 p-6 lg:p-8">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

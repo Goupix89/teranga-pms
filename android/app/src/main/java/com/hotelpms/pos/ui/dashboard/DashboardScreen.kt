@@ -140,6 +140,9 @@ fun DashboardScreen(
                         .padding(horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
+                    // Togo Independence Day banner (shows only on April 27th)
+                    item { TogoIndependenceBanner() }
+
                     item { Spacer(modifier = Modifier.height(4.dp)) }
 
                     enabledWidgets.forEach { widget ->
