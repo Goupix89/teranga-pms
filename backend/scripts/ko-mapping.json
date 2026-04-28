@@ -22,7 +22,7 @@
         "Pizza végétarienne",
         "Spaghettis / Tagliatelles rouge, filet de bœuf, œuf"
       ],
-      "article_cible": null
+      "article_cible": "1/2 Poulet Grillé"
     },
     {
       "ko": "KO2",
@@ -39,7 +39,7 @@
         "Pizza végétarienne",
         "Spaghettis / Tagliatelles rouge, filet de bœuf, œuf"
       ],
-      "article_cible": null
+      "article_cible": "Pizza végétarienne"
     },
     {
       "ko": "KO3",
@@ -55,7 +55,7 @@
         "Pizza au Fruits de Mer",
         "Sauce d'arachide à la pintade"
       ],
-      "article_cible": null
+      "article_cible": "Pizza au Fruits de Mer"
     },
     {
       "ko": "KO4",
@@ -82,7 +82,7 @@
         "Spaghetti sauce bolognaise",
         "Yaourt ou crème glacée de sirop de menthe"
       ],
-      "article_cible": null
+      "article_cible": "Sauce Claire Agouti"
     },
     {
       "ko": "KO5",
@@ -99,7 +99,7 @@
         "Pizza végétarienne",
         "Spaghettis / Tagliatelles rouge, filet de bœuf, œuf"
       ],
-      "article_cible": null
+      "article_cible": "1/2 Poulet Grillé"
     },
     {
       "ko": "KO6",
@@ -116,7 +116,7 @@
         "Red Label",
         "Suze"
       ],
-      "article_cible": null
+      "article_cible": "Martini Blanc"
     },
     {
       "ko": "KO7",
@@ -137,7 +137,7 @@
         "Mojito",
         "Smashnille"
       ],
-      "article_cible": null
+      "article_cible": "Mojito"
     },
     {
       "ko": "KO8",
@@ -175,7 +175,7 @@
         "Tom Collins",
         "Zombie"
       ],
-      "article_cible": null
+      "article_cible": "Baileys"
     },
     {
       "ko": "KO9",
@@ -213,7 +213,7 @@
         "Tom Collins",
         "Zombie"
       ],
-      "article_cible": null
+      "article_cible": "Baileys"
     },
     {
       "ko": "KO10",
@@ -234,7 +234,7 @@
         "Mojito",
         "Smashnille"
       ],
-      "article_cible": null
+      "article_cible": "Cuba Libre"
     },
     {
       "ko": "KO11",
@@ -272,7 +272,7 @@
         "Tom Collins",
         "Zombie"
       ],
-      "article_cible": null
+      "article_cible":  "Zombie"
     },
     {
       "ko": "KO12",
@@ -310,7 +310,7 @@
         "Tom Collins",
         "Zombie"
       ],
-      "article_cible": null
+      "article_cible": "COCKTAIL CAÎPHIROSKA"
     },
     {
       "ko": "KO13",
@@ -337,7 +337,7 @@
         "Thé Marocain",
         "Téquila"
       ],
-      "article_cible": null
+      "article_cible": "Castel 50CL"
     },
     {
       "ko": "KO14",
@@ -364,7 +364,7 @@
         "Thé Marocain",
         "Téquila"
       ],
-      "article_cible": null
+      "article_cible": "Castel 50CL"
     },
     {
       "ko": "KO15",
@@ -391,7 +391,7 @@
         "Thé Marocain",
         "Téquila"
       ],
-      "article_cible": null
+      "article_cible": "Eau Minérale Voltic 1,5L"
     },
     {
       "ko": "KO16",
@@ -418,7 +418,7 @@
         "Thé Marocain",
         "Téquila"
       ],
-      "article_cible": null
+      "article_cible": "Eau Minérale Voltic 1,5L"
     },
     {
       "ko": "KO18",
@@ -452,7 +452,7 @@
         "Tropique grenadine (Mocktail)",
         "Watermelon"
       ],
-      "article_cible": null
+      "article_cible": "Awooyo"
     },
     {
       "ko": "KO19",
@@ -486,7 +486,7 @@
         "Tropique grenadine (Mocktail)",
         "Watermelon"
       ],
-      "article_cible": null
+      "article_cible": "Awooyo"
     },
     {
       "ko": "KO20",
@@ -520,7 +520,7 @@
         "Tropique grenadine (Mocktail)",
         "Watermelon"
       ],
-      "article_cible": null
+      "article_cible": "Tropique grenadine (Mocktail)"
     },
     {
       "ko": "KO21",
@@ -554,7 +554,7 @@
         "Tropique grenadine (Mocktail)",
         "Watermelon"
       ],
-      "article_cible": null
+      "article_cible": "Awooyo"
     },
     {
       "ko": "KO23",
@@ -588,7 +588,7 @@
         "Tropique grenadine (Mocktail)",
         "Watermelon"
       ],
-      "article_cible": null
+      "article_cible": "Guiness 33CL"
     },
     {
       "ko": "KO24",
@@ -625,7 +625,7 @@
         "Youki Cocktail 33CL",
         "Youzou Sprite"
       ],
-      "article_cible": null
+      "article_cible": "Beaufort 33CL"
     },
     {
       "ko": "KO25",
@@ -652,7 +652,7 @@
         "Thé Marocain",
         "Téquila"
       ],
-      "article_cible": null
+      "article_cible": "Doppel 50CL"
     },
     {
       "ko": "KO26",
@@ -679,7 +679,7 @@
         "Thé Marocain",
         "Téquila"
       ],
-      "article_cible": null
+      "article_cible": "Djama Pilsner 50CL"
     },
     {
       "ko": "KO27",
@@ -706,7 +706,7 @@
         "Thé Marocain",
         "Téquila"
       ],
-      "article_cible": null
+      "article_cible": "Chill 50CL"
     },
     {
       "ko": "KO28",
@@ -733,7 +733,7 @@
         "Thé Marocain",
         "Téquila"
       ],
-      "article_cible": null
+      "article_cible": "Eau Minérale Voltic 1,5L"
     },
     {
       "ko": "KO30",
@@ -760,7 +760,7 @@
         "Thé Marocain",
         "Téquila"
       ],
-      "article_cible": null
+      "article_cible": "Chap Cocktail 50CL"
     },
     {
       "ko": "KO31",
@@ -787,7 +787,7 @@
         "Thé Marocain",
         "Téquila"
       ],
-      "article_cible": null
+      "article_cible": "Chap Cocktail 50CL"
     },
     {
       "ko": "KO32",
@@ -814,7 +814,7 @@
         "Thé Marocain",
         "Téquila"
       ],
-      "article_cible": null
+      "article_cible": "Djama Pilsner 50CL"
     },
     {
       "ko": "KO33",
@@ -841,7 +841,7 @@
         "Thé Marocain",
         "Téquila"
       ],
-      "article_cible": null
+      "article_cible": "Doppel 50CL"
     },
     {
       "ko": "KO34",
@@ -878,7 +878,7 @@
         "Youki Cocktail 33CL",
         "Youzou Sprite"
       ],
-      "article_cible": null
+      "article_cible": "Cocktail Liha"
     },
     {
       "ko": "KO35",
@@ -915,7 +915,7 @@
         "Youki Cocktail 33CL",
         "Youzou Sprite"
       ],
-      "article_cible": null
+      "article_cible": "Pils 33CL"
     },
     {
       "ko": "KO36",
@@ -942,7 +942,7 @@
         "Thé Marocain",
         "Téquila"
       ],
-      "article_cible": null
+      "article_cible": "Castel 50CL"
     },
     {
       "ko": "KO37",
@@ -979,7 +979,7 @@
         "Youki Cocktail 33CL",
         "Youzou Sprite"
       ],
-      "article_cible": null
+      "article_cible": "Beaufort 33CL"
     },
     {
       "ko": "KO38",
@@ -1006,7 +1006,7 @@
         "Thé Marocain",
         "Téquila"
       ],
-      "article_cible": null
+      "article_cible": "Eku"
     },
     {
       "ko": "KO39",
@@ -1021,7 +1021,7 @@
         "Eau Minérale Prima 0,5L",
         "Eau Minérale Voltic 0,5L"
       ],
-      "article_cible": null
+      "article_cible": "Eau Minérale Prima 0,5L"
     },
     {
       "ko": "KO40",
@@ -1036,7 +1036,7 @@
         "Eau Minérale Prima 0,5L",
         "Eau Minérale Voltic 0,5L"
       ],
-      "article_cible": null
+      "article_cible": "Eau Minérale Voltic 0,5L"
     },
     {
       "ko": "KO41",
@@ -1073,7 +1073,7 @@
         "Youki Cocktail 33CL",
         "Youzou Sprite"
       ],
-      "article_cible": null
+      "article_cible": "Jus d'Orange 33cl"
     },
     {
       "ko": "KO42",
@@ -1107,7 +1107,7 @@
         "Tropique grenadine (Mocktail)",
         "Watermelon"
       ],
-      "article_cible": null
+      "article_cible": "COCKTAIL MONACO"
     },
     {
       "ko": "KO43",
@@ -1144,7 +1144,7 @@
         "Youki Cocktail 33CL",
         "Youzou Sprite"
       ],
-      "article_cible": null
+      "article_cible": "Pils 33CL"
     },
     {
       "ko": "KO44",
@@ -1181,7 +1181,7 @@
         "Youki Cocktail 33CL",
         "Youzou Sprite"
       ],
-      "article_cible": null
+      "article_cible": "Beaufort 33CL"
     },
     {
       "ko": "KO45",
@@ -1218,7 +1218,7 @@
         "Youki Cocktail 33CL",
         "Youzou Sprite"
       ],
-      "article_cible": null
+      "article_cible": "Beaufort 33CL"
     },
     {
       "ko": "KO46",
@@ -1255,7 +1255,7 @@
         "Youki Cocktail 33CL",
         "Youzou Sprite"
       ],
-      "article_cible": null
+      "article_cible": "Youzou Sprite"
     },
     {
       "ko": "KO47",
@@ -1292,7 +1292,7 @@
         "Youki Cocktail 33CL",
         "Youzou Sprite"
       ],
-      "article_cible": null
+      "article_cible": "Youki Cocktail 33CL"
     },
     {
       "ko": "KO48",
@@ -1319,7 +1319,7 @@
         "Thé Marocain",
         "Téquila"
       ],
-      "article_cible": null
+      "article_cible":  "Djama Panaché 50CL"
     }
   ]
 }
