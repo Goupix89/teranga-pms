@@ -142,6 +142,8 @@ fun DashboardScreen(
                 ) {
                     // Togo Independence Day banner (shows only on April 27th)
                     item { TogoIndependenceBanner() }
+                    // Labour Day banner (shows only on May 1st)
+                    item { LabourDayBanner() }
 
                     item { Spacer(modifier = Modifier.height(4.dp)) }
 

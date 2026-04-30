@@ -7,6 +7,7 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { OfflineBadge } from '@/components/layout/OfflineBadge';
 import { ServiceWorkerRegistrar } from '@/components/layout/ServiceWorkerRegistrar';
 import { TogoIndependenceBanner } from '@/components/layout/TogoIndependenceBanner';
+import { LabourDayBanner } from '@/components/layout/LabourDayBanner';
 import { LoadingPage } from '@/components/ui';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -53,6 +54,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <ServiceWorkerRegistrar />
       <div className="ml-64 flex flex-1 flex-col">
         <TogoIndependenceBanner />
+        <LabourDayBanner />
         <main className="flex-1 bg-wood-50 p-6 lg:p-8">
           {children}
         </main>
